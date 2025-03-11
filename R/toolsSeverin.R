@@ -779,7 +779,12 @@ addTrafoForPaths <- function(
       function (i) {
         parset <- do.call(c,profs[i,9:ncol(profs)])
         tParset <- trafo(parset)
-        namedTParset <- do.call(c, flatten(tParset[1]))
+        flattened <- flatten(tParset[1])
+        if (is.list(flattened)) {
+          namedTParset <- do.call(c, flatten(tParset[1]))
+        } else {
+          namedTParset <- flattened
+        }
         setNames(as.data.frame(t(namedTParset)), paste0(names(namedTParset),"_trafo"))
       }
     )
