@@ -763,14 +763,22 @@ steadyStateToolJulia <- function(
 #' 
 #' @param profs parframe with the profiles, as returned from the \link{dMod::profile} function
 #' @param trafo parameter transformation for the steady states, as returned by \code{P(steadystateTrafo)}. Currently no ther formulation is supported.
+#' @param rescale character, default \code{"lin"} (no rescaling). The rescaling of the transformed parameters to the model scale, can be \code{"lin"}, \code{"log"}, \code{"log10"} or \code{"log2"}.
 #' 
 #' @return \code{parframe} of the input \code{profs} with the added columns of \code{trafo} applied to the parameters.
 #' 
 #' @export
 addTrafoForPaths <- function(
     profs,
-    trafo
+    trafo,
+    rescale = c("lin", "log", "log10", "log2")[1]
 ) {
+  
+  # check if 'rescale' is a valid input
+  if (!(rescale %in% c("lin", "log", "log10", "log2"))) {
+    stop("'rescale' must be one of 'lin', 'log', 'log10' or 'log2'")
+  }
+  
   # build data.frame from trafo applied row wise to the entries (i.e. each parameterset)
   tDF <- do.call(
     rbind,
@@ -785,12 +793,22 @@ addTrafoForPaths <- function(
         } else {
           namedTParset <- flattened
         }
+        # perform rescaling if necessary
+        if (rescale == "log") {
+          return(log(namedTParset))
+        } else if (rescale == "log10") {
+          return(log10(namedTParset))
+        } else if (rescale == "log2") {
+          return(log2(namedTParset))
+        }
         setNames(as.data.frame(t(namedTParset)), paste0(names(namedTParset),"_trafo"))
       }
     )
   )
+  
   # cast original profs to data.frame for joining  
   profsDF <- as.data.frame(profs)
+  
   
   # add the new columns of the transformed profs parameters
   profsCombined <- cbind(profsDF, tDF)

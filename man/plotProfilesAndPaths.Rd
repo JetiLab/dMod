@@ -4,7 +4,7 @@
 \alias{plotProfilesAndPaths}
 \title{Profile likelihood: plot profiles along with their parameter paths}
 \usage{
-plotProfilesAndPaths(profs, whichpars, npars = 5)
+plotProfilesAndPaths(profs, whichpars, npars = 5, normalizePaths = FALSE)
 }
 \arguments{
 \item{profs}{Lists of profiles as being returned by \link{profile}.}
