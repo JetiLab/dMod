@@ -170,7 +170,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
   }
   
   data <- droplevels(subset(data, ...))
-  removeBecauseNonsense <- c("value", "constraint", "stepsize", "chisquare", "data", "prior")
+  removeBecauseNonsense <- c("value", "constraint", "stepsize", "chisquare", "data", "prior", "gamma", "whichPar")
   data <- data[!(partner %in% removeBecauseNonsense)]
   data$y <- as.numeric(data$y)
   data$x <- as.numeric(data$x)
