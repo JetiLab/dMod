@@ -12,6 +12,8 @@ plotProfilesAndPaths(profs, whichpars, npars = 5)
 \item{whichpars}{Character vector of parameter names for which the profile paths should be generated.}
 
 \item{npars}{Numeric vector of colored and named parameter paths.}
+
+\item{normalizePaths}{Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.}
 }
 \value{
 A plot object of class \code{ggplot}.

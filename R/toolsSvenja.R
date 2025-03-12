@@ -94,7 +94,7 @@ predict_array <- function (prd, times, pars = partable, whichpar = par, keep_nam
   out
 }
 
-PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = TRUE, scales = "fixed", multi = TRUE, n_pars = 5) {
+PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = TRUE, scales = "fixed", multi = TRUE, n_pars = 5, normalizePaths = FALSE) {
   
   if ("parframe" %in% class(profs)) {
     arglist <- list(profs)
@@ -133,7 +133,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
       if (relative) 
         for(j in 1:ncol(paths)) paths[, j] <- as.numeric(paths[, j]) - as.numeric(paths[origin, j])
       
-      combinations <- expand.grid.alt(whichPar, colnames(paths))
+      combinations <- dMod:::expand.grid.alt(whichPar, colnames(paths))
       if (sort) combinations <- apply(combinations, 1, sort) else combinations <- apply(combinations, 1, identity)
       combinations <- submatrix(combinations, cols = -which(combinations[1,] == combinations[2,]))
       combinations <- submatrix(combinations, cols = !duplicated(paste(combinations[1,], combinations[2,])))
@@ -170,8 +170,19 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
   }
   
   data <- droplevels(subset(data, ...))
+  removeBecauseNonsense <- c("value", "constraint", "stepsize", "chisquare", "data", "prior")
+  data <- data[!(partner %in% removeBecauseNonsense)]
   data$y <- as.numeric(data$y)
   data$x <- as.numeric(data$x)
+  
+  if (normalizePaths == TRUE) {
+    data[, y := y / abs(max(abs(y))), by = combination]
+    # data[, y := (2 * (y - min(y)) / (max(y) - min(y))) - 1, by = combination]
+    removedCombinations <- unique(data[!is.finite(y), combination])
+    data <- data[is.finite(y)]
+    
+    warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))
+  }
   
   suppressMessages(
     p <- ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
@@ -179,10 +190,10 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
       geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
       xlab(axis.labels[1]) + ylab(axis.labels[2]) +
       scale_linetype_discrete(name = "profile\nlist") +
-      scale_color_manual(name = "profiled\nparameter", values = dMod_colors)
+      scale_color_manual(name = "profiled\nparameter", values = dMod:::dMod_colors)
   )
   if(multi){
-
+    
     # determine strength of change
     data[, max.dev := max(c(abs(max(as.numeric(y))), abs(min(as.numeric(y) )))), by = "partner"]
     setorder(data, name, -max.dev)
@@ -193,7 +204,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
     
     # Define the plotting colors
     species_colors <- c( # c(dMod_colors[2:(n_pars+1)], rep("gray", 100))
-      setNames(dMod_colors[2:(n_pars+1)], unique(data$partner)[1:n_pars]), 
+      setNames(dMod:::dMod_colors[2:(n_pars+1)], unique(data$partner)[1:n_pars]), 
       "Others" = "gray"
     )
     
@@ -220,6 +231,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
 #' @param profs Lists of profiles as being returned by \link{profile}. 
 #' @param whichpars Character vector of parameter names for which the profile paths should be generated.
 #' @param npars Numeric vector of number of colored and named parameter paths.
+#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.
 #' 
 #' @return A plot object of class \code{ggplot} for length(whichpars) = 1 and otherwise an object of class \code{cowplot}.
 #' @author Svenja Kemmer, \email{svenja.kemmer@@fdm.uni-freiburg.de}
@@ -229,15 +241,15 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
 #' }
 #' @export
 #' @import data.table
-plotPathsMulti <- function(profs, whichpars, npars = 5) {
+plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) {
   if(length(whichpars) == 1){
-    p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars)
+    p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars, normalizePaths)
     return(p)
   } else {
     PlotList <- NULL
     for(i in 1:length(whichpars)){
       par <- whichpars[i]
-      p <- PlotPaths(profs=profs, whichPar = par, n_pars = npars)
+      p <- PlotPaths(profs=profs, whichPar = par, n_pars = npars, normalizePaths)
       PlotList[[i]] <- p
     }
     pl <- cowplot::plot_grid(plotlist = PlotList)
@@ -256,6 +268,7 @@ expand.grid.alt <- function(seq1, seq2) {
 #' @param profs Lists of profiles as being returned by \link{profile}. 
 #' @param whichpars Character vector of parameter names for which the profile paths should be generated.
 #' @param npars Numeric vector of colored and named parameter paths.
+#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.
 #' 
 #' @return A plot object of class \code{ggplot}.
 #' @author Svenja Kemmer, \email{svenja.kemmer@@fdm.uni-freiburg.de}
@@ -269,14 +282,14 @@ plotProfilesAndPaths <- function(profs, whichpars, npars = 5){
   if(length(whichpars)<2) {
     profs <- profs[profs$whichPar %in% whichpars]
     pl1 <- plotProfile(profs, mode == "data")
-    pl2 <- plotPathsMulti(profs, whichpars, npars)
+    pl2 <- plotPathsMulti(profs, whichpars, npars, normalizePaths)
     pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
   } else{
     plotList <- NULL
     for(z in 1:length(whichpars)){
       prof_sub <- profs[profs$whichPar == whichpars[z]]
       pl1 <- plotProfile(prof_sub, mode == "data") + theme(legend.position = "none")
-      pl2 <- plotPathsMulti(prof_sub, whichpars[z], npars)
+      pl2 <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths)
       pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
       plotList[[z]] <- pl
     }

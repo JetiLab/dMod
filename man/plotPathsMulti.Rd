@@ -4,7 +4,7 @@
 \alias{plotPathsMulti}
 \title{Profile likelihood: plot all parameter paths belonging to one profile in one plot}
 \usage{
-plotPathsMulti(profs, whichpars, npars = 5)
+plotPathsMulti(profs, whichpars, npars = 5, normalizePaths = FALSE)
 }
 \arguments{
 \item{profs}{Lists of profiles as being returned by \link{profile}.}
@@ -12,6 +12,8 @@ plotPathsMulti(profs, whichpars, npars = 5)
 \item{whichpars}{Character vector of parameter names for which the profile paths should be generated.}
 
 \item{npars}{Numeric vector of number of colored and named parameter paths.}
+
+\item{normalizePaths}{Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.}
 }
 \value{
 A plot object of class \code{ggplot} for length(whichpars) = 1 and otherwise an object of class \code{cowplot}.
