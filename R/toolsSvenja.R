@@ -243,13 +243,13 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
 #' @import data.table
 plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) {
   if(length(whichpars) == 1){
-    p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars, normalizePaths)
+    p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars, normalizePaths = normalizePaths)
     return(p)
   } else {
     PlotList <- NULL
     for(i in 1:length(whichpars)){
       par <- whichpars[i]
-      p <- PlotPaths(profs=profs, whichPar = par, n_pars = npars, normalizePaths)
+      p <- PlotPaths(profs=profs, whichPar = par, n_pars = npars, normalizePaths = normalizePaths)
       PlotList[[i]] <- p
     }
     pl <- cowplot::plot_grid(plotlist = PlotList)
@@ -278,18 +278,18 @@ expand.grid.alt <- function(seq1, seq2) {
 #' }
 #' @export
 #' @import data.table
-plotProfilesAndPaths <- function(profs, whichpars, npars = 5){
+plotProfilesAndPaths <- function(profs, whichpars, npars = 5, normalizePaths = FALSE){
   if(length(whichpars)<2) {
     profs <- profs[profs$whichPar %in% whichpars]
     pl1 <- plotProfile(profs, mode == "data")
-    pl2 <- plotPathsMulti(profs, whichpars, npars, normalizePaths)
+    pl2 <- plotPathsMulti(profs, whichpars, npars, normalizePaths = normalizePaths)
     pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
   } else{
     plotList <- NULL
     for(z in 1:length(whichpars)){
       prof_sub <- profs[profs$whichPar == whichpars[z]]
       pl1 <- plotProfile(prof_sub, mode == "data") + theme(legend.position = "none")
-      pl2 <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths)
+      pl2 <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths = normalizePaths)
       pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
       plotList[[z]] <- pl
     }
