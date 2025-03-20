@@ -15,8 +15,7 @@ optimize(
 )
 }
 \arguments{
-\item{objfn}{A function that computes and returns a list with components `value`, `gradient`, and `hessian`.
-This represents the objective function to be minimized.}
+\item{objfn}{Object of class obsfn, i.e. a function obj(..., fixed, deriv, conditions, env) that returns an objective list, objlist.}
 
 \item{parinit}{A numeric vector of initial parameter values.}
 
@@ -32,7 +31,7 @@ box constraints, e.g., "L-BFGS-B"). Defaults to `Inf`.}
 
 \item{control}{A list of control parameters to pass to the optimization algorithm.}
 
-\item{...}{Additional arguments to pass to the objective function.}
+\item{...}{Additional arguments to pass to optimx::optimr}
 }
 \value{
 A list containing:
@@ -41,7 +40,7 @@ A list containing:
         - `hessian`: The Hessian at the optimum.
         - `argument`: The optimized parameters.
         - `converged`: Logical indicating if the optimizer converged.
-        - `iterations`: The number of function evaluations.
+        - `iterations`: The number of function and gradient evaluations.
 }
 \description{
 This function extends the existing optimization capabilities by integrating the `optimx` package,
