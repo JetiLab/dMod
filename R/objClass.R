@@ -117,7 +117,7 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #'
 #' @param fixed.grid data.frame(parname, partask, ids...) Lookup table for fixed parameters
 #' @param nauxtimes additional simulation times
-#' @param cores to parallelize over conditions not over fits
+#' @param cores to parallelize over conditions not over fits. This will be ignored on windows machines.
 #' 
 #' 
 #' @return Object of class \code{obsfn}, i.e. a function 
@@ -125,8 +125,9 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' \link{objlist}.
 #' @details Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
 #' @example inst/examples/normL2.R
+#' @importFrom parallel mclapply
 #' @export
-normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
+normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1) {
 
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
   if (!is.null(times)) timesD <- sort(union(times, timesD))
@@ -161,13 +162,24 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
     prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, conditions = conditions)
     
     # Apply res() and wrss() to compute residuals and the weighted residual sum of squares
-    out.data <- lapply(conditions, function(cn) {
-      err <- NULL
-      if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
-        err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-      nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
-    })
-    out.data <- Reduce("+", out.data)
+    if (cores > 1 && .Platform$OS.type != "windows") {
+      out.data <- mclapply(conditions, function(cn) {
+        err <- NULL
+        if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
+          err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
+        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
+      }, mc.cores = cores)
+      out.data <- Reduce("+", out.data)
+    } else {
+      out.data <- lapply(conditions, function(cn) {
+        err <- NULL
+        if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
+          err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
+        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
+      })
+      out.data <- Reduce("+", out.data)
+    }
+    
     
     # Combine contributions and attach attributes
     out <- out.data
