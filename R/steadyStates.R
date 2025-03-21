@@ -15,6 +15,7 @@
 #'   compatible output. To obtain an output appropriate for d2d [2] "M" must be 
 #'   selected.
 #' @param testSteady Boolean, if "T" the correctness of the obtained steady states is numerically checked (this can be very time intensive). If "F" this is skipped. 
+#' @param resolve Boolean. If TRUE, recursive dependencies are resolved, meaning that independent equations are substituted into each expression and then simplified.
 #'   
 #' @return Character vector of steady-state equations.
 #'   
@@ -30,7 +31,7 @@
 #' @export
 #' @importFrom utils write.table
 #' @example inst/examples/steadystates.R
-steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T") {
+steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T", resolve = TRUE) {
   
   require(reticulate)
   
@@ -54,6 +55,14 @@ steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenC
     m_ssChar <- do.call(c, lapply(strsplit(m_ss, "="), function(eq) {
       out <- eq[2]
       names(out) <- eq[1]
+
+      if (resolve) {
+        simplify <- import("sympy")$simplify
+        out <- lapply(resolveRecurrence(out), function(expr) {
+          simplify(expr) %>% as.character()
+        }) %>% unlist(use.names = TRUE)
+      }
+
       return(out)
     }))
     if(!is.null(file) & is.character(file))
