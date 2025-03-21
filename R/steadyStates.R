@@ -56,18 +56,17 @@ steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenC
       out <- eq[2]
       names(out) <- eq[1]
 
-      if (resolve) {
-        simplify <- import("sympy")$simplify
-        out <- lapply(resolveRecurrence(out), function(expr) {
-          simplify(expr) %>% as.character()
-        }) %>% unlist(use.names = TRUE)
-      }
-
       return(out)
     }))
     if(!is.null(file) & is.character(file))
       saveRDS(object = m_ssChar, file = file)
     
+    if (resolve) {
+        simplify <- import("sympy")$simplify
+        m_ssChar <- lapply(resolveRecurrence(m_ssChar), function(expr) {
+          simplify(expr) %>% as.character()
+        }) %>% unlist(use.names = TRUE)
+      }
     return(m_ssChar)
   } else return(0)
 }
