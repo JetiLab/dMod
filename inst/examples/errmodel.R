@@ -69,10 +69,10 @@ bestfit <- as.parvec(outframe)
 bestprediction <- (g*x*p)(times, bestfit, deriv = F)
 pred <- subset(as.data.frame(bestprediction, errfn = e), name == "B_obs")
 
-ggplot(data = datasheet, aes(time, value, color = condition, fill = condition)) + 
+ggplot(data = datasheet, aes(time, value, color = condition)) + 
   geom_point() + 
   geom_line(data = pred, aes(time, value, color = condition)) + 
-  geom_ribbon(data = pred, aes(ymin = value - sigma, ymax = value + sigma), alpha = 0.2, linewidth = 0) + 
+  geom_ribbon(data = pred, aes(ymin = value - sigma, ymax = value + sigma, fill = condition), alpha = 0.2, linewidth = 0) + 
   dMod::theme_dMod() + 
   dMod::scale_color_dMod() + 
   dMod::scale_fill_dMod()
