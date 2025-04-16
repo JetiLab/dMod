@@ -107,7 +107,23 @@ SVDIA <- function(prdfun, times, HC = list(parlower = -5, parupper = 3), nsample
   # Concatenate all sensitivity matrices vertically to form tilde_S
   tilde_S <- do.call(rbind, S_list)
   tilde_S <- tilde_S[, !(colnames(tilde_S) == "time")]
-  colnames(tilde_S) <- param_names
+  
+  tilde_S <- as.data.frame(tilde_S) %>%
+    tibble::rownames_to_column("row") %>%
+    tidyr::pivot_longer(cols = -row, names_to = "colname", values_to = "value") %>%
+    dplyr::mutate(
+      prefix = sub("\\..*$", "", colname),
+      parameter = sub("^[^.]+\\.", "", colname)
+    ) %>%
+    dplyr::select(-colname) %>%
+    tidyr::pivot_wider(
+      names_from = parameter,
+      values_from = value
+    ) %>%
+    dplyr::select(-row, -prefix) %>% 
+    as.matrix()
+  
+
   
   # Remove neglected parameters
   if (!is.null(neglect)) {
