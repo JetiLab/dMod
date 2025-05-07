@@ -29,7 +29,7 @@
 eventlist <- function(var = NULL, time = NULL, value = NULL, root = NULL, method = NULL) {
   
   # root is NULL if all are NULL or NA if any is not NULL
-  if (!is.null(var) | !is.null(time) | !is.null(value) | !is.null(method) & is.null(root)) root <- NA
+  # if (!is.null(var) | !is.null(time) | !is.null(value) | !is.null(method) & is.null(root)) root <- NA
   
   out <- data.frame(var = var,
                     time = time,
