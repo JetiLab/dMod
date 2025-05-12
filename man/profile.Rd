@@ -88,6 +88,12 @@ relative tolerance \code{rtol}, the stepsize may be increased. \code{max} and \c
 bounds for \code{stepsize}. \code{limit} is the maximum number of steps that are take for the profile computation.
 \code{stop} is a character, usually "value" or "data", for which the significance level \code{alpha}
 is evaluated.
+
+\code{optControl}: Controls the reoptimization process. 
+Use \code{fits} to specify the number of fits per reoptimization (default: 1). 
+If \code{fits} > 1, \code{mstrust} is used; otherwise, \code{trust} is applied.
+You can adjust the standard deviation of the normal sampling distribution with the \code{sd} argument (default: 0.1).
+The \code{start1stfromCenter} argument determines whether the first fit should start from the center (default: TRUE).
 }
 \examples{
 

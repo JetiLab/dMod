@@ -43,6 +43,12 @@
 #' \code{stop} is a character, usually "value" or "data", for which the significance level \code{alpha}
 #' is evaluated.
 #' 
+#' \code{optControl}: Controls the reoptimization process. 
+#' Use \code{fits} to specify the number of fits per reoptimization (default: 1). 
+#' If \code{fits} > 1, \code{mstrust} is used; otherwise, \code{trust} is applied.
+#' You can adjust the standard deviation of the normal sampling distribution with the \code{sd} argument (default: 0.1).
+#' The \code{start1stfromCenter} argument determines whether the first fit should start from the center (default: TRUE).
+#' 
 #' @return Named list of length one. The name is the parameter name. The list enty is a
 #' matrix with columns "value" (the objective value), "constraint" (deviation of the profiled paramter from
 #' the original value), "stepsize" (the stepsize take for the iteration), "gamma" (the gamma value employed for the
@@ -83,12 +89,9 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   if (method == "optimize") {
     sControl <- list(stepsize = 1e-2, min = 1e-4, max = Inf, atol = 1e-1, rtol = 1e-1, limit = 100, stop = "value")
     aControl <- list(gamma = 0, W = "identity", reoptimize = TRUE, correction = 1, reg = 0)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), fits=1, sd=0.1, start1stfromCenter = TRUE)
   }
   
-  # Check if on Windows
-  cores <- min(length(whichPar), cores)
-  cores <- sanitizeCores(cores)
   
   # Substitute user-set control parameters
   if (!is.null(stepControl)) sControl[match(names(stepControl), names(sControl))] <- stepControl
@@ -102,6 +105,10 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
     dir.create(interResFolder,showWarnings = FALSE)
   }
   
+  
+  # Check if on Windows
+  cores <- min(length(whichPar)*oControl[["fits"]], cores)
+  cores <- sanitizeCores(cores)
   
   # Start cluster if on windows
   if (cores > 1) {
@@ -274,13 +281,25 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                                              oControl[names(oControl)!="rinit"],
                                              dotArgs[names(dotArgs) != "fixed"])
                                 
-                                
-                                myfit <- try(do.call(trust, arglist), silent=FALSE)
-                                if(!inherits(myfit, "try-error")) {
-                                  y.try[names(myfit$argument)] <- as.vector(myfit$argument)  
+                                if(oControl[["fits"]] > 1){
+                                  arglist <- c(arglist, list(studyname = paste("profilems", whichPar.name, collapse = "_"), cores = floor(cores / length(whichPar))))
+                                  names(arglist)[names(arglist) == "parinit"] <- "center"
+                                  outmulti <- try(do.call(mstrust, arglist), silent = FALSE)
+                                  if(!inherits(outmulti, "try-error")) {
+                                    mybestfit <- outmulti %>% as.parframe() %>% as.parvec()
+                                    y.try[names(mybestfit)] <- as.vector(mybestfit)  
+                                  } else {
+                                    warning("Multistart Optimization not successful. Profile may be erroneous.")
+                                  }
                                 } else {
-                                  warning("Optimization not successful. Profile may be erroneous.")
+                                  myfit <- try(do.call(trust, arglist), silent=FALSE)
+                                  if(!inherits(myfit, "try-error")) {
+                                    y.try[names(myfit$argument)] <- as.vector(myfit$argument)  
+                                  } else {
+                                    warning("Optimization not successful. Profile may be erroneous.")
+                                  }
                                 }
+                                
                                 
                               }
                               
