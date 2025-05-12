@@ -1208,6 +1208,7 @@ load.parlist <- function(folder) {
 #'        conditions, see Details.
 #' @param datatrans Character vector describing a function to transform data.
 #'        Use \kbd{x} to refer to data.
+#' @param keep Character vector with colums, that should not get dropped
 #'
 #' @format
 #' The following columns are mandatory for the data frame:
@@ -1258,13 +1259,13 @@ load.parlist <- function(folder) {
 #' @author Simon Beyer, \email{simon.beyer@@fdm.uni-freiburg.de}
 #'
 #' @export
-reduceReplicates <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
   UseMethod("reduceReplicates")
 }
 
 #' Method for data frames
 #' @export
-reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
   # File format definition
   fmtnames <- c("name", "time", "value", "condition")
   if (length(intersect(names(data), fmtnames)) != length(fmtnames)) {
@@ -1287,6 +1288,13 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
   stable_cols <- potential_cols[sapply(potential_cols, function(col) {
     all(tapply(data[[col]], condidnt, function(x) length(unique(x)) == 1))
   })]
+  
+  # Add columns from 'keep' (if any), even if unstable
+  if (!is.null(keep)) {
+    keep <- intersect(keep, names(data))  # Make sure the columns exist
+    stable_cols <- union(stable_cols, keep)
+  }
+  
   dropped_cols <- setdiff(names(data), c("time", "value", "sigma", "n", stable_cols))
   
   # Reduce data
@@ -1305,7 +1313,7 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
       n = nrow(conddata),
       name = conddata[1, "name"],
       condition = mergecond,
-      conddata[1, stable_cols, drop = FALSE] # Retain only stable columns
+      conddata[1, stable_cols, drop = FALSE] # Retain only stable (and kept) columns
     )
   }))
   
@@ -1316,7 +1324,7 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
 
 #' Method for files (character)
 #' @export
-reduceReplicates.character <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates.character <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
   # Ensure the file exists
   if (!file.exists(data)) {
     stop("The specified file does not exist.")

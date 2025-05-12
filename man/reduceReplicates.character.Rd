@@ -4,7 +4,7 @@
 \alias{reduceReplicates.character}
 \title{Method for files (character)}
 \usage{
-\method{reduceReplicates}{character}(data, select = "condition", datatrans = NULL)
+\method{reduceReplicates}{character}(data, select = "condition", datatrans = NULL, keep = NULL)
 }
 \description{
 Method for files (character)
