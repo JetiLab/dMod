@@ -1,4 +1,4 @@
-#' Run an any R function on a remote HPC system with SLURM
+#' Run any R function on a remote HPC system with SLURM
 #' 
 #' @description Generates R and bash scrips, transfers them to remote via ssh.
 #' 'sshpass' needs to be installed on your local machine to circumvent password entry.
@@ -645,11 +645,12 @@ profile_pars_per_node <- function(parameters, fits_per_node, side = c("both", "s
 #' 
 #' @param installJulia boolean, default \code{false}. If set to true, juliaup and via this then Julia is installed. 
 #' @param installJuliaPackages boolean, default \code{true}. If set to true, the necessary packages are installed.
+#' @param JuliaProjectPath string, default \code{NULL}. Allows for installing the required packages to a separate project environment instead of the global package environment. Also need to specify same JuliaProjectPath to steadyStateToolJulia().
 #' 
 #' @return nothing
 #' 
 #' @export
-installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackages = TRUE) {
+installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackages = TRUE, JuliaProjectPath = NULL) {
   
   tryCatch(
     {
@@ -666,28 +667,33 @@ installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackag
     system("juliaup add release")
     try(system("source ~/.bashrc"))
   }
-  
+
+  # install packages
   if (installJuliaPackages) {
-    # install packages
-    system("julia -e 'using Pkg; Pkg.add(\"CSV\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"DataFrames\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Symbolics\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Catalyst\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"SymbolicUtils\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Graphs\")'")
+    # Sensible to use JuliaProjectPath = "~/.JuliaSteadyStates/"
+    if(!is.null(JuliaProjectPath)){
+      ProjectPathSetter = paste0("--project='", JuliaProjectPath, "' ")
+    } else {
+      ProjectPathSetter = ""
+    }
+    system(paste0("julia ", ProjectPathSetter, "-e 'using Pkg; Pkg.add([\"CSV\", \"DataFrames\", \"Symbolics\", \"SymbolicUtils\", \"Catalyst\", \"Graphs\"])'"))
   }
   
 }
 
 
-#' Calculated the steady states of a given model  
+#' Calculate the steady states of a given model  
 #' 
 #' @description Uses julia to calculate the steady state transformations
 #' 
 #' @param el the equation list
-#' @param forcings vector of strings, default \code{c("","")}. The names of the forcings which will be set to zero.
+#' @param forcings vector of strings, default \code{c("","")}. The names of the forcings which will be set to zero before solving for the steady state equations.
 #' @param neglect vector of strings, default \code{c("","")}. The names of the variables which will be neglected as fluxParameters and therefore will not be solved for.
-#' @param verboseLevel integer, default \code{1}. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implementes.
+#' @param verboseLevel integer, default \code{1}. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implemented.
+#' @param testSteadyState boolean, default \code{true}
+#' @param JuliaPath string, default \code{NULL}. If specified, uses julia executable from given path.
+#' @param FileExportPath string, default \code{getwd()}. Directory to which .csv files for transfer of equations between R and Julia are saved.
+#' @param JuliaProjectPath string, default \code{NULL}. If specified, uses julia local project environment from given path, otherwise uses global package environment for code execution.
 #' 
 #' @return named vector with the steady state transformations. The names are the inner, the values are the outer parameters
 #' 
@@ -697,13 +703,20 @@ steadyStateToolJulia <- function(
     forcings = NULL,
     neglect = NULL,
     verboseLevel = 1,
-    testSteadyState = TRUE
+    testSteadyState = TRUE,
+    JuliaPath = NULL,
+    FileExportPath = NULL,
+    JuliaProjectPath = NULL
 ) {
   # prepare things:
-  myWD <- getwd()
+  if (is.null(FileExportPath)) {
+    myWD <- getwd()
+  } else {
+    myWD <- FileExportPath
+  }
   dModEqnFileName = "EquationsForSteadyStates"
   
-  dMod::write.eqnlist(el, file = paste0(dModEqnFileName, ".csv"))
+  dMod::write.eqnlist(el, file = file.path(myWD, paste0(dModEqnFileName, ".csv")))
   
   inputPath <- file.path(myWD, paste0(dModEqnFileName, ".csv"))
   fileName <- "SteadyStatesFromJulia"
@@ -721,7 +734,14 @@ steadyStateToolJulia <- function(
     warning("The 'JuliaCall' package must be installed.")
     return(NULL)
   }
-  if (dir.exists(file.path(Sys.getenv("HOME"),".juliaup/bin"))) {
+  
+  if (!is.null(JuliaProjectPath)) {
+    Sys.setenv(JULIA_PROJECT = JuliaProjectPath)
+  }
+  
+  if (!is.null(JuliaPath)) {
+    JuliaCall::julia_setup(JULIA_HOME = JuliaPath)
+  } else if (dir.exists(file.path(Sys.getenv("HOME"),".juliaup/bin"))) {
     JuliaCall::julia_setup(JULIA_HOME = file.path(Sys.getenv("HOME"),".juliaup/bin"))
   } else if (file.exists("/usr/bin/julia")) {
     JuliaCall::julia_setup(JULIA_HOME = "/usr/bin/")
