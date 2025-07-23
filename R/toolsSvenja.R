@@ -181,17 +181,10 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
     removedCombinations <- unique(data[!is.finite(y), combination])
     data <- data[is.finite(y)]
     
-    warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))
+    if(length(removedCombinations)>0) {warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))}
   }
   
-  suppressMessages(
-    p <- ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
-      facet_wrap(~combination, scales = scales) + 
-      geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
-      xlab(axis.labels[1]) + ylab(axis.labels[2]) +
-      scale_linetype_discrete(name = "profile\nlist") +
-      scale_color_manual(name = "profiled\nparameter", values = dMod:::dMod_colors)
-  )
+
   if(multi){
     
     # determine strength of change
@@ -209,7 +202,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
     )
     
     suppressMessages(
-      p <- ggplot(data, aes(x = x, y = y, color = label, group = label)) + 
+      p <- ggplot(data, aes(x = x, y = y, color = label, group = partner)) + 
         geom_line() + #geom_point(aes=aes(size=1), alpha=1/3) +
         xlab(paste0("log(", whichPar, ")")) + ylab("relative change of\n other paramters") +
         scale_linetype_discrete(name = "profile\nlist") +
@@ -218,6 +211,15 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
               legend.title = element_blank(),
               legend.box.background = element_rect(colour = "black"),
               legend.key.size = unit(0.4, "cm"))
+    )
+  } else {
+    suppressMessages(
+      p <- ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
+        facet_wrap(~combination, scales = scales) + 
+        geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
+        xlab(axis.labels[1]) + ylab(axis.labels[2]) +
+        scale_linetype_discrete(name = "profile\nlist") +
+        scale_color_manual(name = "profiled\nparameter", values = dMod:::dMod_colors)
     )
   }
   
