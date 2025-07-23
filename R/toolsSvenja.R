@@ -176,7 +176,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
   data$x <- as.numeric(data$x)
   
   if (normalizePaths == TRUE) {
-    data[, y := y / abs(max(abs(y))), by = combination]
+    data[, y := (ifelse(max(abs(y)) == 0, 0, y / abs(max(abs(y))))), by = combination] # if path is y, just return 0
     # data[, y := (2 * (y - min(y)) / (max(y) - min(y))) - 1, by = combination]
     removedCombinations <- unique(data[!is.finite(y), combination])
     data <- data[is.finite(y)]
@@ -209,7 +209,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
     )
     
     suppressMessages(
-      p <- ggplot(data, aes(x = x, y = y, color = label, group = partner)) + 
+      p <- ggplot(data, aes(x = x, y = y, color = label, group = label)) + 
         geom_line() + #geom_point(aes=aes(size=1), alpha=1/3) +
         xlab(paste0("log(", whichPar, ")")) + ylab("relative change of\n other paramters") +
         scale_linetype_discrete(name = "profile\nlist") +
