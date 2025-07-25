@@ -1209,6 +1209,7 @@ load.parlist <- function(folder) {
 #' @param datatrans Character vector describing a function to transform data.
 #'        Use \kbd{x} to refer to data.
 #' @param keep Character vector with colums, that should not get dropped
+#' @param weighted Logical flag: if TRUE, calculate weighted standard deviation using 'sigma' column.
 #'
 #' @format
 #' The following columns are mandatory for the data frame:
@@ -1259,17 +1260,22 @@ load.parlist <- function(folder) {
 #' @author Simon Beyer, \email{simon.beyer@@fdm.uni-freiburg.de}
 #'
 #' @export
-reduceReplicates <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
+reduceReplicates <- function(data, select = "condition", datatrans = NULL, keep = NULL, weighted = FALSE) {
   UseMethod("reduceReplicates")
 }
 
 #' Method for data frames
 #' @export
-reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
+reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL, keep = NULL, weighted = FALSE) {
   # File format definition
   fmtnames <- c("name", "time", "value", "condition")
   if (length(intersect(names(data), fmtnames)) != length(fmtnames)) {
     stop(paste("Mandatory column names are:", paste(fmtnames, collapse = ", ")))
+  }
+  
+  # Check if sigma column is present if weighted = TRUE
+  if (weighted && !"sigma" %in% names(data)) {
+    stop("Column 'sigma' is required for weighted = TRUE but was not found in the data.")
   }
   
   # Transform data if requested
@@ -1302,18 +1308,28 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
     conddata <- data[condidnt == cond, ]
     mergecond <- paste(unique(conddata[setdiff(select, c("name", "time"))]), collapse = "_")
     
+    # Determine value and sigma
+    if (weighted && nrow(conddata) > 1) {
+      weights <- 1 / conddata$sigma^2
+      mean_val <- sum(weights * conddata$value) / sum(weights)
+      sigma_val <- sqrt(sum(weights * (conddata$value - mean_val)^2) / 
+                          (sum(weights) - sum(weights^2) / sum(weights))) / sqrt(nrow(conddata))
+    } else if (nrow(conddata) > 1) {
+      mean_val <- mean(conddata$value)
+      sigma_val <- sd(conddata$value) / sqrt(nrow(conddata))
+    } else {
+      mean_val <- conddata$value
+      sigma_val <- NA
+    }
+    
     data.frame(
       time = conddata[1, "time"],
-      value = mean(conddata$value),
-      sigma = if (nrow(conddata) > 1) {
-        sd(conddata$value) / sqrt(nrow(conddata)) # Standard Error of the Mean (SEM)
-      } else {
-        NA
-      },
+      value = mean_val,
+      sigma = sigma_val,
       n = nrow(conddata),
       name = conddata[1, "name"],
       condition = mergecond,
-      conddata[1, stable_cols, drop = FALSE] # Retain only stable (and kept) columns
+      conddata[1, stable_cols, drop = FALSE]
     )
   }))
   
@@ -1346,6 +1362,8 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
   # Call the data.frame method
   reduceReplicates(as.data.frame(data), select = select, datatrans = datatrans)
 }
+
+
 
 
 #' Fit an error model using maximum likelihood estimation

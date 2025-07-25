@@ -17,7 +17,13 @@ fine-grained definition of conditions. The values of all columns named in
 \code{select} are then merged to get the set of conditions.
 }
 \usage{
-reduceReplicates(data, select = "condition", datatrans = NULL, keep = NULL)
+reduceReplicates(
+  data,
+  select = "condition",
+  datatrans = NULL,
+  keep = NULL,
+  weighted = FALSE
+)
 }
 \arguments{
 \item{data}{A data frame containing the measurements. See Format for details.}
@@ -29,6 +35,8 @@ conditions, see Details.}
 Use \kbd{x} to refer to data.}
 
 \item{keep}{Character vector with colums, that should not get dropped}
+
+\item{weighted}{Logical flag: if TRUE, calculate weighted standard deviation using 'sigma' column.}
 }
 \value{
 A data frame of the following variables:

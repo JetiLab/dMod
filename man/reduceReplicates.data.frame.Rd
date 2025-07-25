@@ -4,7 +4,13 @@
 \alias{reduceReplicates.data.frame}
 \title{Method for data frames}
 \usage{
-\method{reduceReplicates}{data.frame}(data, select = "condition", datatrans = NULL, keep = NULL)
+\method{reduceReplicates}{data.frame}(
+  data,
+  select = "condition",
+  datatrans = NULL,
+  keep = NULL,
+  weighted = FALSE
+)
 }
 \description{
 Method for data frames
