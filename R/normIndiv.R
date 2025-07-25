@@ -64,6 +64,11 @@ make_pars <- function(pars, fixed = NULL, est.grid, fix.grid, ID){
   parnames_full <- parnames
   parnames <- parnames[!parnames %in% names(fixed_outer)]
   
+  # sanity check: warn if a parameter initital is set to NA
+  if (anyNA(pars)) {
+    stop(cat("Parameter(s):\n\t", paste0(names(pars)[which(is.na(pars))], collapse = "\n"), "\nare set to NA in make_pars(), maybe they are not supplied (i.e. neither in pars nor fixed, but in the grids?"))
+  }
+  
   return(list(pars = unlist(pars), fixed = unlist(fixed), parnames = parnames, parnames_full = parnames_full))
 }
 

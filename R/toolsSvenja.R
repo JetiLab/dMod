@@ -176,22 +176,15 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
   data$x <- as.numeric(data$x)
   
   if (normalizePaths == TRUE) {
-    data[, y := y / abs(max(abs(y))), by = combination]
+    data[, y := (ifelse(max(abs(y)) == 0, 0, y / abs(max(abs(y))))), by = combination] # if path is y, just return 0
     # data[, y := (2 * (y - min(y)) / (max(y) - min(y))) - 1, by = combination]
     removedCombinations <- unique(data[!is.finite(y), combination])
     data <- data[is.finite(y)]
     
-    warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))
+    if(length(removedCombinations)>0) {warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))}
   }
   
-  suppressMessages(
-    p <- ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
-      facet_wrap(~combination, scales = scales) + 
-      geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
-      xlab(axis.labels[1]) + ylab(axis.labels[2]) +
-      scale_linetype_discrete(name = "profile\nlist") +
-      scale_color_manual(name = "profiled\nparameter", values = dMod:::dMod_colors)
-  )
+
   if(multi){
     
     # determine strength of change
@@ -218,6 +211,15 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
               legend.title = element_blank(),
               legend.box.background = element_rect(colour = "black"),
               legend.key.size = unit(0.4, "cm"))
+    )
+  } else {
+    suppressMessages(
+      p <- ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
+        facet_wrap(~combination, scales = scales) + 
+        geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
+        xlab(axis.labels[1]) + ylab(axis.labels[2]) +
+        scale_linetype_discrete(name = "profile\nlist") +
+        scale_color_manual(name = "profiled\nparameter", values = dMod:::dMod_colors)
     )
   }
   
