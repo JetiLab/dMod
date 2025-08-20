@@ -204,7 +204,7 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
     suppressMessages(
       p <- ggplot(data, aes(x = x, y = y, color = label, group = partner)) + 
         geom_line() + #geom_point(aes=aes(size=1), alpha=1/3) +
-        xlab(paste0("log(", whichPar, ")")) + ylab("relative change of\n other paramters") +
+        xlab(whichPar) + ylab("relative change of\n other paramters") +
         scale_linetype_discrete(name = "profile\nlist") +
         scale_color_manual(values = species_colors) + theme_dMod() +
         theme(legend.position="bottom",
@@ -267,35 +267,54 @@ expand.grid.alt <- function(seq1, seq2) {
 
 #' Profile likelihood: plot profiles along with their parameter paths
 #' 
-#' @param profs Lists of profiles as being returned by \link{profile}. 
-#' @param whichpars Character vector of parameter names for which the profile paths should be generated.
-#' @param npars Numeric vector of colored and named parameter paths.
-#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.
+#' Generates combined plots of profile likelihoods and their parameter paths without a shared legend.
 #' 
-#' @return A plot object of class \code{ggplot}.
-#' @author Svenja Kemmer, \email{svenja.kemmer@@fdm.uni-freiburg.de}
-#' @examples
-#' \dontrun{
-#'  plotProfilesAndPaths(myprofiles, c("mypar1", "mypar2"), npars = 5) 
-#' }
+#' @param profs List of profiles as returned by \code{\link{profile}}.
+#' @param whichpars Character vector of parameter names for which the profile paths should be generated.
+#' @param npars Numeric indicating number of colored and named parameter paths.
+#' @param ncols Number of columns in the resulting plot grid.
+#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1.
+#'                       Default \code{FALSE}.
+#' @param ... Additional arguments passed to \code{\link[cowplot]{plot_grid}}.
+#' 
+#' @return A combined \code{ggplot} object containing the profiles and paths (no shared legend).
+#' 
 #' @export
-#' @import data.table
-plotProfilesAndPaths <- function(profs, whichpars, npars = 5, normalizePaths = FALSE){
-  if(length(whichpars)<2) {
-    profs <- profs[profs$whichPar %in% whichpars]
-    pl1 <- plotProfile(profs, mode == "data")
-    pl2 <- plotPathsMulti(profs, whichpars, npars, normalizePaths = normalizePaths)
-    pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
-  } else{
-    plotList <- NULL
-    for(z in 1:length(whichpars)){
-      prof_sub <- profs[profs$whichPar == whichpars[z]]
-      pl1 <- plotProfile(prof_sub, mode == "data") + theme(legend.position = "none")
-      pl2 <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths = normalizePaths)
-      pl <- cowplot::plot_grid(pl1,cowplot::plot_grid(NULL,pl2, nrow = 1, rel_widths = c(0.2,1)),nrow = 2, rel_heights = c(1,0.7))
-      plotList[[z]] <- pl
-    }
-    plot <- cowplot::plot_grid(plotlist = plotList, nrow = 1)
-    print(plot)
+plotProfilesAndPaths <- function(profs, whichpars, npars = 5, ncols = 3, normalizePaths = FALSE, ...) {
+  profs <- profs[profs$whichPar %in% whichpars]
+  
+  cleanProfilePlot <- function(prof_sub) {
+    plotProfile(prof_sub, mode %in% c("data", "prior")) +
+      labs(title = NULL, x = NULL, linetype = "contrib") +
+      theme(
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+      ) +
+      guides(color = "none", fill = "none") +
+      theme(legend.position = "none")
   }
+  
+  stacked_list <- vector("list", length(whichpars))
+  
+  for (z in seq_along(whichpars)) {
+    prof_sub <- profs[profs$whichPar == whichpars[z]]
+    
+    p_prof_noleg <- cleanProfilePlot(prof_sub)
+    
+    p_paths <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths = normalizePaths) +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+            axis.title.y = element_blank())
+    
+    aligned_pair <- cowplot::align_plots(p_prof_noleg, p_paths, align = "v", axis = "tb")
+    stacked_list[[z]] <- cowplot::plot_grid(aligned_pair[[1]], aligned_pair[[2]],
+                                            ncol = 1, rel_heights = c(1, 0.7), align = "v", axis = "tb")
+  }
+  
+  body <- cowplot::plot_grid(plotlist = stacked_list, ncol = ncols, ...)
+  
+  return(body)
 }
+

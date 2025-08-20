@@ -2,7 +2,7 @@
 % Please edit documentation in R/toolsSeverin.R
 \name{distributed_computing}
 \alias{distributed_computing}
-\title{Run an any R function on a remote HPC system with SLURM}
+\title{Run any R function on a remote HPC system with SLURM}
 \usage{
 distributed_computing(
   ...,

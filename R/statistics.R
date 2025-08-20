@@ -1291,9 +1291,14 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
   
   # Identify columns that are consistent across replicates
   potential_cols <- setdiff(names(data), c("value", "sigma", "n", select))
-  stable_cols <- potential_cols[sapply(potential_cols, function(col) {
-    all(tapply(data[[col]], condidnt, function(x) length(unique(x)) == 1))
-  })]
+  if (length(potential_cols) == 0) {
+    stable_cols <- character(0)
+  } else {
+    stable_cols <- potential_cols[which(sapply(potential_cols, function(col) {
+      res <- tapply(data[[col]], condidnt, function(x) length(unique(x)) == 1)
+      all(as.logical(res))
+    }))]
+  }
   
   # Add columns from 'keep' (if any), even if unstable
   if (!is.null(keep)) {
