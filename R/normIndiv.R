@@ -908,8 +908,15 @@ getParGrids <- function(mytrafo, mytrafoL, mycondition.grid, SS_pars = NULL){
   
   for(cond in myconditions){
     conditrafo <- mytrafoL[[cond]][estpars]
-    if(any(c(str_detect(conditrafo, "exp\\("),str_detect(conditrafo, "10\\^\\(")))) conditrafo <- gsub("exp\\(", "", conditrafo) %>% gsub("10\\^\\(", "", .) %>% gsub("\\(", "", .) %>% gsub("\\)", "", .)
-    if(any(c(str_detect(est_trafo, "exp\\("),str_detect(est_trafo, "10\\^\\(")))) est_trafo <- gsub("exp\\(", "", est_trafo) %>% gsub("10\\^\\(", "", .) %>%gsub("\\(", "", .) %>% gsub("\\)", "", .)
+    if (any(str_detect(conditrafo, "exp\\(|10\\^\\(|exp\\(log\\(10\\)\\*"))) {
+      conditrafo <- gsub("exp\\(log\\(10\\)\\*|exp\\(|10\\^\\(", "", conditrafo)
+      conditrafo <- gsub("\\(|\\)", "", conditrafo)
+    }
+    
+    if (any(str_detect(est_trafo, "exp\\(|10\\^\\(|exp\\(log\\(10\\)\\*"))) {
+      est_trafo <- gsub("exp\\(log\\(10\\)\\*|exp\\(|10\\^\\(", "", est_trafo)
+      est_trafo <- gsub("\\(|\\)", "", est_trafo)
+    }
     
     # check for mathematical parameter trafos
     myoperations <- c("/|\\+|\\*")
