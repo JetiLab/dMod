@@ -3,9 +3,9 @@
 #' Model prediction function for ODE models. 
 #' @description Interface to combine an ODE and its sensitivity equations
 #' into one model function \code{x(times, pars, deriv = TRUE)} returning ODE output and sensitivities.
-#' @param odemodel object of class \link{odemodel}
+#' @param odemodel object of class 'odemodel' or 'odemodel++', see \link{odemodel}
 #' @param forcings data.frame with columns name (factor), time (numeric) and value (numeric).
-#' The ODE forcings.
+#' The ODE forcings. Not (yet) implemented for boost::odeint::rosenbrock4
 #' @param events data.frame of events with columns "var" (character, the name of the state to be
 #' affected), "time" (numeric, time point), "value" (numeric, value), "method" (character, either
 #' "replace", "add" or "multiply"). See \link[deSolve]{events}.

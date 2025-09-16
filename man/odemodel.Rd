@@ -7,13 +7,14 @@
 odemodel(
   f,
   deriv = TRUE,
+  secderiv = FALSE,
   forcings = NULL,
   events = NULL,
   outputs = NULL,
   fixed = NULL,
   estimate = NULL,
   modelname = "odemodel",
-  solver = c("deSolve", "Sundials"),
+  solver = c("deSolve", "Sundials", "boost::rosenbrock4"),
   gridpoints = NULL,
   verbose = FALSE,
   ...
