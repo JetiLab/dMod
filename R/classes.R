@@ -27,7 +27,7 @@
 #' @export
 #' @example inst/examples/odemodel.R
 #' @import cOde
-odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock4"), gridpoints = NULL, verbose = FALSE, ...) {
+odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
   solver <- match.arg(solver)
@@ -101,9 +101,9 @@ odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = 
       extended <- cOde::funC(fs, forcings = forcings, modelname = modelname_s, solver = solver, nGridpoints = gridpoints, events = events, outputs = outputs, ...)
     }
     out <- list(func = func, extended = extended)
-    class(out) <- "odemodel"
+    class(out) <- c("deSolve", "odemodel")
   }
-  else if (solver == "boost::rosenbrock4") {
+  else if (solver == "boost::rosenbrock34") {
     # Check and warn about unsupported arguments for boost::rosenbrock4
     unsupported_args <- list(
       forcings = forcings,
@@ -137,7 +137,7 @@ odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = 
       out$funCpp_sens  <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"),  deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
       out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_2s"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
     }
-    class(out) <- "odemodel++"
+    class(out) <- c("Boost", "odemodel")
   }
   return(out)
 }
