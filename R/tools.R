@@ -469,6 +469,17 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = F) {
   # Sanitize cores on windows
   if (Sys.info()[['sysname']] == "Windows") cores <- 1
   
+  include_flags <- c(
+    if (!(Sys.info()[['sysname']] == "Windows")) c("-I/usr/include", "-I/usr/local/include"),
+    paste0("-I", shQuote(system.file("include", package = "CppODE")))
+  )
+  cxxflags <- if (Sys.info()[['sysname']] == "Windows") "-std=c++17 -O2 -DNDEBUG" else "-std=c++17 -O2 -DNDEBUG -fPIC"
+  
+  Sys.setenv(
+    PKG_CPPFLAGS = paste(include_flags, collapse = " "),
+    PKG_CXXFLAGS = cxxflags
+  )
+  
   #return(files)
   if (is.null(output)) {
     compilation_out <- mclapply(1:length(files), function(i) {

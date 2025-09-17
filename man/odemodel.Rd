@@ -26,6 +26,8 @@ e.g. a named character vector with the ODE}
 
 \item{deriv}{logical, generate sensitivities or not}
 
+\item{secderiv}{logical, generate second order sensitivities or not}
+
 \item{forcings}{Character vector with the names of the forcings}
 
 \item{events}{data.frame of events with columns "var" (character, the name of the state to be

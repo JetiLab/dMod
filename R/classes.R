@@ -6,6 +6,7 @@
 #' @param f Something that can be converted to \link{eqnvec},
 #' e.g. a named character vector with the ODE
 #' @param deriv logical, generate sensitivities or not
+#' @param secderiv logical, generate second order sensitivities or not
 #' @param forcings Character vector with the names of the forcings
 #' @param events data.frame of events with columns "var" (character, the name of the state to be
 #' affected), "time" (character or numeric, time point), "value" (character or numeric, value),
@@ -26,7 +27,7 @@
 #' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
 #' @export
 #' @example inst/examples/odemodel.R
-#' @import cOde
+#' @import cOde CppODE
 odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
@@ -129,13 +130,13 @@ odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = 
     
     if (deriv && secderiv) {
       out$funCpp_sens  <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"),  deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
-      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_2s"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
+      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2nd"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
     }
     
     if (!deriv && secderiv) {
       warning("secderiv = TRUE without deriv = TRUE is not supported – generating all three function objects anyway.")
       out$funCpp_sens  <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"),  deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
-      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_2s"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
+      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2nd"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
     }
     class(out) <- c("Boost", "odemodel")
   }
