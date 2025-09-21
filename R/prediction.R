@@ -166,7 +166,7 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
 
 #' @export
 Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
-                       optionsOde = list(abstol = 1e-6, reltol = 1e-6, maxtrysteps = 500, maxsteps = 1e6)) {
+                       optionsOde = list(abstol = 1e-6, reltol = 1e-6, maxattemps = 5e3, maxsteps = 1e6)) {
   
   if (!is.null(forcings)) {
     stop("Forcings are not yet supported for boost::rosenbrock34.")
@@ -229,7 +229,7 @@ Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.numeric(c(yini, mypars)),
               as.numeric(optionsOde$abstol),
               as.numeric(optionsOde$reltol),
-              as.integer(optionsOde$maxtrysteps),
+              as.integer(optionsOde$maxattamps),
               as.integer(optionsOde$maxsteps))
       )
       out <- submatrix(out, cols = c("time", names))

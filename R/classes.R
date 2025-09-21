@@ -6,7 +6,6 @@
 #' @param f Something that can be converted to \link{eqnvec},
 #' e.g. a named character vector with the ODE
 #' @param deriv logical, generate sensitivities or not
-#' @param secderiv logical, generate second order sensitivities or not
 #' @param forcings Character vector with the names of the forcings
 #' @param events data.frame of events with columns "var" (character, the name of the state to be
 #' affected), "time" (character or numeric, time point), "value" (character or numeric, value),
@@ -28,7 +27,7 @@
 #' @export
 #' @example inst/examples/odemodel.R
 #' @import cOde CppODE
-odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
+odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
   solver <- match.arg(solver)
@@ -121,22 +120,11 @@ odemodel <- function(f, deriv = TRUE, secderiv = FALSE, forcings=NULL, events = 
     if (length(unsupported) > 0) {
       warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
     }
-    funCpp <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, secderiv = FALSE, verbose = verbose, ...)
+    funCpp <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, verbose = verbose, ...)
     out <- list(funCpp = funCpp)
     
-    if (deriv && !secderiv) {
-      out$funCpp_sens <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
-    }
-    
-    if (deriv && secderiv) {
-      out$funCpp_sens  <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"),  deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
-      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2nd"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
-    }
-    
-    if (!deriv && secderiv) {
-      warning("secderiv = TRUE without deriv = TRUE is not supported – generating all three function objects anyway.")
-      out$funCpp_sens  <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"),  deriv = TRUE, secderiv = FALSE, verbose = verbose, ...)
-      out$funCpp_sens2 <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2nd"), deriv = TRUE, secderiv = TRUE,  verbose = verbose, ...)
+    if (deriv) {
+      out$funCpp_sens <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
     }
     class(out) <- c("Boost", "odemodel")
   }
