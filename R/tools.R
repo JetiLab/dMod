@@ -438,18 +438,14 @@ expand.grid.alt <- function(seq1, seq2) {
 #' @param cores Number of cores used for compilation when several files are compiled.
 #' 
 #' @export
-compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = F) {
+compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE) {
   
   objects <- list(...)
   obj.names <- as.character(substitute(list(...)))[-1]
-  # Get full list of .c and .cpp files for the obsfn, parfn and prdfn objects in ...
   files <- NULL
   for (i in 1:length(objects)) {
-    
     if (inherits(objects[[i]], c("obsfn", "parfn", "prdfn"))) {
-      # Get and reset modelname
       filename <- modelname(objects[[i]])
-      # Expand modelname by possible endings and check if file exists
       filename <- outer(filename, c("", "_deriv", "_s", "_sdcv", "_dfdx", "_dfdp"), paste0)
       files.obj <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
       files.obj <- files.obj[file.exists(files.obj)]
@@ -457,30 +453,31 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = F) {
     }
   }
   
-  
   roots <- sapply(files, function(f) {
     l <- strsplit(f, split = ".", fixed = TRUE)[[1]]
     paste(l[1:(length(l)-1)], collapse = ".")
   })
   
   .so <- .Platform$dynlib.ext
-  #print(files)
   
-  # Sanitize cores on windows
   if (Sys.info()[['sysname']] == "Windows") cores <- 1
   
   include_flags <- c(
-    if (!(Sys.info()[['sysname']] == "Windows")) c("-I/usr/include", "-I/usr/local/include"),
     paste0("-I", shQuote(system.file("include", package = "CppODE")))
   )
-  cxxflags <- if (Sys.info()[['sysname']] == "Windows") "-std=c++17 -O2 -DNDEBUG" else "-std=c++17 -O2 -DNDEBUG -fPIC"
+  
+  cxxflags <- if (Sys.info()[['sysname']] == "Windows") {
+    "-std=c++23 -O2 -DNDEBUG -fno-var-tracking-assignments"
+  } else {
+    # wichtig: -fno-var-tracking-assignments dazu
+    "-std=c++23 -O2 -DNDEBUG -fPIC -fno-var-tracking-assignments"
+  }
   
   Sys.setenv(
     PKG_CPPFLAGS = paste(include_flags, collapse = " "),
     PKG_CXXFLAGS = cxxflags
   )
   
-  #return(files)
   if (is.null(output)) {
     compilation_out <- mclapply(1:length(files), function(i) {
       try(dyn.unload(paste0(roots[i], .so)), silent = TRUE)
@@ -493,10 +490,12 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = F) {
     }
     for (r in roots) try(dyn.unload(paste0(r, .so)), silent = TRUE)
     try(dyn.unload(output), silent = TRUE)
-    system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", paste(files, collapse = " "), " -o ", output, .so, " ", args), intern = !verbose)
+    system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", paste(files, collapse = " "),
+                  " -o ", output, .so, " ", args), intern = !verbose)
     dyn.load(paste0(output, .so))
   }
 }
+
 
 
 

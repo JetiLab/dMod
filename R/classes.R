@@ -37,20 +37,6 @@ odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NU
   } 
   else if (solver == "deSolve") {
     
-    # Check and warn about unsupported arguments for deSolve
-    unsupported_args <- list(
-      secderiv = secderiv
-    )
-    
-    # List of arguments that are not supported
-    unsupported <- names(unsupported_args)[
-      sapply(unsupported_args, function(arg) !is.null(arg) && !(is.logical(arg) && arg == FALSE))
-    ]
-    
-    if (length(unsupported) > 0) {
-      warning(sprintf("The following arguments are not supported by the solver 'deSolve' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
-    }
-    
     if (is.null(gridpoints)) gridpoints <- 2
     func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
     extended <- NULL
