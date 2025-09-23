@@ -166,7 +166,8 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
 
 #' @export
 Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
-                       optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5e3, maxsteps = 1e6)) {
+                     optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1),
+                     optionsSens = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)) {
   
   if (!is.null(forcings)) {
     stop("Forcings are not yet supported for boost::rosenbrock34.")
@@ -207,16 +208,23 @@ Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   # Controls to be modified from outside
   controls <- list(
     names = names,
-    optionsOde = optionsOde
+    optionsOde = optionsOde,
+    optionsSens = optionsSens
   )
   
   P2X <- function(times, pars, deriv=TRUE){
     
+    paramnames <- c(variables, parameters)
+    # check for missing parameters
+    missing <- setdiff(paramnames, names(pars))
+    if (length(missing) > 0) stop(sprintf("Missing parameters: %s", paste(missing, collapse = ", ")))
+    
     yini <- unclass(pars)[variables]
     mypars <- unclass(pars)[parameters]
     
-    optionsOde <- controls$optionsOde
     names <- controls$names
+    optionsOde <- controls$optionsOde
+    optionsSens <- controls$optionsSens
     
     myderivs <- NULL
     mysensitivities <- NULL
@@ -224,27 +232,33 @@ Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       
       # Evaluate model without sensitivities
       out <- suppressWarnings(
-        .Call(paste0("solve_",func),
+        .Call(paste0("solve_", as.character(func)),
               as.numeric(times),
               as.numeric(c(yini, mypars)),
               as.numeric(optionsOde$atol),
               as.numeric(optionsOde$rtol),
-              as.integer(optionsOde$maxattamps),
-              as.integer(optionsOde$maxsteps))
+              as.integer(optionsOde$maxattemps),
+              as.integer(optionsOde$maxsteps),
+              as.numeric(optionsOde$roottol),
+              as.integer(optionsOde$maxroot))
       )
+      colnames(out) <- c("time", variables)
       out <- submatrix(out, cols = c("time", names))
       
     } else {
       
       outSens <- suppressWarnings(
-        .Call(paste0("solve_",func_sens),
+        .Call(paste0("solve_", as.character(func_sens)),
               as.numeric(times),
               as.numeric(c(yini, mypars)),
-              as.numeric(optionsOde$atol),
-              as.numeric(optionsOde$rtol),
-              as.integer(optionsOde$maxtrysteps),
-              as.integer(optionsOde$maxsteps))
+              as.numeric(optionsSens$atol),
+              as.numeric(optionsSens$rtol),
+              as.integer(optionsSens$maxattemps),
+              as.integer(optionsSens$maxsteps),
+              as.numeric(optionsOde$roottol),
+              as.integer(optionsOde$maxroot))
       )
+      colnames(outSens) <- c("time", variables, sensvar)
       out <- submatrix(outSens, cols = c("time", names))
       mysensitivities <- submatrix(outSens, cols = !colnames(outSens) %in% variables)
       

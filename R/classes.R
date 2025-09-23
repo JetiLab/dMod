@@ -72,7 +72,7 @@ odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NU
           events <- rbind(
             as.eventlist(events.sens), 
             as.eventlist(events.func), 
-            straingsAsFactors = FALSE)
+            stringsAsFactors = FALSE)
         } else {
           events <- do.call(rbind, lapply(1:nrow(events.func), function(i) {
             rbind(
