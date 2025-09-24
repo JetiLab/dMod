@@ -177,6 +177,20 @@ Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     stop("Events should be passed to odemodel()")
   }
   
+  defaultsOde  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
+  defaultsSens <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
+  
+  if (!is.list(optionsOde))  optionsOde  <- as.list(optionsOde)
+  if (!is.list(optionsSens)) optionsSens <- as.list(optionsSens)
+  
+  badOde  <- setdiff(names(optionsOde),  names(defaultsOde))
+  badSens <- setdiff(names(optionsSens), names(defaultsSens))
+  if (length(badOde)  > 0) warning("optionsOde: Ignoring unknown option(s): ",  paste(badOde,  collapse=", "))
+  if (length(badSens) > 0) warning("optionsSens: Ignoring unknown option(s): ", paste(badSens, collapse=", "))
+  
+  optionsOde  <- modifyList(defaultsOde,  optionsOde[names(optionsOde)  %in% names(defaultsOde)])
+  optionsSens <- modifyList(defaultsSens, optionsSens[names(optionsSens) %in% names(defaultsSens)])
+  
   func <- odemodel$funCpp
   func_sens <- odemodel$funCpp_sens
   
