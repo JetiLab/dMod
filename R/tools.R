@@ -467,10 +467,10 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   )
   
   cxxflags <- if (Sys.info()[['sysname']] == "Windows") {
-    "-std=c++23 -O2 -DNDEBUG -fno-var-tracking-assignments"
+    "-std=c++23 -O2 -DNDEBUG"
   } else {
     # wichtig: -fno-var-tracking-assignments dazu
-    "-std=c++23 -O2 -DNDEBUG -fPIC -fno-var-tracking-assignments"
+    "-std=c++23 -O2 -DNDEBUG -fPIC"
   }
   
   Sys.setenv(
