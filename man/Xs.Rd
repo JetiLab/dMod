@@ -4,22 +4,13 @@
 \alias{Xs}
 \title{Model prediction function for ODE models.}
 \usage{
-Xs(
-  odemodel,
-  forcings = NULL,
-  events = NULL,
-  names = NULL,
-  condition = NULL,
-  optionsOde = list(method = "lsoda"),
-  optionsSens = list(method = "lsodes"),
-  fcontrol = NULL
-)
+Xs(odemodel, ...)
 }
 \arguments{
-\item{odemodel}{object of class \link{odemodel}}
+\item{odemodel}{object of class 'odemodel' or 'odemodel++', see \link{odemodel}}
 
 \item{forcings}{data.frame with columns name (factor), time (numeric) and value (numeric).
-The ODE forcings.}
+The ODE forcings. Not (yet) implemented for boost::odeint::rosenbrock4}
 
 \item{events}{data.frame of events with columns "var" (character, the name of the state to be
 affected), "time" (numeric, time point), "value" (numeric, value), "method" (character, either

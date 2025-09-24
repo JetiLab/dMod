@@ -26,78 +26,95 @@
 #' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
 #' @export
 #' @example inst/examples/odemodel.R
-#' @import cOde
-odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials"), gridpoints = NULL, verbose = FALSE, ...) {
-
-
-  if (is.null(gridpoints)) gridpoints <- 2
+#' @import cOde CppODE
+odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
-  modelname_s <- paste0(modelname, "_s")
   solver <- match.arg(solver)
 
-  func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
-  extended <- NULL
   if (solver == "Sundials") {
-    # Sundials does not need "extended" by itself, but dMod relies on it.
-    extended <- func
-    attr(extended, "deriv") <- TRUE
-    attr(extended, "variables") <- c(attr(extended, "variables"), attr(extended, "variablesSens"))
-    attr(extended, "events") <- events
-  }
-
-  if (deriv && solver == "deSolve") {
-
-    mystates <- attr(func, "variables")
-    myparameters <- attr(func, "parameters")
-
-    if (is.null(estimate) & !is.null(fixed)) {
-      mystates <- setdiff(mystates, fixed)
-      myparameters <- setdiff(myparameters, fixed)
-    }
-
-    if (!is.null(estimate)) {
-      mystates <- intersect(mystates, estimate)
-      myparameters <- intersect(myparameters, estimate)
-    }
-
-    s <- sensitivitiesSymb(f,
-                           states = mystates,
-                           parameters = myparameters,
-                           inputs = attr(func, "forcings"),
-                           events = attr(func, "events"),
-                           reduce = TRUE)
-    fs <- c(f, s)
-    outputs <- c(attr(s, "outputs"), attr(func, "outputs"))
+    stop("Sundials support has been removed. If you were an active user of the Sundials implementation, please get in touch.")
+  } 
+  else if (solver == "deSolve") {
     
-    events.sens <- attr(s, "events") 
-    events.func <- attr(func, "events")
-    events <- NULL
-    if (!is.null(events.func)) {
-      if (is.data.frame(events.sens)) {
-        events <- rbind(
-          as.eventlist(events.sens), 
-          as.eventlist(events.func), 
-          straingsAsFactors = FALSE)
-      } else {
-        events <- do.call(rbind, lapply(1:nrow(events.func), function(i) {
-          rbind(
-            as.eventlist(events.sens[[i]]), 
-            as.eventlist(events.func[i,]), 
-            stringsAsFactors = FALSE)
-        }))
+    if (is.null(gridpoints)) gridpoints <- 2
+    func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
+    extended <- NULL
+    if (deriv) {
+      modelname_s <- paste0(modelname, "_s")
+      mystates <- attr(func, "variables")
+      myparameters <- attr(func, "parameters")
+      
+      if (is.null(estimate) & !is.null(fixed)) {
+        mystates <- setdiff(mystates, fixed)
+        myparameters <- setdiff(myparameters, fixed)
       }
       
+      if (!is.null(estimate)) {
+        mystates <- intersect(mystates, estimate)
+        myparameters <- intersect(myparameters, estimate)
+      }
+      
+      s <- sensitivitiesSymb(f,
+                             states = mystates,
+                             parameters = myparameters,
+                             inputs = attr(func, "forcings"),
+                             events = attr(func, "events"),
+                             reduce = TRUE)
+      fs <- c(f, s)
+      outputs <- c(attr(s, "outputs"), attr(func, "outputs"))
+      
+      events.sens <- attr(s, "events") 
+      events.func <- attr(func, "events")
+      events <- NULL
+      if (!is.null(events.func)) {
+        if (is.data.frame(events.sens)) {
+          events <- rbind(
+            as.eventlist(events.sens), 
+            as.eventlist(events.func), 
+            stringsAsFactors = FALSE)
+        } else {
+          events <- do.call(rbind, lapply(1:nrow(events.func), function(i) {
+            rbind(
+              as.eventlist(events.sens[[i]]), 
+              as.eventlist(events.func[i,]), 
+              stringsAsFactors = FALSE)
+          }))
+        }
+        
+      }
+      
+      extended <- cOde::funC(fs, forcings = forcings, modelname = modelname_s, solver = solver, nGridpoints = gridpoints, events = events, outputs = outputs, ...)
     }
-    
-    extended <- cOde::funC(fs, forcings = forcings, modelname = modelname_s, solver = solver, nGridpoints = gridpoints, events = events, outputs = outputs, ...)
+    out <- list(func = func, extended = extended)
+    class(out) <- c("deSolve", "odemodel")
   }
-
-  out <- list(func = func, extended = extended)
-  attr(out, "class") <- "odemodel"
+  else if (solver == "boost::rosenbrock34") {
+    # Check and warn about unsupported arguments for boost::rosenbrock4
+    unsupported_args <- list(
+      forcings = forcings,
+      outputs = outputs,
+      estimate = estimate,
+      gridpoints = gridpoints
+    )
+    
+    # List of arguments that are not supported
+    unsupported <- names(unsupported_args)[
+      sapply(unsupported_args, function(arg) !is.null(arg) && !(is.logical(arg) && arg == FALSE))
+    ]
+    
+    if (length(unsupported) > 0) {
+      warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
+    }
+    funCpp <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, verbose = verbose, ...)
+    out <- list(funCpp = funCpp)
+    
+    if (deriv) {
+      out$funCpp_sens <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
+    }
+    class(out) <- c("Boost", "odemodel")
+  }
   return(out)
-
-
 }
 
 ## Function classes ------------------------------------------------------

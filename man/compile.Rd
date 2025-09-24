@@ -4,7 +4,7 @@
 \alias{compile}
 \title{Compile one or more prdfn, obsfn or parfn objects}
 \usage{
-compile(..., output = NULL, args = NULL, cores = 1, verbose = F)
+compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
 \item{...}{Objects of class parfn, obsfn or prdfn}

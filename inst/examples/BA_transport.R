@@ -176,7 +176,7 @@ pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*pSS)(times, pouter),data)
 
 # Objective function
-obj <- normL2(data, g * x * pSS, times = times, attr.name = "data") + constraintL2(pouter, sigma = 5, attr.name = "prior")
+obj <- normL2(data, g * x * pSS, attr.name = "data") + constraintL2(pouter, sigma = 5, attr.name = "prior")
 
 # Fit 50 times again
 out_frame <- mstrust(obj,pouter,studyname = "bamodel", cores=10,fits=50)
@@ -205,7 +205,7 @@ p <- P(trafo)
 # Objective function
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
-obj <- normL2(data, g * x * p, times = times, attr.name = "data") + constraintL2(pouter, sigma = 20, attr.name = "prior")
+obj <- normL2(data, g * x * p, attr.name = "data") + constraintL2(pouter, sigma = 20, attr.name = "prior")
 
 # Fit 50 times again
 out_frame <- mstrust(obj,pouter,studyname = "bamodel", cores=10,fits=50)
@@ -216,7 +216,7 @@ bestfit <- as.parvec(out_frame)
 plot((g * x * p)(times, bestfit), data)
 
 # remove the prior
-obj <- normL2(data, g * x * p, times = times, attr.name = "data")
+obj <- normL2(data, g * x * p, attr.name = "data")
 
 # refit
 refit <- trust(obj, bestfit, rinit = 1, rmax = 10)
@@ -237,7 +237,7 @@ plotPaths(profiles, whichPar = "reflux_open")
 ## Prediction uncertainty taken from validation profile --------------------------------------------------------------------------
 
 # choose sigma below 1 percent of the prediction in order to pull the prediction strongly towards d1
-obj.validation <- normL2(data, g * x * p, times = times, attr.name = "data") +
+obj.validation <- normL2(data, g * x * p, times = c(10), attr.name = "data") +
   datapointL2(name = "TCA_cell", time = 10, value = "v", sigma = 1, attr.name = "validation", condition = "closed")
 
 # If sigma is not known, and you therefore decide to calculate prediction confidence intervals, just choose a very small sigma, in order to "pull strongly" on the trajectory
@@ -265,7 +265,7 @@ prediction_band <- do.call(rbind, lapply(seq(10, 50, 10), function(t) {
   
   cat("Computing prediction profile for t =", t, "\n")
   
-  obj.validation <- normL2(data, g * x * p, times = times, attr.name = "data") + 
+  obj.validation <- normL2(data, g * x * p, times = c(t), attr.name = "data") + 
     datapointL2(name = "TCA_cell", time = t, value = "v", sigma = 1, attr.name = "validation", condition = "closed")
   
   refit <- trust(obj.validation, parinit = c(v = 180, bestfit), rinit = 1, rmax = 10, iterlim = 1000)
