@@ -298,7 +298,7 @@ Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   
   attr(P2X, "parameters") <- c(variables, parameters)
   attr(P2X, "equations") <- as.eqnvec(attr(func, "equations"))
-  attr(P2X, "forcings") <- NULL
+  attr(P2X, "forcings") <- forcings
   attr(P2X, "events") <- events
   attr(P2X, "modelname") <- func[1]
   
@@ -377,12 +377,6 @@ Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optio
   
   
   prdfn(P2X, c(variables, parameters), condition) 
-  
-  
-  
-  
-  
-  
   
 }
 

@@ -133,6 +133,60 @@ res <- function(data, out, err = NULL) {
 }
 
 
+#' Compute residuals and Jacobian with BLOQ handling (C++ backend)
+#'
+#' @description
+#' `resCpp()` is the high-performance C++ equivalent of [res()].  
+#' It computes residuals, weighted residuals, and the combined Jacobian
+#' (prediction + error model sensitivities), with optional BLOQ handling
+#' via methods M1, M3, M4NM, and M4BEAL.
+#'
+#' @details
+#' The function calls directly into C++ via Rcpp, so it is much faster
+#' than a pure R implementation.  
+#' If `optBLOQ = "none"`, the results are equivalent to [res()].  
+#' Otherwise, BLOQ-specific transformations of residuals and Jacobian
+#' entries are applied.
+#'
+#' @param data A data.frame with columns:
+#'   * `time` (numeric)
+#'   * `name` (factor or character, observable name)
+#'   * `value` (numeric, observed value)
+#'   * `sigma` (numeric, residual standard deviation)
+#'   * `lloq` (numeric, lower limit of quantification)
+#' @param out Numeric matrix of model predictions (rows = times, cols = observables).
+#' @param deriv Optional numeric matrix of sensitivities of predictions
+#'   w.r.t. parameters (first two columns = time and name).
+#' @param deriv_err Optional numeric matrix of sensitivities of the error
+#'   model w.r.t. parameters (first two columns = time and name).
+#' @param optBLOQ Character string: `"none"`, `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.
+#'
+#' @return A data.frame of class `objframe` with columns:
+#'   * `time`, `name`, `value`, `prediction`, `sigma`,
+#'     `residual`, `weighted.residual`, `weighted.0`, `bloq`
+#'
+#'   and with an attribute `jacobian` (numeric matrix of residual sensitivities).
+#'
+#' @seealso [res()] for the pure-R implementation without BLOQ handling.
+#'
+#' @examples
+#' df <- data.frame(time = 1:3,
+#'                  name = c("A","A","A"),
+#'                  value = c(1,2,3),
+#'                  sigma = c(1,1,1),
+#'                  lloq = c(0,0,0))
+#' out <- matrix(c(1.1, 2.1, 3.1), ncol = 1)
+#'
+#' resCpp(df, out, optBLOQ = "M3")
+#'
+#' @export
+resCpp <- function(data, out, deriv = NULL, deriv_err = NULL, optBLOQ = "none") {
+  .Call(`_dMod_resCpp`, data, out, deriv, deriv_err, optBLOQ)
+}
+
+
+
+
 #' Time-course data for the JAK-STAT cell signaling pathway
 #'
 #' Phosphorylated Epo receptor (pEpoR), phosphorylated STAT in the
@@ -143,6 +197,8 @@ res <- function(data, out, err = NULL) {
 #' @docType data
 #' @keywords data
 NULL
+
+
 
 
 # Match with numeric tolerance 

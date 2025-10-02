@@ -848,9 +848,9 @@ funC0 <- function(x, variables = getSymbols(x, exclude = parameters),
       filename <- modelname
     }
     body <- paste(
-      "#include <R.h>\n", 
-      "#include <math.h>\n", 
-      "void", funcname, "( double * x, double * y, double * p, int * n, int * k, int * l ) {\n",
+      "#include <R.h>\n",
+      "#include <math.h>\n",
+      sprintf("void %s(double * x, double * y, double * p, int * n, int * k, int * l) {\n", funcname),
       "for(int i = 0; i< *n; i++) {\n",
       paste(expr, collapse = "\n"),
       "\n}\n}"
@@ -900,7 +900,9 @@ funC0 <- function(x, variables = getSymbols(x, exclude = parameters),
       # each time, funC0 is called, the C function being generated has
       # or should have another name.
       # loadDLL(func = funcname, cfunction = funcname)
-      out <- matrix(.C(funcname, x = x, y = y, p = p, n = n, k = k, l = l)$y, nrow = length(outnames), ncol = n)
+      out <- matrix(.C(getNativeSymbolInfo(as.character(funcname)) ,
+                       x = x, y = y, p = p, n = n, k = k, l = l)$y,
+                    nrow = length(outnames), ncol = n)
       rownames(out) <- outnames
       
       # Make sure that output does not containt NaN
