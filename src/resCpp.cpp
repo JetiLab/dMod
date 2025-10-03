@@ -304,9 +304,9 @@ Rcpp::List resCpp(Rcpp::DataFrame data, SEXP out, Rcpp::Nullable<Rcpp::DataFrame
         if (!R_finite(val) || val < 0.0) val = 0.0;
         weighted_residual[i] = std::sqrt(val);
         
-      } else if (optBLOQ == "M4NM" || optBLOQ == "M4BEAL") {
+      } else if (optBLOQ == "M4NM") {
         if (w0 < 0.0) {
-          stop("M4 methods require LLOQ >= 0 and prediction/sigma >= 0; consider M3 for negative LLOQ.");
+          stop("M4NM requires LLOQ >= 0 and prediction/sigma >= 0; consider M3 for negative LLOQ.");
         }
         const double Phi_wr = Phi(wr);
         const double Phi_w0 = Phi(w0);
@@ -317,7 +317,7 @@ Rcpp::List resCpp(Rcpp::DataFrame data, SEXP out, Rcpp::Nullable<Rcpp::DataFrame
         weighted_residual[i] = std::sqrt(val);
         
       } else {
-        stop("Unknown optBLOQ '%s' (use 'none','M1','M3','M4NM','M4BEAL').", optBLOQ.c_str());
+        stop("Unknown optBLOQ '%s' (use 'none','M1','M3','M4NM').", optBLOQ.c_str());
       }
     }
   }

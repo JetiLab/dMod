@@ -16,7 +16,8 @@ optionally `lloq`.}
 Used to fill NA values in `data$sigma`.}
 
 \item{optBLOQ}{Character string specifying BLOQ handling method:
-`"none"` (default), `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.}
+`"none"` (default), `"M1"`, `"M3"`, or `"M4NM"`.
+Note: `"M4BEAL"` is not available; use [nll()] for M4BEAL.}
 }
 \value{
 An `objframe` (data.frame with class `c("objframe", "data.frame")`) 
@@ -63,12 +64,26 @@ When `value <= lloq`, the observation is flagged as BLOQ (`bloq = TRUE`).
 The behavior depends on `optBLOQ`:
 
 - `"none"` (default): Standard residuals, equivalent to [res()]
-- `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0)
-- `"M3"`: Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual
-- `"M4NM"` or `"M4BEAL"`: Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
-  where `w0 = prediction/sigma`. Requires `lloq >= 0`.
+- `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0).
+  Useful when you want to completely ignore BLOQ data.
+- `"M3"`: Likelihood-based method using the cumulative normal distribution.
+  Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual.
+  This method is appropriate when LLOQ can be negative.
+  **Compatible with Levenberg-Marquardt optimization.**
+- `"M4NM"`: NONMEM-style M4 method. Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
+  where `w0 = prediction/sigma`. Requires `lloq >= 0` and `prediction >= 0`.
+  **Compatible with Levenberg-Marquardt optimization.**
 
-Note: For `optBLOQ = "none"`, values below LLOQ are set to LLOQ before
+**Note on M4BEAL**: The Beal M4 method includes an additional ALOQ correction term
+that cannot be represented as a sum of squared residuals. Therefore, M4BEAL is
+**not available in resCpp** and must be used via [nll()] with full likelihood
+optimization methods (e.g., `trust()`, `nlminb()`).
+
+All methods implemented in `resCpp` are compatible with Levenberg-Marquardt
+optimization since they transform residuals into forms where `sum(residual^2)`
+approximates the negative log-likelihood.
+
+Note: For all methods, values below LLOQ are set to LLOQ before
 computing residuals (same as [res()]).
 }
 \examples{

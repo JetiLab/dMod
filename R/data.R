@@ -167,12 +167,26 @@ res <- function(data, out, err = NULL) {
 #' The behavior depends on `optBLOQ`:
 #' 
 #' - `"none"` (default): Standard residuals, equivalent to [res()]
-#' - `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0)
-#' - `"M3"`: Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual
-#' - `"M4NM"` or `"M4BEAL"`: Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
-#'   where `w0 = prediction/sigma`. Requires `lloq >= 0`.
+#' - `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0).
+#'   Useful when you want to completely ignore BLOQ data.
+#' - `"M3"`: Likelihood-based method using the cumulative normal distribution.
+#'   Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual.
+#'   This method is appropriate when LLOQ can be negative.
+#'   **Compatible with Levenberg-Marquardt optimization.**
+#' - `"M4NM"`: NONMEM-style M4 method. Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
+#'   where `w0 = prediction/sigma`. Requires `lloq >= 0` and `prediction >= 0`.
+#'   **Compatible with Levenberg-Marquardt optimization.**
 #'
-#' Note: For `optBLOQ = "none"`, values below LLOQ are set to LLOQ before
+#' **Note on M4BEAL**: The Beal M4 method includes an additional ALOQ correction term
+#' that cannot be represented as a sum of squared residuals. Therefore, M4BEAL is
+#' **not available in resCpp** and must be used via [nll()] with full likelihood
+#' optimization methods (e.g., `trust()`, `nlminb()`).
+#'
+#' All methods implemented in `resCpp` are compatible with Levenberg-Marquardt
+#' optimization since they transform residuals into forms where `sum(residual^2)`
+#' approximates the negative log-likelihood.
+#'
+#' Note: For all methods, values below LLOQ are set to LLOQ before
 #' computing residuals (same as [res()]).
 #'
 #' @param data data.frame with columns `time`, `name`, `value`, `sigma`, 
@@ -181,7 +195,8 @@ res <- function(data, out, err = NULL) {
 #' @param err Optional error model predictions (data.frame or matrix). 
 #'   Used to fill NA values in `data$sigma`.
 #' @param optBLOQ Character string specifying BLOQ handling method:
-#'   `"none"` (default), `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.
+#'   `"none"` (default), `"M1"`, `"M3"`, or `"M4NM"`.
+#'   Note: `"M4BEAL"` is not available; use [nll()] for M4BEAL.
 #'
 #' @return An `objframe` (data.frame with class `c("objframe", "data.frame")`) 
 #'   containing:
@@ -240,9 +255,10 @@ resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
   }
   
   # Validate optBLOQ
-  valid_bloq <- c("none", "M1", "M3", "M4NM", "M4BEAL")
+  valid_bloq <- c("none", "M1", "M3", "M4NM")
   if (!optBLOQ %in% valid_bloq) {
-    stop("'optBLOQ' must be one of: ", paste(valid_bloq, collapse = ", "))
+    stop("'optBLOQ' must be one of: ", paste(valid_bloq, collapse = ", "),
+         "\nNote: M4BEAL is not available in resCpp. Use nll() for M4BEAL.")
   }
   
   # Convert name to character if factor
@@ -351,6 +367,117 @@ resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
   return(result)
 }
 
+
+#' @title Check if object is an objframe
+#' @description Test whether an object is of class objframe
+#' @param x Object to test
+#' @return Logical
+#' @export
+is.objframe <- function(x) {
+  inherits(x, "objframe")
+}
+
+
+#' @title Print method for objframe
+#' @description Print an objframe object
+#' @param x An objframe object
+#' @param ... Additional arguments passed to print.data.frame
+#' @export
+print.objframe <- function(x, ...) {
+  cat("Objective frame with", nrow(x), "observations\n")
+  if (!is.null(attr(x, "deriv"))) {
+    cat("  - includes derivatives\n")
+  }
+  if (!is.null(attr(x, "deriv.err"))) {
+    cat("  - includes error model derivatives\n")
+  }
+  cat("\n")
+  print.data.frame(x, ...)
+}
+
+
+#' @title Summary method for objframe
+#' @description Summarize an objframe object
+#' @param object An objframe object
+#' @param ... Additional arguments (not used)
+#' @export
+summary.objframe <- function(object, ...) {
+  cat("Objective frame summary\n")
+  cat("=======================\n\n")
+  
+  cat("Number of observations:", nrow(object), "\n")
+  cat("Number of observables:", length(unique(object$name)), "\n")
+  cat("Observables:", paste(unique(object$name), collapse = ", "), "\n\n")
+  
+  cat("Time range:", min(object$time), "to", max(object$time), "\n\n")
+  
+  if ("bloq" %in% names(object)) {
+    n_bloq <- sum(object$bloq)
+    if (n_bloq > 0) {
+      cat("BLOQ observations:", n_bloq, "(", 
+          round(100 * n_bloq / nrow(object), 1), "%)\n")
+      bloq_by_name <- tapply(object$bloq, object$name, sum)
+      cat("  by observable:\n")
+      for (nm in names(bloq_by_name)) {
+        cat("    ", nm, ":", bloq_by_name[nm], "\n")
+      }
+      cat("\n")
+    }
+  }
+  
+  cat("Residual statistics:\n")
+  cat("  Mean residual:", mean(object$residual, na.rm = TRUE), "\n")
+  cat("  Mean weighted residual:", mean(object$weighted.residual, na.rm = TRUE), "\n")
+  cat("  RMSE:", sqrt(mean(object$residual^2, na.rm = TRUE)), "\n")
+  
+  if (!is.null(attr(object, "deriv"))) {
+    deriv <- attr(object, "deriv")
+    cat("\nDerivatives available for parameters:\n")
+    cat(" ", paste(setdiff(names(deriv), c("time", "name")), collapse = ", "), "\n")
+  }
+  
+  invisible(object)
+}
+
+
+#' @title Plot method for objframe
+#' @description Plot predictions vs observations from an objframe
+#' @param x An objframe object
+#' @param ... Additional arguments passed to plot
+#' @export
+plot.objframe <- function(x, ...) {
+  
+  # Split by observable
+  observables <- unique(x$name)
+  n_obs <- length(observables)
+  
+  # Setup plot layout
+  n_col <- ceiling(sqrt(n_obs))
+  n_row <- ceiling(n_obs / n_col)
+  
+  old_par <- par(mfrow = c(n_row, n_col), mar = c(4, 4, 2, 1))
+  on.exit(par(old_par))
+  
+  for (obs in observables) {
+    subset_data <- x[x$name == obs, ]
+    
+    # Plot observations
+    plot(subset_data$time, subset_data$weighted.residual,
+         xlab = "Time", ylab = "Value",
+         main = obs,
+         pch = 16, col = "black", ...)
+    
+    # Mark BLOQ observations if present
+    if ("bloq" %in% names(subset_data)) {
+      bloq_data <- subset_data[subset_data$bloq, ]
+      if (nrow(bloq_data) > 0) {
+        points(bloq_data$time, bloq_data$value, pch = 1, col = "blue", cex = 1.5)
+      }
+    }
+  }
+  
+  invisible(x)
+}
 
 #' Time-course data for the JAK-STAT cell signaling pathway
 #'
