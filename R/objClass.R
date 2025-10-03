@@ -127,7 +127,7 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' @example inst/examples/normL2.R
 #' @importFrom parallel mclapply
 #' @export
-normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1) {
+normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
 
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
   if (!is.null(times)) timesD <- sort(union(times, timesD))
@@ -143,7 +143,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
   # might be necessary to "store" errmodel in the objective function (-> runbg)
   force(errmodel)  
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = controls$conditions, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = controls$conditions, env = NULL, cores = 1) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
@@ -167,7 +167,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
         err <- NULL
         if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
           err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
+        nll(resCpp(data[[cn]], prediction[[cn]], err[[cn]], optBLOQ = "none"), pars = pouter, deriv = deriv)
       }, mc.cores = cores)
       out.data <- Reduce("+", out.data)
     } else {
@@ -175,7 +175,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
         err <- NULL
         if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
           err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
+        nll(resCpp(data[[cn]], prediction[[cn]], err[[cn]], optBLOQ = "none"), pars = pouter, deriv = deriv)
       })
       out.data <- Reduce("+", out.data)
     }

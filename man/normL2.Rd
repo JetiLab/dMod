@@ -4,7 +4,7 @@
 \alias{normL2}
 \title{L2 norm between data and model prediction}
 \usage{
-normL2(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1)
+normL2(data, x, errmodel = NULL, times = NULL, attr.name = "data")
 }
 \arguments{
 \item{data}{object of class \link{datalist}}
@@ -20,8 +20,6 @@ function makes use of events, hand over event \code{times} here.}
 \item{attr.name}{character. The constraint value is additionally returned in an 
 attributed with this name}
 
-\item{cores}{to parallelize over conditions not over fits. This will be ignored on windows machines.}
-
 \item{forcings}{TO BE FILLED BY DANIEL K}
 
 \item{iiv}{Example: c("ka", "ETA_EMAX"). \cr 
@@ -34,6 +32,8 @@ Vector with names which are individualized per condition}
 \item{fixed.grid}{data.frame(parname, partask, ids...) Lookup table for fixed parameters}
 
 \item{nauxtimes}{additional simulation times}
+
+\item{cores}{to parallelize over conditions not over fits. This will be ignored on windows machines.}
 }
 \value{
 Object of class \code{obsfn}, i.e. a function 

@@ -625,7 +625,6 @@ datalist <- function(...) {
 
 ## Objective classes ---------------------------------------------------------
 
-
 #' Generate objective list
 #'
 #' @description An objective list contains an objective value, a gradient, and a Hessian matrix.
@@ -676,6 +675,26 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   attr(out, "deriv.err") <- deriv.err
   class(out) <- c("objframe", "data.frame")
   
+  return(out)
+}
+
+# Add these entries to your existing classes.R file
+
+#' Generate residual object
+#'
+#' @description A residual object contains residuals and an optional Jacobian matrix.
+#' This is the output format for lsqcpp-compatible objective functions.
+#'
+#' Residual objects are returned by residual objective functions as being generated
+#' by \link{resL2}, \link{constraintResL2}, and \link{datapointResL2}.
+#'
+#' @param residuals Numeric vector of residuals
+#' @param jacobian Matrix with derivatives of residuals w.r.t. parameters (optional)
+#' @return Object of class \code{resObj}
+#' @export
+reslist <- function(residuals, jacobian = NULL) {
+  out <- list(residuals = residuals, jacobian = jacobian)
+  class(out) <- c("reslist", "list")
   return(out)
 }
 
@@ -816,6 +835,201 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 
   }
 
+}
+
+#' Direct sum of residual objective functions
+#'
+#' @description Add two residual objective functions by concatenating their
+#' residuals and Jacobians.
+#'
+#' @param x1 Function of class \code{resObjfn}
+#' @param x2 Function of class \code{resObjfn}
+#' @details The residual objective functions are evaluated and their residuals
+#' are concatenated. Jacobians are stacked vertically (rbind). Parameters are
+#' matched by name and expanded to include all parameters from both functions.
+#' @return Object of class \code{resObjfn}.
+#' @seealso \link{resL2}, \link{constraintResL2}, \link{datapointResL2}
+#' @export
+"+.resObjfn" <- function(x1, x2) {
+  
+  if (is.null(x1)) return(x2)
+  if (is.null(x2)) return(x1)
+  
+  # Combine conditions and parameters
+  cond1 <- attr(x1, "conditions")
+  cond2 <- attr(x2, "conditions")
+  conditions <- union(cond1, cond2)
+  
+  pars1 <- attr(x1, "parameters")
+  pars2 <- attr(x2, "parameters")
+  parameters <- union(pars1, pars2)
+  
+  model1 <- attr(x1, "modelname")
+  model2 <- attr(x2, "modelname")
+  modelname <- union(model1, model2)
+  
+  combined_fn <- function(..., fixed = NULL, deriv = TRUE, conditions = conditions, env = NULL) {
+    
+    # Evaluate both objectives
+    # Handle condition overlap similar to objfn
+    res1 <- res2 <- NULL
+    
+    if (is.null(cond1)) {
+      res1 <- x1(..., fixed = fixed, deriv = deriv, conditions = cond1, env = env)
+    } else if (any(conditions %in% cond1)) {
+      res1 <- x1(..., fixed = fixed, deriv = deriv, 
+                 conditions = intersect(conditions, cond1), env = env)
+    }
+    
+    if (is.null(cond2)) {
+      res2 <- x2(..., fixed = fixed, deriv = deriv, conditions = cond2, 
+                 env = attr(res1, "env"))
+    } else if (any(conditions %in% cond2)) {
+      res2 <- x2(..., fixed = fixed, deriv = deriv, 
+                 conditions = intersect(conditions, cond2), 
+                 env = attr(res1, "env"))
+    }
+    
+    # Handle NULL returns
+    if (is.null(res1)) return(res2)
+    if (is.null(res2)) return(res1)
+    
+    # Combine residuals
+    residuals <- c(res1$residuals, res2$residuals)
+    
+    # Combine Jacobians
+    jacobian <- NULL
+    if (deriv && !is.null(res1$jacobian) && !is.null(res2$jacobian)) {
+      # Get union of parameter names
+      pars_union <- union(colnames(res1$jacobian), colnames(res2$jacobian))
+      
+      # Expand jacobians to have same columns
+      jac1 <- matrix(0, nrow = nrow(res1$jacobian), ncol = length(pars_union),
+                     dimnames = list(rownames(res1$jacobian), pars_union))
+      jac1[, colnames(res1$jacobian)] <- res1$jacobian
+      
+      jac2 <- matrix(0, nrow = nrow(res2$jacobian), ncol = length(pars_union),
+                     dimnames = list(rownames(res2$jacobian), pars_union))
+      jac2[, colnames(res2$jacobian)] <- res2$jacobian
+      
+      jacobian <- rbind(jac1, jac2)
+    }
+    
+    out <- resObj(residuals = residuals, jacobian = jacobian)
+    attr(out, "env") <- attr(res1, "env")
+    
+    return(out)
+  }
+  
+  class(combined_fn) <- c("resObjfn", "fn")
+  attr(combined_fn, "conditions") <- conditions
+  attr(combined_fn, "parameters") <- parameters
+  attr(combined_fn, "modelname") <- modelname
+  
+  return(combined_fn)
+}
+
+
+#' Add resObj objects
+#'
+#' @description Combine two resObj outputs by concatenating residuals and Jacobians.
+#'
+#' @param obj1 resObjlist object
+#' @param obj2 resObjlist object
+#' @return Combined resObjlist object
+#' @export
+"+.resObjlist" <- function(obj1, obj2) {
+  
+  if (is.null(obj1)) return(obj2)
+  if (is.null(obj2)) return(obj1)
+  
+  # Combine residuals
+  residuals <- c(obj1$residuals, obj2$residuals)
+  
+  # Combine Jacobians
+  jacobian <- NULL
+  if (!is.null(obj1$jacobian) && !is.null(obj2$jacobian)) {
+    # Get union of parameter names
+    pars_union <- union(colnames(obj1$jacobian), colnames(obj2$jacobian))
+    
+    # Expand jacobians to have same columns
+    jac1 <- matrix(0, nrow = nrow(obj1$jacobian), ncol = length(pars_union),
+                   dimnames = list(rownames(obj1$jacobian), pars_union))
+    jac1[, colnames(obj1$jacobian)] <- obj1$jacobian
+    
+    jac2 <- matrix(0, nrow = nrow(obj2$jacobian), ncol = length(pars_union),
+                   dimnames = list(rownames(obj2$jacobian), pars_union))
+    jac2[, colnames(obj2$jacobian)] <- obj2$jacobian
+    
+    jacobian <- rbind(jac1, jac2)
+  }
+  
+  # Preserve attributes
+  env1 <- attr(obj1, "env")
+  env2 <- attr(obj2, "env")
+  
+  out <- resObjlist(residuals = residuals, jacobian = jacobian)
+  attr(out, "env") <- if (!is.null(env1)) env1 else env2
+  
+  return(out)
+}
+
+
+#' Multiplication of residual objective functions with scalars
+#'
+#' @description The \code{\%.*\%} operator allows to multiply objects of class 
+#' resObj or resObjfn with a scalar.
+#'
+#' @param x1 Numeric scalar
+#' @param x2 Object of class resObjfn or resObjlist
+#' @return A residual objective function resObjfn or resObjlist object
+#'
+#' @export
+"%.*%.resObjlist" <- function(x1, x2) {
+  
+  if (!is.numeric(x1) || length(x1) != 1) {
+    stop("Scalar multiplication requires a numeric scalar")
+  }
+  
+  if (inherits(x2, "resObjlist")) {
+    out <- resObj(
+      residuals = sqrt(x1) * x2$residuals,  # Scale residuals by sqrt(scalar)
+      jacobian = if (!is.null(x2$jacobian)) sqrt(x1) * x2$jacobian else NULL
+    )
+    
+    # Copy attributes
+    attributes(out)[setdiff(names(attributes(x2)), c("class", "names"))] <- 
+      attributes(x2)[setdiff(names(attributes(x2)), c("class", "names"))]
+    
+    return(out)
+    
+  } else if (inherits(x2, "resObjfn")) {
+    
+    conditions12 <- attr(x2, "conditions")
+    parameters12 <- attr(x2, "parameters")
+    modelname12 <- attr(x2, "modelname")
+    
+    outfn <- function(..., fixed = NULL, deriv = TRUE, 
+                      conditions = conditions12, env = NULL) {
+      
+      v2 <- x2(..., fixed = fixed, deriv = deriv, 
+               conditions = conditions, env = env)
+      
+      out <- x1 %.*% v2
+      attr(out, "env") <- attr(v2, "env")
+      return(out)
+    }
+    
+    class(outfn) <- c("resObjfn", "fn")
+    attr(outfn, "conditions") <- conditions12
+    attr(outfn, "parameters") <- parameters12
+    attr(outfn, "modelname") <- modelname12
+    
+    return(outfn)
+    
+  } else {
+    stop("Can only multiply resObjlist or resObjfn objects")
+  }
 }
 
 

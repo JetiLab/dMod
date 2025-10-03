@@ -118,6 +118,9 @@ subset(result_m3, bloq == TRUE)
 [res()] for the R implementation, [objframe()] for the output class
 
 Other dMod interface: 
-\code{\link{res}()}
+\code{\link{constraintResL2}()},
+\code{\link{datapointResL2}()},
+\code{\link{res}()},
+\code{\link{resL2}()}
 }
 \concept{dMod interface}

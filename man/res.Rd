@@ -30,6 +30,9 @@ When sigma is given in the data, it always has priority over the sigma in the er
 }
 \seealso{
 Other dMod interface: 
-\code{\link{resCpp}()}
+\code{\link{constraintResL2}()},
+\code{\link{datapointResL2}()},
+\code{\link{resCpp}()},
+\code{\link{resL2}()}
 }
 \concept{dMod interface}

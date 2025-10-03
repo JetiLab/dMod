@@ -273,6 +273,14 @@ resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
   # Call C++ function
   result <- .Call(`_dMod_resCpp`, data, out, err, optBLOQ)
   
+  # Check which sigmas were NA (same logic as res())
+  sNAIndex <- is.na(data$sigma)
+  
+  # If no NA sigmas, err is not actually used - set to NULL
+  if (!any(sNAIndex)) {
+    err <- NULL
+  }
+  
   # --- Transform deriv attribute to match res() output format ---
   deriv_out <- attr(out, "deriv")
   if (!is.null(deriv_out)) {
@@ -316,6 +324,7 @@ resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
   }
   
   # --- Transform deriv.err attribute to match res() output format ---
+  # Only if err was actually used (i.e., some sigmas were NA)
   deriv_err <- attr(err, "deriv")
   if (!is.null(err) && !is.null(deriv_err)) {
     # Extract parameter names from column names
@@ -366,7 +375,6 @@ resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
   
   return(result)
 }
-
 
 #' @title Check if object is an objframe
 #' @description Test whether an object is of class objframe

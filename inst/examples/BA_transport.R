@@ -2,6 +2,7 @@
 rm(list=ls())
 library(dMod)
 library(dplyr)
+library(tidyr)
 library(ggplot2)
 theme_set(theme_dMod())
 setwd(tempdir()) # change if you want to keep the files that dMod creates internally
@@ -12,10 +13,10 @@ set.seed(5555)
 # Define via reactions
 
 reactions <- eqnlist() %>%
-  addReaction("TCA_buffer", "TCA_cell",  rate = "import*TCA_buffer", description = "Uptake") %>%
-  addReaction("TCA_cell", "TCA_buffer",  rate = "export_sinus*TCA_cell", description = "Sinusoidal export") %>%
-  addReaction("TCA_cell", "TCA_cana",    rate = "export_cana*TCA_cell", description = "Canalicular export") %>%
-  addReaction("TCA_cana", "TCA_buffer",  rate = "reflux*TCA_cana", description = "Reflux into the buffer")
+  addReaction("TCA_buffer", "TCA_cell",  rate = "k_import*TCA_buffer", description = "Uptake") %>%
+  addReaction("TCA_cell", "TCA_buffer",  rate = "k_export_sinus*TCA_cell", description = "Sinusoidal export") %>%
+  addReaction("TCA_cell", "TCA_cana",    rate = "k_export_cana*TCA_cell", description = "Canalicular export") %>%
+  addReaction("TCA_cana", "TCA_buffer",  rate = "k_reflux*TCA_cana", description = "Reflux into the buffer")
 
 # Define via ODE system (equivalent)
 
@@ -25,14 +26,16 @@ reactions <- eqnlist() %>%
 
 # Translate reactions into ODE model object
 mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
+mymodel_cpp <- odemodel(reactions, modelname = "bamodel", compile = T, solver = "boost::rosenbrock34")
 
 
 # Generate trajectories for the default condition
 x <- Xs(mymodel, condition = NULL)
+x_cpp <- Xs(mymodel, condition = NULL)
 
 
 # For demonstration define parameters (initials and dynamic parameters)
-pars <- c(reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, import = 0.2, export_sinus = 0.2, export_cana = 0.04)
+pars <- c(k_reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, k_import = 0.2, k_export_sinus = 0.2, k_export_cana = 0.04)
 
 
 # Plot trjectories
@@ -42,8 +45,9 @@ plot(out) # Note this is a ggplot object
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
+errorModel <- eqnvec(buffer = "sigma_rel_buffer * buffer", cellular = "sigma_rel_cellular * cellular")
 g <- Y(observables, f = x, condition = NULL, compile = TRUE, modelname = "obsfn")
-
+e <- Y(errorModel, f = g, attach.input = FALSE, compile = TRUE, modelname = "errfn")
 
 
 ## Simulate data -------------------------------------------------------------------------------------------------------------
@@ -53,33 +57,43 @@ pars["TCA_cell"] <- 0.3846154
 pars["TCA_cana"] <- 0.1538462
 pars["TCA_buffer"] <- 0
 pars["s"] <- 1e3
+pars["sigma_rel_buffer"] <- 0.1
 
 # Simulate trajectories 
 # Evaluate the expression separately
 out <- (g * x)(times, pars, conditions = "closed")
 plot(out)
 
-
-
-
+# Evaluate also the error model
+outdf <- (g * x)(times, pars, conditions = "closed") %>% as.data.frame(errfn = e)
 
 # simulate data for time points
 timesD <- c(0.1, 1, 3, 7, 11, 15, 20, 41)
-datasheet <- subset(as.data.frame(out), time %in% timesD & name %in% names(observables))
-datasheet <- within(datasheet, {
-  sigma <- 0.1*value
-  value <- rnorm(length(value), value, sigma)
-})
+
+datasheet <- as.data.frame(out) %>%
+  filter(time %in% timesD, name %in% names(observables)) %>%
+  mutate(n = 9) %>%             # immer 9 Replikate
+  uncount(n) %>%
+  mutate(value = rnorm(n(), value, 0.2*value)) %>%
+  group_by(time, condition, name) %>%
+  summarise(
+    sigma = sd(value, na.rm = TRUE)/sqrt(n()),
+    value = mean(value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  as.data.frame()
+
+
 data <- as.datalist(datasheet)
 plot(out, data)
 
 
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
-innerpars <- getParameters(x,g)
+innerpars <- getParameters(x,g,e)
 trafo <- NULL %>% 
   define("x~x", x = innerpars) %>% # identity
   define("TCA_buffer~0") %>% 
-  insert("x~exp(log(10)*x)", x = .currentSymbols)
+  insert("x~exp(log(10)*(x))", x = .currentSymbols)
 
 
 # # Explicit trafo
@@ -97,12 +111,13 @@ p <- P(trafo, condition = "closed")
 # Set every parameter to -1 in the log-space
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
+pouter["s"] <- 3
 plot((g*x*p)(times, pouter),data)
 
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 # # One Fit
-obj <- normL2(data, g * x * p) + constraintL2(pouter, sigma = 20)
+obj <- normL2(data, g * x * p, e) + constraintL2(pouter, sigma = 5)
 
 # Fit on time (starting from pouter)
 myfit_1 <- trust(obj, pouter, rinit = 0.1, rmax = 5)
@@ -112,43 +127,91 @@ plot(mypred_1, data)
 ## Handling different experimental conditions
 
 # Define reflux and open condition according to "Dynamic Modelling in R p. 19-20"
-pars["reflux"] <- 1e3
+pars["k_reflux"] <- 1e3
 out <- (g * x)(times, pars, conditions = "open")
-datasheet <- subset(as.data.frame(out), time %in% timesD & name %in% names(observables))
-datasheet <- within(datasheet, {
-  sigma <- 0.1*value
-  value <- rnorm(length(value), value, sigma)
-})
+datasheet <- as.data.frame(out) %>%
+  filter(time %in% timesD, name %in% names(observables)) %>%
+  mutate(n = 9) %>%                     # für alle 9 Replikate
+  uncount(n) %>%
+  mutate(value = rnorm(n(), value, 0.2*value)) %>%
+  group_by(time, condition, name) %>%
+  summarise(
+    sigma = sd(value, na.rm = TRUE)/sqrt(n()),            # SEM
+    value = mean(value, na.rm = TRUE),                    # Mittelwert
+    .groups = "drop"
+  ) %>%
+  as.data.frame()
 data <- data + as.datalist(datasheet)
 plotData(data)
 
 # Parameter Trafo, usage of "+" operator for trafo functions (output of P())
 trafo <- getEquations(p, conditions = "closed")
-trafo["reflux"] <- "exp(log(10)*reflux_open)"
+trafo["k_reflux"] <- "exp(log(10)*(k_reflux_open))"
 p <- p + P(trafo, condition = "open")
 
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
+pouter["s"] <- 3
 plot((g*x*p)(times, pouter),data)
 
 
+dataWoSigma <- data %>% as.data.frame() %>% 
+  mutate(
+    sigma = NA
+  )
+
 # Objective function
-obj <- normL2(data, g * x * p) + constraintL2(pouter, sigma = 20)
 
+obj <- normL2(as.datalist(dataWoSigma), g * x * p, e)
+obj_cpp <- normL2(as.datalist(dataWoSigma), g * x_cpp * p, e)
 # Evaluation of obj at pouter
-obj(pouter)
-
+obj(pouter)$hessian
+obj_cpp(pouter)$hessian
 
 # Fit 50 times, sample with sd=4 around pouter
-out_frame <- mstrust(obj, pouter, sd = 4, studyname = "bamodel", cores=8, fits=50, iterlim = 200)
-out_frame <- as.parframe(out_frame)
-plotValues(out_frame) # Show "Waterfall" plot
-plotPars(out_frame) # Show parameter plot
-bestfit <- as.parvec(out_frame)
+set.seed(5555)
+system.time({outms <- mstrust(obj, pouter, sd = 3, studyname = "bamodel", cores=8, fits=100, iterlim = 1e3)})
+set.seed(5555)
+system.time({outms_cpp <- mstrust(obj_cpp, pouter, sd = 3, studyname = "bamodel", cores=8, fits=100, iterlim = 1e3)})
+outframe <- as.parframe(outms)
+outframe_cpp <- as.parframe(outms_cpp)
+plotValues(outframe, tol = 0.1, value < 3e3) # Show "Waterfall" plot
+plotPars(outframe %>% getSteps(tol=0.1)) # Show parameter plot
+plotValues(outframe_cpp, tol = 0.1, value < 1e3) # Show "Waterfall" plot for cpp version of odes
+plotPars(outframe_cpp %>% getSteps(tol=0.1)) # Show parameter plot for cpp version of odes
+bestfit <- as.parvec(outframe)
 
 
 # Plot predictions along data
-plot((g * x * p)(times, bestfit), data)
+out <- (g * x * p)(times, bestfit) %>% as.data.frame(errfn = e)
+
+ggplot(data = out, aes(x = time, y = value, color = condition)) + 
+  geom_line() + 
+  geom_ribbon(
+    data = out,
+    aes(ymin = value - sigma, ymax = value + sigma, fill = condition),
+    alpha = 0.2,
+    linetype = "dashed"   # gestrichelt
+  ) + 
+  geom_point(data = as.data.frame(data), aes(x = time, y = value, color = condition)) + 
+  geom_errorbar(data = as.data.frame(data), 
+                aes(x = time, ymin = value - sigma, ymax = value + sigma, color = condition), 
+                width = 0.2) + 
+  facet_wrap(~name, scales = "free_y") + 
+  theme_dMod() +
+  scale_color_dMod() + 
+  scale_fill_dMod()
+
+out <- (g * x * p)(timesD, bestfit)
+err <- e(out = out[["closed"]], pars = getParameters(out[["closed"]]), conditions = c("closed"))
+resids <- res(data$closed, out$closed, err$closed)
+residsCpp <- resCpp(as.datalist(dataWoSigma)$closed, out$closed, err$closed)
+# as.datalist(dataWoSigma)
+attr(resids, "deriv")
+attr(resids, "deriv.err")
+
+attr(residsCpp, "deriv")
+attr(residsCpp, "deriv.err")
 
 # Plot sensis
 plot(getDerivs((g * x * p)(times, bestfit)))
