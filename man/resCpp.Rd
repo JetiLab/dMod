@@ -2,59 +2,107 @@
 % Please edit documentation in R/data.R
 \name{resCpp}
 \alias{resCpp}
-\title{Compute residuals and Jacobian with BLOQ handling (C++ backend)}
+\title{Compute residuals and weighted residuals with BLOQ handling (C++ backend)}
 \usage{
-resCpp(data, out, deriv = NULL, deriv_err = NULL, optBLOQ = "none")
+resCpp(data, out, err = NULL, optBLOQ = "none")
 }
 \arguments{
-\item{data}{A data.frame with columns:
-* `time` (numeric)
-* `name` (factor or character, observable name)
-* `value` (numeric, observed value)
-* `sigma` (numeric, residual standard deviation)
-* `lloq` (numeric, lower limit of quantification)}
+\item{data}{data.frame with columns `time`, `name`, `value`, `sigma`, 
+optionally `lloq`.}
 
-\item{out}{Numeric matrix of model predictions (rows = times, cols = observables).}
+\item{out}{Predictions as data.frame or matrix. See Details.}
 
-\item{deriv}{Optional numeric matrix of sensitivities of predictions
-w.r.t. parameters (first two columns = time and name).}
+\item{err}{Optional error model predictions (data.frame or matrix). 
+Used to fill NA values in `data$sigma`.}
 
-\item{deriv_err}{Optional numeric matrix of sensitivities of the error
-model w.r.t. parameters (first two columns = time and name).}
-
-\item{optBLOQ}{Character string: `"none"`, `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.}
+\item{optBLOQ}{Character string specifying BLOQ handling method:
+`"none"` (default), `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.}
 }
 \value{
-A data.frame of class `objframe` with columns:
-  * `time`, `name`, `value`, `prediction`, `sigma`,
-    `residual`, `weighted.residual`, `weighted.0`, `bloq`
-
-  and with an attribute `jacobian` (numeric matrix of residual sensitivities).
+An `objframe` (data.frame with class `c("objframe", "data.frame")`) 
+  containing:
+  - `time`: Time points from data
+  - `name`: Observable names from data
+  - `value`: Measured values (set to lloq if originally below lloq)
+  - `prediction`: Model predictions
+  - `sigma`: Standard errors (filled from err if originally NA)
+  - `residual`: `prediction - value`
+  - `weighted.residual`: Weighted residuals, potentially transformed by BLOQ method
+  - `weighted.0`: `prediction / sigma` (used internally for M4 methods)
+  - `bloq`: Logical, TRUE if original value was below lloq
 }
 \description{
-`resCpp()` is the high-performance C++ equivalent of [res()].  
-It computes residuals, weighted residuals, and the combined Jacobian
-(prediction + error model sensitivities), with optional BLOQ handling
-via methods M1, M3, M4NM, and M4BEAL.
+`resCpp()` is a high-performance variant of [res()] that computes residuals
+and weighted residuals. It supports optional BLOQ (Below Limit of Quantification)
+handling using various methods (`"M1"`, `"M3"`, `"M4NM"`, `"M4BEAL"`).
 }
 \details{
-The function calls directly into C++ via Rcpp, so it is much faster
-than a pure R implementation.  
-If `optBLOQ = "none"`, the results are equivalent to [res()].  
-Otherwise, BLOQ-specific transformations of residuals and Jacobian
-entries are applied.
+## Input requirements
+
+`data` must contain columns:
+- `time` (numeric): Time points
+- `name` (character/factor): Observable names
+- `value` (numeric): Measured values
+- `sigma` (numeric): Standard errors (can contain NA if `err` is provided)
+- `lloq` (numeric, optional): Lower limit of quantification
+
+`out` can be:
+- A **data.frame** in wide format (typical ODE output): First column is `time`,
+  remaining columns are named observables
+- A **data.frame** in long format: Must have columns `time`, `name`, and 
+  either `prediction` or `value`
+- A **numeric matrix** in wide format: First column is `time`, remaining columns
+  are named observables (column names must match data$name values)
+
+`err` (optional) provides error model predictions, same format as `out`.
+Used to fill NA values in `data$sigma`.
+
+## BLOQ handling
+
+When `value <= lloq`, the observation is flagged as BLOQ (`bloq = TRUE`).
+The behavior depends on `optBLOQ`:
+
+- `"none"` (default): Standard residuals, equivalent to [res()]
+- `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0)
+- `"M3"`: Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual
+- `"M4NM"` or `"M4BEAL"`: Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
+  where `w0 = prediction/sigma`. Requires `lloq >= 0`.
+
+Note: For `optBLOQ = "none"`, values below LLOQ are set to LLOQ before
+computing residuals (same as [res()]).
 }
 \examples{
-df <- data.frame(time = 1:3,
-                 name = c("A","A","A"),
-                 value = c(1,2,3),
-                 sigma = c(1,1,1),
-                 lloq = c(0,0,0))
-out <- matrix(c(1.1, 2.1, 3.1), ncol = 1)
+\dontrun{
+# Typical usage with ODE output
+data <- data.frame(
+  time = c(0, 1, 2, 0, 1, 2),
+  name = c("A", "A", "A", "B", "B", "B"),
+  value = c(1.0, 0.8, 0.6, 0.0, 0.2, 0.3),
+  sigma = c(0.1, 0.1, 0.1, 0.05, 0.05, 0.05),
+  lloq = c(0, 0, 0, 0.1, 0.1, 0.1)
+)
 
-resCpp(df, out, optBLOQ = "M3")
+# ODE output (wide format)
+out <- data.frame(
+  time = c(0, 1, 2),
+  A = c(1.0, 0.85, 0.65),
+  B = c(0.0, 0.15, 0.35)
+)
 
+# Standard residuals (like res())
+result <- resCpp(data, out, optBLOQ = "none")
+
+# With M3 BLOQ handling
+result_m3 <- resCpp(data, out, optBLOQ = "M3")
+
+# Check which observations are BLOQ
+subset(result_m3, bloq == TRUE)
+}
 }
 \seealso{
-[res()] for the pure-R implementation without BLOQ handling.
+[res()] for the R implementation, [objframe()] for the output class
+
+Other dMod interface: 
+\code{\link{res}()}
 }
+\concept{dMod interface}

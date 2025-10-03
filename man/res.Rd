@@ -28,4 +28,8 @@ respect to the parameters).
 \description{
 When sigma is given in the data, it always has priority over the sigma in the error model
 }
+\seealso{
+Other dMod interface: 
+\code{\link{resCpp}()}
+}
 \concept{dMod interface}

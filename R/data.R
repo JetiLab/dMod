@@ -133,58 +133,223 @@ res <- function(data, out, err = NULL) {
 }
 
 
-#' Compute residuals and Jacobian with BLOQ handling (C++ backend)
+#' Compute residuals and weighted residuals with BLOQ handling (C++ backend)
 #'
 #' @description
-#' `resCpp()` is the high-performance C++ equivalent of [res()].  
-#' It computes residuals, weighted residuals, and the combined Jacobian
-#' (prediction + error model sensitivities), with optional BLOQ handling
-#' via methods M1, M3, M4NM, and M4BEAL.
+#' `resCpp()` is a high-performance variant of [res()] that computes residuals
+#' and weighted residuals. It supports optional BLOQ (Below Limit of Quantification)
+#' handling using various methods (`"M1"`, `"M3"`, `"M4NM"`, `"M4BEAL"`).
 #'
 #' @details
-#' The function calls directly into C++ via Rcpp, so it is much faster
-#' than a pure R implementation.  
-#' If `optBLOQ = "none"`, the results are equivalent to [res()].  
-#' Otherwise, BLOQ-specific transformations of residuals and Jacobian
-#' entries are applied.
+#' ## Input requirements
+#' 
+#' `data` must contain columns:
+#' - `time` (numeric): Time points
+#' - `name` (character/factor): Observable names
+#' - `value` (numeric): Measured values
+#' - `sigma` (numeric): Standard errors (can contain NA if `err` is provided)
+#' - `lloq` (numeric, optional): Lower limit of quantification
 #'
-#' @param data A data.frame with columns:
-#'   * `time` (numeric)
-#'   * `name` (factor or character, observable name)
-#'   * `value` (numeric, observed value)
-#'   * `sigma` (numeric, residual standard deviation)
-#'   * `lloq` (numeric, lower limit of quantification)
-#' @param out Numeric matrix of model predictions (rows = times, cols = observables).
-#' @param deriv Optional numeric matrix of sensitivities of predictions
-#'   w.r.t. parameters (first two columns = time and name).
-#' @param deriv_err Optional numeric matrix of sensitivities of the error
-#'   model w.r.t. parameters (first two columns = time and name).
-#' @param optBLOQ Character string: `"none"`, `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.
+#' `out` can be:
+#' - A **data.frame** in wide format (typical ODE output): First column is `time`,
+#'   remaining columns are named observables
+#' - A **data.frame** in long format: Must have columns `time`, `name`, and 
+#'   either `prediction` or `value`
+#' - A **numeric matrix** in wide format: First column is `time`, remaining columns
+#'   are named observables (column names must match data$name values)
 #'
-#' @return A data.frame of class `objframe` with columns:
-#'   * `time`, `name`, `value`, `prediction`, `sigma`,
-#'     `residual`, `weighted.residual`, `weighted.0`, `bloq`
+#' `err` (optional) provides error model predictions, same format as `out`.
+#' Used to fill NA values in `data$sigma`.
 #'
-#'   and with an attribute `jacobian` (numeric matrix of residual sensitivities).
+#' ## BLOQ handling
+#' 
+#' When `value <= lloq`, the observation is flagged as BLOQ (`bloq = TRUE`).
+#' The behavior depends on `optBLOQ`:
+#' 
+#' - `"none"` (default): Standard residuals, equivalent to [res()]
+#' - `"M1"`: BLOQ observations contribute 0 to the objective (weighted.residual = 0)
+#' - `"M3"`: Uses `f^2 = -2*log(Phi(-wr))` where `wr` is the weighted residual
+#' - `"M4NM"` or `"M4BEAL"`: Uses `f^2 = -2*log(1 - Phi(wr)/Phi(w0))`
+#'   where `w0 = prediction/sigma`. Requires `lloq >= 0`.
 #'
-#' @seealso [res()] for the pure-R implementation without BLOQ handling.
+#' Note: For `optBLOQ = "none"`, values below LLOQ are set to LLOQ before
+#' computing residuals (same as [res()]).
 #'
-#' @examples
-#' df <- data.frame(time = 1:3,
-#'                  name = c("A","A","A"),
-#'                  value = c(1,2,3),
-#'                  sigma = c(1,1,1),
-#'                  lloq = c(0,0,0))
-#' out <- matrix(c(1.1, 2.1, 3.1), ncol = 1)
+#' @param data data.frame with columns `time`, `name`, `value`, `sigma`, 
+#'   optionally `lloq`.
+#' @param out Predictions as data.frame or matrix. See Details.
+#' @param err Optional error model predictions (data.frame or matrix). 
+#'   Used to fill NA values in `data$sigma`.
+#' @param optBLOQ Character string specifying BLOQ handling method:
+#'   `"none"` (default), `"M1"`, `"M3"`, `"M4NM"`, or `"M4BEAL"`.
 #'
-#' resCpp(df, out, optBLOQ = "M3")
+#' @return An `objframe` (data.frame with class `c("objframe", "data.frame")`) 
+#'   containing:
+#'   - `time`: Time points from data
+#'   - `name`: Observable names from data
+#'   - `value`: Measured values (set to lloq if originally below lloq)
+#'   - `prediction`: Model predictions
+#'   - `sigma`: Standard errors (filled from err if originally NA)
+#'   - `residual`: `prediction - value`
+#'   - `weighted.residual`: Weighted residuals, potentially transformed by BLOQ method
+#'   - `weighted.0`: `prediction / sigma` (used internally for M4 methods)
+#'   - `bloq`: Logical, TRUE if original value was below lloq
 #'
 #' @export
-resCpp <- function(data, out, deriv = NULL, deriv_err = NULL, optBLOQ = "none") {
-  .Call(`_dMod_resCpp`, data, out, deriv, deriv_err, optBLOQ)
+#' @family dMod interface
+#' @seealso [res()] for the R implementation, [objframe()] for the output class
+#' 
+#' @examples
+#' \dontrun{
+#' # Typical usage with ODE output
+#' data <- data.frame(
+#'   time = c(0, 1, 2, 0, 1, 2),
+#'   name = c("A", "A", "A", "B", "B", "B"),
+#'   value = c(1.0, 0.8, 0.6, 0.0, 0.2, 0.3),
+#'   sigma = c(0.1, 0.1, 0.1, 0.05, 0.05, 0.05),
+#'   lloq = c(0, 0, 0, 0.1, 0.1, 0.1)
+#' )
+#' 
+#' # ODE output (wide format)
+#' out <- data.frame(
+#'   time = c(0, 1, 2),
+#'   A = c(1.0, 0.85, 0.65),
+#'   B = c(0.0, 0.15, 0.35)
+#' )
+#' 
+#' # Standard residuals (like res())
+#' result <- resCpp(data, out, optBLOQ = "none")
+#' 
+#' # With M3 BLOQ handling
+#' result_m3 <- resCpp(data, out, optBLOQ = "M3")
+#' 
+#' # Check which observations are BLOQ
+#' subset(result_m3, bloq == TRUE)
+#' }
+resCpp <- function(data, out, err = NULL, optBLOQ = "none") {
+  
+  # Input validation
+  if (!is.data.frame(data)) {
+    stop("'data' must be a data.frame")
+  }
+  
+  required_cols <- c("time", "name", "value", "sigma")
+  missing_cols <- setdiff(required_cols, names(data))
+  if (length(missing_cols) > 0) {
+    stop("'data' is missing required column(s): ", paste(missing_cols, collapse = ", "))
+  }
+  
+  # Validate optBLOQ
+  valid_bloq <- c("none", "M1", "M3", "M4NM", "M4BEAL")
+  if (!optBLOQ %in% valid_bloq) {
+    stop("'optBLOQ' must be one of: ", paste(valid_bloq, collapse = ", "))
+  }
+  
+  # Convert name to character if factor
+  if (is.factor(data$name)) {
+    data$name <- as.character(data$name)
+  }
+  
+  # Ensure lloq exists (fill with -Inf if missing)
+  if (!"lloq" %in% names(data)) {
+    data$lloq <- -Inf
+  }
+  # Call C++ function
+  result <- .Call(`_dMod_resCpp`, data, out, err, optBLOQ)
+  
+  # --- Transform deriv attribute to match res() output format ---
+  deriv_out <- attr(out, "deriv")
+  if (!is.null(deriv_out)) {
+    # Extract parameter names from column names (format: observable.parameter)
+    deriv_cols <- colnames(deriv_out)[-1]  # skip time column
+    pars <- unique(unlist(lapply(strsplit(deriv_cols, split = ".", fixed = TRUE), function(i) i[2])))
+    
+    # Get unique observables from data
+    names_unique <- unique(as.character(result$name))
+    
+    # Build sensitivity column names: observable.parameter
+    sensnames <- as.vector(outer(names_unique, pars, paste, sep = "."))
+    
+    # Match names to corresponding sensitivities
+    names.sensnames <- t(matrix(1:length(sensnames), nrow = length(names_unique), ncol = length(pars)))
+    
+    # Get positions of sensnames in colnames of deriv
+    sensnames.deriv <- match(sensnames, colnames(deriv_out))
+    
+    # Match data names to unique names
+    data.name.idx <- match(as.character(result$name), names_unique)
+    
+    # Get the columns in deriv corresponding to data names
+    derivnameIndex <- matrix(sensnames.deriv[names.sensnames[, data.name.idx]], ncol = length(data.name.idx))
+    
+    # Match times
+    times_unique <- sort(unique(result$time))
+    data.time.idx <- match(result$time, times_unique)
+    out.time.idx <- match.num(times_unique, deriv_out[, 1])
+    timeIndex <- out.time.idx[data.time.idx]
+    
+    # Extract derivatives for each data row
+    deriv.prediction <- do.call(rbind, lapply(1:nrow(result), function(i) {
+      submatrix(deriv_out, timeIndex[i], derivnameIndex[, i])
+    }))
+    colnames(deriv.prediction) <- pars
+    
+    # Create deriv.data in res() format
+    deriv.data <- data.frame(time = result$time, name = result$name, deriv.prediction)
+    attr(result, "deriv") <- deriv.data
+  }
+  
+  # --- Transform deriv.err attribute to match res() output format ---
+  deriv_err <- attr(err, "deriv")
+  if (!is.null(err) && !is.null(deriv_err)) {
+    # Extract parameter names from column names
+    deriv_err_cols <- colnames(deriv_err)[-1]  # skip time column
+    pars <- unique(unlist(lapply(strsplit(deriv_err_cols, split = ".", fixed = TRUE), function(i) i[2])))
+    
+    # Get unique observables from data
+    names_unique <- unique(as.character(result$name))
+    
+    # Build sensitivity column names
+    sensnames <- as.vector(outer(names_unique, pars, paste, sep = "."))
+    
+    # Match names to corresponding sensitivities
+    names.sensnames <- t(matrix(1:length(sensnames), nrow = length(names_unique), ncol = length(pars)))
+    
+    # Get positions of sensnames in colnames of deriv.err
+    sensnames.deriv <- match(sensnames, colnames(deriv_err))
+    
+    # Match data names to unique names
+    data.name.idx <- match(as.character(result$name), names_unique)
+    
+    # Get the columns in deriv.err corresponding to data names
+    derivnameIndex <- matrix(sensnames.deriv[names.sensnames[, data.name.idx]], ncol = length(data.name.idx))
+    
+    # Match times
+    times_unique <- sort(unique(result$time))
+    data.time.idx <- match(result$time, times_unique)
+    err.time.idx <- match.num(times_unique, deriv_err[, 1])
+    timeIndex <- err.time.idx[data.time.idx]
+    
+    # Extract derivatives for each data row
+    deriv.prediction <- do.call(rbind, lapply(1:nrow(result), function(i) {
+      submatrix(deriv_err, timeIndex[i], derivnameIndex[, i])
+    }))
+    colnames(deriv.prediction) <- pars
+    
+    # Set NA to 0
+    deriv.prediction[is.na(deriv.prediction)] <- 0
+    
+    # Set derivatives to 0 for rows where sigma was not NA originally
+    sNAIndex <- is.na(data$sigma)
+    deriv.prediction[!sNAIndex, ] <- 0
+    
+    # Create deriv.err.data in res() format
+    deriv.err.data <- data.frame(time = result$time, name = result$name, deriv.prediction)
+    attr(result, "deriv.err") <- deriv.err.data
+  }
+  
+  return(result)
 }
-
-
 
 
 #' Time-course data for the JAK-STAT cell signaling pathway

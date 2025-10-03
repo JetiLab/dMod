@@ -11,23 +11,22 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
 // resCpp
-List resCpp(DataFrame data, NumericMatrix out, Nullable<NumericMatrix> deriv, Nullable<NumericMatrix> deriv_err, std::string optBLOQ);
-RcppExport SEXP _dMod_resCpp(SEXP dataSEXP, SEXP outSEXP, SEXP derivSEXP, SEXP deriv_errSEXP, SEXP optBLOQSEXP) {
+Rcpp::List resCpp(Rcpp::DataFrame data, SEXP out, Rcpp::Nullable<Rcpp::DataFrame> err, std::string optBLOQ);
+RcppExport SEXP _dMod_resCpp(SEXP dataSEXP, SEXP outSEXP, SEXP errSEXP, SEXP optBLOQSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< DataFrame >::type data(dataSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type out(outSEXP);
-    Rcpp::traits::input_parameter< Nullable<NumericMatrix> >::type deriv(derivSEXP);
-    Rcpp::traits::input_parameter< Nullable<NumericMatrix> >::type deriv_err(deriv_errSEXP);
+    Rcpp::traits::input_parameter< Rcpp::DataFrame >::type data(dataSEXP);
+    Rcpp::traits::input_parameter< SEXP >::type out(outSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::DataFrame> >::type err(errSEXP);
     Rcpp::traits::input_parameter< std::string >::type optBLOQ(optBLOQSEXP);
-    rcpp_result_gen = Rcpp::wrap(resCpp(data, out, deriv, deriv_err, optBLOQ));
+    rcpp_result_gen = Rcpp::wrap(resCpp(data, out, err, optBLOQ));
     return rcpp_result_gen;
 END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_dMod_resCpp", (DL_FUNC) &_dMod_resCpp, 5},
+    {"_dMod_resCpp", (DL_FUNC) &_dMod_resCpp, 4},
     {NULL, NULL, 0}
 };
 
