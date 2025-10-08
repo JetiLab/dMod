@@ -4,7 +4,7 @@
 \alias{resL2}
 \title{Residual-based Objective Function for lsqcpp optimization}
 \usage{
-resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "M3", cores = 1)
+resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "none")
 }
 \arguments{
 \item{data}{object of class \link{datalist}}
@@ -16,13 +16,11 @@ resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "M3", cores = 1)
 \item{times}{numeric vector, additional time points}
 
 \item{optBLOQ}{Character: "none", "M1", "M3", or "M4NM" for BLOQ handling}
-
-\item{cores}{Number of cores for parallelization (ignored on Windows)}
 }
 \value{
 Object of class `resObjfn` - a function that returns a list with:
-  \item{residuals}{Numeric vector of weighted residuals}
-  \item{jacobian}{Matrix with derivatives of residuals w.r.t. parameters (optional)}
+  \item{residuals}{Numeric vector of weighted residuals plus artificial residuals for log(sigma)}
+  \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters (model + error)}
 }
 \description{
 Creates an objective function that returns residuals and Jacobians compatible
@@ -38,6 +36,11 @@ constraints using `+` operator:
 ```
 obj <- resL2(data, model) + constraintResL2(mu, sigma)
 ```
+
+**Important:** This function includes artificial residuals for the log(sigma) terms
+from the likelihood. For each ALOQ data point, an additional residual 
+`sqrt(log(2*pi*sigma^2))` is added to ensure the likelihood is correctly 
+represented as a sum of squared residuals.
 }
 \seealso{
 Other dMod interface: 
