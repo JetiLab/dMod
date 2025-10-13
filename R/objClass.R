@@ -166,7 +166,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
       err <- NULL
       if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
         err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-      nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
+      nll(resCpp(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
     })
     out.data <- Reduce("+", out.data)
     

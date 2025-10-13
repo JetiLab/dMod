@@ -4,12 +4,17 @@
 \alias{constraintResL2}
 \title{Soft L2 constraint on parameters (residual form)}
 \usage{
-constraintResL2(mu, sigma = 1, condition = NULL)
+constraintResL2(mu, sigma = 1, attr.name = "prior", condition = NULL)
 }
 \arguments{
 \item{mu}{Named numeric, the prior values}
 
-\item{sigma}{Named numeric or character, the prior standard deviations}
+\item{sigma}{Named numeric or character, the prior standard deviations.
+If character, sigma parameters are estimated (on log scale) and artificial
+residuals are added for the log-likelihood term.}
+
+\item{attr.name}{character. The constraint value is additionally returned in an 
+attributed with this name}
 
 \item{condition}{Character, condition for which constraint applies}
 }
@@ -22,7 +27,21 @@ Equivalent to `constraintL2()` but returns residuals instead of objlist.
 }
 \details{
 Returns residuals `(p - mu) / sigma` for each parameter.
-When squared and summed, these give the L2 constraint value.
+
+If `sigma` is character (estimated parameters), additional artificial residuals
+`sign(log σ) * sqrt(2*|log σ|)` are added to represent the log(sigma^2) term.
+When squared, these give `2*log(σ)`, ensuring that `Σ[r²]` equals the 
+constraint value from `constraintL2()`.
+}
+\examples{
+\dontrun{
+# Fixed sigma
+constraint1 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = 0.5)
+
+# Estimated sigma
+constraint2 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = "sigma_prior")
+obj <- resL2(data, model) + constraint2
+}
 }
 \seealso{
 Other dMod interface: 

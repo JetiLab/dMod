@@ -1,3 +1,73 @@
+#' @export
+print.resObjlist <- function(x, n = 10, ...) {
+  n <- min(n, length(x$residuals))
+  
+  cat("Residual object\n")
+  cat("===============\n\n")
+  cat("Number of residuals:", length(x$residuals), "\n")
+  cat("RSS (Residual Sum of Squares):", sum(x$residuals^2), "\n")
+  
+  # Show individual contributions if available
+  all_attrs <- names(attributes(x))
+  contrib_attrs <- setdiff(all_attrs, c("names", "class", "residuals", "jacobian", "env", "conditions"))
+  
+  if (length(contrib_attrs) > 0) {
+    cat("\nSpecific Contributions:\n")
+    for (a in contrib_attrs) {
+      val <- attr(x, a)
+      if (is.numeric(val) && length(val) == 1) {
+        cat("  ", a, ": ", val, "\n", sep = "")
+      }
+    }
+  }
+  
+  cat("\nResiduals [1:", n, "]:\n", sep = "")
+  print(x$residuals[1:n])
+  
+  if (!is.null(x$jacobian)) {
+    cat("\nJacobian:", nrow(x$jacobian), "×", ncol(x$jacobian), " matrix\n")
+    cat("\nParameters:", paste0(head(colnames(x$jacobian), 10), collapse = ", "))
+    if (ncol(x$jacobian) > 10) cat(", ...")
+    cat("\n")
+  } else {
+    cat("\nJacobian: NULL\n")
+  }
+  
+  invisible(x)
+}
+
+
+#' @export
+print.resObjfn <- function(x, ...) {
+  parameters <- attr(x, "parameters")
+  conditions <- attr(x, "conditions")
+  modelname <- attr(x, "modelname")
+  
+  cat("Residual-based objective function\n")
+  cat("==================================\n\n")
+  
+  cat("Function signature:\n")
+  print(args(x))
+  
+  if (!is.null(parameters)) {
+    cat("\nParameters (", length(parameters), "):\n  ", sep = "")
+    cat(paste0(head(parameters, 10), collapse = ", "))
+    if (length(parameters) > 10) cat(", ...")
+    cat("\n")
+  }
+  
+  if (!is.null(conditions)) {
+    cat("\nConditions (", length(conditions), "):\n  ", sep = "")
+    cat(paste0(conditions, collapse = ", "), "\n")
+  }
+  
+  if (!is.null(modelname)) {
+    cat("\nModel: ", paste0(modelname, collapse = ", "), "\n", sep = "")
+  }
+  
+  invisible(x)
+}
+
 #' Residual-based Objective Function for lsqcpp optimization
 #'
 #' @description
@@ -9,29 +79,33 @@
 #'
 #' @param data object of class \link{datalist}
 #' @param x object of class \link{prdfn}
-#' @param errmodel object of class \link{obsfn}
+#' @param errmodel object of class \link{obsfn}. If provided, error model parameters
+#'   are included in the optimization and artificial residuals for log(sigma) terms
+#'   are added.
 #' @param times numeric vector, additional time points
 #' @param optBLOQ Character: "none", "M1", "M3", or "M4NM" for BLOQ handling
 #'
 #' @return Object of class `resObjfn` - a function that returns a list with:
-#'   \item{residuals}{Numeric vector of weighted residuals plus artificial residuals for log(sigma)}
-#'   \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters (model + error)}
+#'   \item{residuals}{Numeric vector of weighted residuals (plus artificial sigma residuals if errmodel given)}
+#'   \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters}
 #'
 #' @details
 #' The returned function can be used with lsqcpp optimizers or combined with
-#' constraints using `+` operator:
+#' constraints using the `+` operator.
 #' 
-#' ```
-#' obj <- resL2(data, model) + constraintResL2(mu, sigma)
-#' ```
-#' 
-#' **Important:** This function includes artificial residuals for the log(sigma) terms
-#' from the likelihood. For each ALOQ data point, an additional residual 
-#' `sqrt(log(2*pi*sigma^2))` is added to ensure the likelihood is correctly 
-#' represented as a sum of squared residuals.
+#' **Artificial sigma residuals:** If an error model is provided, artificial residuals
+#' `sign(log σ) * sqrt(2*|log σ|)` are added for each ALOQ data point to represent
+#' the log-likelihood term. When squared, these give `2*log(σ)`, ensuring that
+#' `½·Σ[r²] = NLL`.
 #'
 #' @export
 #' @family dMod interface
+#' @examples
+#' \dontrun{
+#' obj <- resL2(data, model, errmodel, optBLOQ = "M3")
+#' result <- obj(pars = initial_pars)
+#' # Use with lsqcpp optimizer
+#' }
 resL2 <- function(data, x, errmodel = NULL, times = NULL, optBLOQ = "none") {
   
   timesD <- sort(unique(c(0, unlist(lapply(data, function(d) d$time)))))
@@ -43,7 +117,6 @@ resL2 <- function(data, x, errmodel = NULL, times = NULL, optBLOQ = "none") {
     stop("Prediction function does not provide predictions for all conditions in data.")
   
   e.conditions <- names(attr(errmodel, "mappings"))
-  
   controls <- list(times = timesD, conditions = intersect(x.conditions, data.conditions), optBLOQ = optBLOQ)
   force(errmodel)
   
@@ -65,51 +138,106 @@ resL2 <- function(data, x, errmodel = NULL, times = NULL, optBLOQ = "none") {
     # Combine weighted residuals
     residuals <- unlist(lapply(res.list, function(r) r$weighted.residual))
     
-    # Add artificial residuals for log(sigma) terms (only for ALOQ)
-    sigma_residuals <- unlist(lapply(res.list, function(r) {
-      ifelse(r$bloq, 0, sqrt(log(2 * pi * r$sigma^2)))
-    }))
-    residuals <- c(residuals, sigma_residuals)
+    # Add artificial residuals for log(sigma) if error model is estimated
+    # r = sign(log σ) * sqrt(2*|log σ|), then r² = 2*log σ
+    if (!is.null(errmodel)) {
+      sigma_residuals <- unlist(lapply(res.list, function(r) {
+        log_sigma <- log(r$sigma)
+        ifelse(r$bloq, 0, sign(log_sigma) * sqrt(2 * abs(log_sigma)))
+      }))
+      residuals <- c(residuals, sigma_residuals)
+      has_sigma_residuals <- TRUE
+    } else {
+      has_sigma_residuals <- FALSE
+    }
     
     jacobian <- NULL
     if (deriv) {
-      # Helper to extract and combine jacobians
-      get_jac <- function(r, attr_name, scale_by_sigma = FALSE) {
+      # Helper to extract jacobians
+      get_jac <- function(r, attr_name) {
         d <- attr(r, attr_name)
         if (is.null(d)) return(matrix(0, nrow = nrow(r), ncol = 0))
-        jac <- as.matrix(d[, -(1:2), drop = FALSE])
-        if (scale_by_sigma) jac <- sweep(jac, 1, r$sigma, "/")
-        jac
+        as.matrix(d[, -(1:2), drop = FALSE])
       }
       
-      # Data residuals: combine model + error derivatives
+      # Data residuals: compute dwrdp from dxdp and dsdp
       jac_data <- lapply(res.list, function(r) {
-        cbind(get_jac(r, "deriv"), get_jac(r, "deriv.err"))
+        dxdp <- get_jac(r, "deriv")      # ∂f/∂p
+        dsdp <- get_jac(r, "deriv.err")  # ∂σ/∂p
+        wr <- r$weighted.residual
+        s <- r$sigma
+        
+        # Compute dwrdp = ∂((y-f)/σ)/∂p = -1/σ · ∂f/∂p - wr/σ · ∂σ/∂p
+        # Handle case where dsdp might be empty
+        if (ncol(dsdp) == 0) {
+          # No error parameters: dwrdp = -1/σ · ∂f/∂p
+          dwrdp <- sweep(dxdp, 1, -1/s, "*")
+        } else {
+          # Expand to common parameter set if needed
+          all_cols <- union(colnames(dxdp), colnames(dsdp))
+          if (ncol(dxdp) != length(all_cols)) {
+            dxdp_new <- matrix(0, nrow = nrow(dxdp), ncol = length(all_cols),
+                               dimnames = list(NULL, all_cols))
+            dxdp_new[, colnames(dxdp)] <- dxdp
+            dxdp <- dxdp_new
+          }
+          if (ncol(dsdp) != length(all_cols)) {
+            dsdp_new <- matrix(0, nrow = nrow(dsdp), ncol = length(all_cols),
+                               dimnames = list(NULL, all_cols))
+            dsdp_new[, colnames(dsdp)] <- dsdp
+            dsdp <- dsdp_new
+          }
+          # Now compute dwrdp with both terms
+          dwrdp <- sweep(dxdp, 1, -1/s, "*") - sweep(dsdp, 1, wr/s, "*")
+        }
+        
+        return(dwrdp)
       })
       
-      # Sigma residuals: only error derivatives, scaled by 1/sigma, set to 0 for BLOQ
-      jac_sigma <- lapply(res.list, function(r) {
-        jac <- cbind(matrix(0, nrow = nrow(r), ncol = ncol(get_jac(r, "deriv"))),
-                     get_jac(r, "deriv.err", scale_by_sigma = TRUE))
-        jac[r$bloq, ] <- 0
-        jac
-      })
+      # Sigma residuals jacobian if error model present
+      if (has_sigma_residuals) {
+        jac_sigma <- lapply(res.list, function(r) {
+          dsdp <- get_jac(r, "deriv.err")
+          if (ncol(dsdp) == 0) return(matrix(0, nrow = nrow(r), ncol = 0))
+          
+          log_sigma <- log(r$sigma)
+          s <- r$sigma
+          
+          # dlogsdp = 1/σ · ∂σ/∂p
+          dlogsdp <- sweep(dsdp, 1, 1/s, "*")
+          
+          # ∂r_sigma/∂p where r_sigma = sign(log σ) * sqrt(2*|log σ|)
+          # Scale factor: 1/sqrt(|log σ|/2)
+          scale_factor <- ifelse(r$bloq | abs(log_sigma) < 1e-10, 0,
+                                 1 / sqrt(abs(log_sigma) / 2))
+          
+          jac_err <- sweep(dlogsdp, 1, scale_factor, "*")
+          
+          # Expand to match columns of jac_data
+          return(jac_err)
+        })
+      } else {
+        jac_sigma <- list()
+      }
       
-      # Get all unique parameter names and expand
+      # Expand all jacobians to same parameter set
       all_pars <- unique(unlist(lapply(c(jac_data, jac_sigma), colnames)))
       expand <- function(jac) {
+        if (nrow(jac) == 0) return(matrix(0, 0, length(all_pars), dimnames = list(NULL, all_pars)))
         out <- matrix(0, nrow(jac), length(all_pars), dimnames = list(NULL, all_pars))
         out[, colnames(jac)] <- jac
         out
       }
       
-      jacobian <- rbind(
-        do.call(rbind, lapply(jac_data, expand)),
-        do.call(rbind, lapply(jac_sigma, expand))
-      )
+      jacobian <- if (has_sigma_residuals) {
+        rbind(do.call(rbind, lapply(jac_data, expand)),
+              do.call(rbind, lapply(jac_sigma, expand)))
+      } else {
+        do.call(rbind, lapply(jac_data, expand))
+      }
     }
     
-    out <- resObj(residuals = residuals, jacobian = jacobian)
+    out <- resObjlist(residuals = residuals, jacobian = jacobian)
     attr(out, "conditions") <- conditions
     return(out)
   }
@@ -129,18 +257,35 @@ resL2 <- function(data, x, errmodel = NULL, times = NULL, optBLOQ = "none") {
 #' Equivalent to `constraintL2()` but returns residuals instead of objlist.
 #'
 #' @param mu Named numeric, the prior values
-#' @param sigma Named numeric or character, the prior standard deviations
+#' @param sigma Named numeric or character, the prior standard deviations.
+#'   If character, sigma parameters are estimated (on log scale) and artificial
+#'   residuals are added for the log-likelihood term.
+#' @param attr.name character. The constraint value is additionally returned in an 
+#'   attributed with this name
 #' @param condition Character, condition for which constraint applies
 #'
 #' @return Object of class `resObjfn`
 #'
 #' @details
 #' Returns residuals `(p - mu) / sigma` for each parameter.
-#' When squared and summed, these give the L2 constraint value.
+#' 
+#' If `sigma` is character (estimated parameters), additional artificial residuals
+#' `sign(log σ) * sqrt(2*|log σ|)` are added to represent the log(sigma^2) term.
+#' When squared, these give `2*log(σ)`, ensuring that `Σ[r²]` equals the 
+#' constraint value from `constraintL2()`.
 #'
 #' @export
 #' @family dMod interface
-constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
+#' @examples
+#' \dontrun{
+#' # Fixed sigma
+#' constraint1 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = 0.5)
+#' 
+#' # Estimated sigma
+#' constraint2 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = "sigma_prior")
+#' obj <- resL2(data, model) + constraint2
+#' }
+constraintResL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
   
   estimateSigma <- is.character(sigma)
   
@@ -152,13 +297,15 @@ constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
     stop("Names of sigma and names of mu do not match.")
   
   sigma <- sigma[names(mu)]
-  controls <- list(mu = mu, sigma = sigma)
+  controls <- list(mu = mu, sigma = sigma, estimateSigma = estimateSigma, attr.name = attr.name)
   
-  myfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition) {
+  myfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition, env = NULL) {
     
     pouter <- list(...)[match.fnargs(list(...), "pars")][[1]]
     mu <- controls$mu
     sigma <- controls$sigma
+    estimateSigma <- controls$estimateSigma
+    attr.name <- controls$attr.name
     
     # Handle list of parameters (multiple conditions)
     if (is.list(pouter) && !is.null(conditions)) {
@@ -174,7 +321,7 @@ constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
       pars <- c(p, fixed)[names(mu)]
       p1 <- setdiff(intersect(names(mu), names(p)), names(fixed))
       
-      # Estimate sigma from parameters if character
+      # Get sigma values
       if (estimateSigma) {
         sigmapars <- sigma
         sigma <- exp(c(p, fixed)[sigma])
@@ -182,24 +329,50 @@ constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
         p2 <- setdiff(intersect(unique(sigmapars), names(p)), names(fixed))
       }
       
-      # Compute residuals: (p - mu) / sigma
+      # Compute parameter residuals: (p - mu) / sigma
       residuals <- ((pars - mu) / sigma)[p1]
+      
+      # Add artificial residuals for log(sigma^2) = 2*log(sigma) if estimated
+      # r = sign(log σ) * sqrt(2*|log σ|), then r² = 2*log σ
+      if (estimateSigma && length(p2) > 0) {
+        log_sigma <- log(sigma[p1])
+        sigma_residuals <- sign(log_sigma) * sqrt(2 * abs(log_sigma))
+        residuals <- c(residuals, structure(sigma_residuals, names = paste0("log_", names(residuals))))
+      }
       
       jacobian <- NULL
       if (deriv) {
-        jacobian <- matrix(0, nrow = length(residuals), ncol = length(p),
+        n_param_res <- length(p1)
+        n_sigma_res <- if (estimateSigma && length(p2) > 0) length(p1) else 0
+        n_total <- n_param_res + n_sigma_res
+        
+        jacobian <- matrix(0, nrow = n_total, ncol = length(p),
                            dimnames = list(names(residuals), names(p)))
         
-        # dr/dp for parameter residuals
-        diag(jacobian[, p1]) <- 1 / sigma[p1]
+        # Jacobian for parameter residuals w.r.t. parameters
+        diag(jacobian[1:n_param_res, p1]) <- 1 / sigma[p1]
         
-        # dr/dsigma if estimating sigma
-        if (estimateSigma && length(p2) > 0) {
-          for (i in seq_along(residuals)) {
-            par_name <- names(residuals)[i]
+        if (estimateSigma && n_sigma_res > 0) {
+          # Jacobian for parameter residuals w.r.t. sigma parameters (on log scale)
+          # ∂((p-mu)/σ)/∂(log σ) = -(p-mu)/σ
+          for (i in seq_along(p1)) {
+            par_name <- p1[i]
             sigma_name <- sigmapars[par_name]
-            if (sigma_name %in% p2)
-              jacobian[i, sigma_name] <- -residuals[i]
+            if (sigma_name %in% p2) {
+              jacobian[i, sigma_name] <- -(pars[par_name] - mu[par_name]) / sigma[par_name]
+            }
+          }
+          
+          # Jacobian for sigma residuals w.r.t. sigma parameters (on log scale)
+          # r = sign(log σ) * sqrt(2*|log σ|)
+          # ∂r/∂(log σ) = 1 / sqrt(|log σ|/2)
+          log_sigma <- log(sigma[p1])
+          for (i in seq_along(p1)) {
+            par_name <- p1[i]
+            sigma_name <- sigmapars[par_name]
+            if (sigma_name %in% p2) {
+              jacobian[n_param_res + i, sigma_name] <- 1 / sqrt(abs(log_sigma[i]) / 2)
+            }
           }
         }
         
@@ -212,10 +385,15 @@ constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
     })
     
     # Combine results
-    out <- resObj(
+    out <- resObjlist(
       residuals = unlist(lapply(outlist, `[[`, "residuals")),
       jacobian = if (deriv) do.call(rbind, lapply(outlist, `[[`, "jacobian")) else NULL
     )
+    
+    # Add constraint value attribute: sum of squared residuals
+    attr(out, controls$attr.name) <- sum(out$residuals^2)
+    attr(out, "env") <- env
+    
     return(out)
   }
   
@@ -239,16 +417,22 @@ constraintResL2 <- function(mu, sigma = 1, condition = NULL) {
 #' @param condition Character, condition name
 #'
 #' @return Object of class `resObjfn`
+#' 
+#' @details
+#' Returns a single residual `(prediction - value) / sigma` for the validation point.
+#' The prediction is extracted from the environment passed via `env` argument.
 #'
 #' @export
 #' @family dMod interface
+#' @examples
+#' \dontrun{
+#' vali <- datapointResL2("Drug", time = 24, value = "Drug_24h", 
+#'                        sigma = 0.1, condition = "treatment")
+#' obj <- resL2(data, model) + vali
+#' }
 datapointResL2 <- function(name, time, value, sigma = 1, condition) {
   
-  controls <- list(
-    mu = structure(name, names = value)[1],
-    time = time[1],
-    sigma = sigma[1]
-  )
+  controls <- list(mu = structure(name, names = value)[1], time = time[1], sigma = sigma[1])
   
   myfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
     
@@ -256,9 +440,7 @@ datapointResL2 <- function(name, time, value, sigma = 1, condition) {
     time <- controls$time
     sigma <- controls$sigma
     
-    arglist <- list(...)
-    arglist <- arglist[match.fnargs(arglist, "pars")]
-    pouter <- arglist[[1]]
+    pouter <- list(...)[match.fnargs(list(...), "pars")][[1]]
     
     if (!is.null(env)) {
       prediction <- as.list(env)$prediction 
@@ -267,8 +449,7 @@ datapointResL2 <- function(name, time, value, sigma = 1, condition) {
     }
     
     # Check condition overlap
-    if (!is.null(conditions) && !condition %in% conditions) 
-      return(NULL)
+    if (!is.null(conditions) && !condition %in% conditions) return(NULL)
     if (is.null(conditions) && !condition %in% names(prediction))
       stop("datapointResL2 requests unavailable condition.")
     
@@ -303,15 +484,13 @@ datapointResL2 <- function(name, time, value, sigma = 1, condition) {
       }
     }
     
-    out <- reslist(residuals = residual, jacobian = jacobian)
+    out <- resObjlist(residuals = residual, jacobian = jacobian)
     attr(out, "prediction") <- pred
-    
     return(out)
   }
   
   class(myfn) <- c("resObjfn", "fn")
   attr(myfn, "conditions") <- condition
   attr(myfn, "parameters") <- value[1]
-  
   return(myfn)
 }

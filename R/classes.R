@@ -678,8 +678,6 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   return(out)
 }
 
-# Add these entries to your existing classes.R file
-
 #' Generate residual object
 #'
 #' @description A residual object contains residuals and an optional Jacobian matrix.
@@ -690,11 +688,11 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 #'
 #' @param residuals Numeric vector of residuals
 #' @param jacobian Matrix with derivatives of residuals w.r.t. parameters (optional)
-#' @return Object of class \code{resObj}
+#' @return Object of class \code{resObjlist}
 #' @export
-reslist <- function(residuals, jacobian = NULL) {
+resObjlist <- function(residuals, jacobian = NULL) {
   out <- list(residuals = residuals, jacobian = jacobian)
-  class(out) <- c("reslist", "list")
+  class(out) <- c("resObjlist", "list")
   return(out)
 }
 
@@ -855,68 +853,24 @@ reslist <- function(residuals, jacobian = NULL) {
   if (is.null(x1)) return(x2)
   if (is.null(x2)) return(x1)
   
-  # Combine conditions and parameters
-  cond1 <- attr(x1, "conditions")
-  cond2 <- attr(x2, "conditions")
-  conditions <- union(cond1, cond2)
+  # Combine attributes
+  conditions <- union(attr(x1, "conditions"), attr(x2, "conditions"))
+  parameters <- union(attr(x1, "parameters"), attr(x2, "parameters"))
+  modelname <- union(attr(x1, "modelname"), attr(x2, "modelname"))
   
-  pars1 <- attr(x1, "parameters")
-  pars2 <- attr(x2, "parameters")
-  parameters <- union(pars1, pars2)
-  
-  model1 <- attr(x1, "modelname")
-  model2 <- attr(x2, "modelname")
-  modelname <- union(model1, model2)
-  
-  combined_fn <- function(..., fixed = NULL, deriv = TRUE, conditions = conditions, env = NULL) {
+  combined_fn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
     
-    # Evaluate both objectives
-    # Handle condition overlap similar to objfn
-    res1 <- res2 <- NULL
+    # Use combined conditions if not specified
+    if (is.null(conditions)) conditions <- union(attr(x1, "conditions"), attr(x2, "conditions"))
+    if (is.null(env)) env <- new.env()
     
-    if (is.null(cond1)) {
-      res1 <- x1(..., fixed = fixed, deriv = deriv, conditions = cond1, env = env)
-    } else if (any(conditions %in% cond1)) {
-      res1 <- x1(..., fixed = fixed, deriv = deriv, 
-                 conditions = intersect(conditions, cond1), env = env)
-    }
+    # Evaluate both functions
+    res1 <- x1(..., fixed = fixed, deriv = deriv, conditions = conditions, env = env)
+    res2 <- x2(..., fixed = fixed, deriv = deriv, conditions = conditions, env = env)
     
-    if (is.null(cond2)) {
-      res2 <- x2(..., fixed = fixed, deriv = deriv, conditions = cond2, 
-                 env = attr(res1, "env"))
-    } else if (any(conditions %in% cond2)) {
-      res2 <- x2(..., fixed = fixed, deriv = deriv, 
-                 conditions = intersect(conditions, cond2), 
-                 env = attr(res1, "env"))
-    }
-    
-    # Handle NULL returns
-    if (is.null(res1)) return(res2)
-    if (is.null(res2)) return(res1)
-    
-    # Combine residuals
-    residuals <- c(res1$residuals, res2$residuals)
-    
-    # Combine Jacobians
-    jacobian <- NULL
-    if (deriv && !is.null(res1$jacobian) && !is.null(res2$jacobian)) {
-      # Get union of parameter names
-      pars_union <- union(colnames(res1$jacobian), colnames(res2$jacobian))
-      
-      # Expand jacobians to have same columns
-      jac1 <- matrix(0, nrow = nrow(res1$jacobian), ncol = length(pars_union),
-                     dimnames = list(rownames(res1$jacobian), pars_union))
-      jac1[, colnames(res1$jacobian)] <- res1$jacobian
-      
-      jac2 <- matrix(0, nrow = nrow(res2$jacobian), ncol = length(pars_union),
-                     dimnames = list(rownames(res2$jacobian), pars_union))
-      jac2[, colnames(res2$jacobian)] <- res2$jacobian
-      
-      jacobian <- rbind(jac1, jac2)
-    }
-    
-    out <- resObj(residuals = residuals, jacobian = jacobian)
-    attr(out, "env") <- attr(res1, "env")
+    # Combine using resObjlist addition
+    out <- res1 + res2
+    if (!is.null(env)) attr(out, "env") <- env
     
     return(out)
   }
@@ -932,7 +886,7 @@ reslist <- function(residuals, jacobian = NULL) {
 
 #' Add resObj objects
 #'
-#' @description Combine two resObj outputs by concatenating residuals and Jacobians.
+#' @description Combine two resObjlist outputs by concatenating residuals and Jacobians.
 #'
 #' @param obj1 resObjlist object
 #' @param obj2 resObjlist object
@@ -948,28 +902,68 @@ reslist <- function(residuals, jacobian = NULL) {
   
   # Combine Jacobians
   jacobian <- NULL
-  if (!is.null(obj1$jacobian) && !is.null(obj2$jacobian)) {
+  if (!is.null(obj1$jacobian) || !is.null(obj2$jacobian)) {
+    # Handle case where one jacobian is NULL
+    if (is.null(obj1$jacobian)) {
+      obj1$jacobian <- matrix(0, length(obj1$residuals), 0)
+    }
+    if (is.null(obj2$jacobian)) {
+      obj2$jacobian <- matrix(0, length(obj2$residuals), 0)
+    }
+    
     # Get union of parameter names
     pars_union <- union(colnames(obj1$jacobian), colnames(obj2$jacobian))
     
-    # Expand jacobians to have same columns
-    jac1 <- matrix(0, nrow = nrow(obj1$jacobian), ncol = length(pars_union),
-                   dimnames = list(rownames(obj1$jacobian), pars_union))
-    jac1[, colnames(obj1$jacobian)] <- obj1$jacobian
-    
-    jac2 <- matrix(0, nrow = nrow(obj2$jacobian), ncol = length(pars_union),
-                   dimnames = list(rownames(obj2$jacobian), pars_union))
-    jac2[, colnames(obj2$jacobian)] <- obj2$jacobian
-    
-    jacobian <- rbind(jac1, jac2)
+    # Handle case where both jacobians have 0 columns
+    if (length(pars_union) == 0) {
+      jacobian <- matrix(0, length(residuals), 0)
+    } else {
+      # Expand jacobians to have same columns
+      jac1 <- matrix(0, nrow = nrow(obj1$jacobian), ncol = length(pars_union),
+                     dimnames = list(rownames(obj1$jacobian), pars_union))
+      if (ncol(obj1$jacobian) > 0) {
+        jac1[, colnames(obj1$jacobian)] <- obj1$jacobian
+      }
+      
+      jac2 <- matrix(0, nrow = nrow(obj2$jacobian), ncol = length(pars_union),
+                     dimnames = list(rownames(obj2$jacobian), pars_union))
+      if (ncol(obj2$jacobian) > 0) {
+        jac2[, colnames(obj2$jacobian)] <- obj2$jacobian
+      }
+      
+      jacobian <- rbind(jac1, jac2)
+    }
   }
   
-  # Preserve attributes
+  # Create output
+  out <- resObjlist(residuals = residuals, jacobian = jacobian)
+  
+  # Preserve/combine attributes
   env1 <- attr(obj1, "env")
   env2 <- attr(obj2, "env")
-  
-  out <- resObjlist(residuals = residuals, jacobian = jacobian)
   attr(out, "env") <- if (!is.null(env1)) env1 else env2
+  
+  # Combine conditions
+  cond1 <- attr(obj1, "conditions")
+  cond2 <- attr(obj2, "conditions")
+  if (!is.null(cond1) || !is.null(cond2)) {
+    attr(out, "conditions") <- unique(c(cond1, cond2))
+  }
+  
+  # Preserve named attributes (like "prior", "data", etc.)
+  attrs1 <- setdiff(names(attributes(obj1)), c("names", "class", "env", "conditions"))
+  attrs2 <- setdiff(names(attributes(obj2)), c("names", "class", "env", "conditions"))
+  
+  for (a in attrs1) {
+    if (!a %in% c("residuals", "jacobian")) {
+      attr(out, a) <- attr(obj1, a)
+    }
+  }
+  for (a in attrs2) {
+    if (!a %in% c("residuals", "jacobian", attrs1)) {
+      attr(out, a) <- attr(obj2, a)
+    }
+  }
   
   return(out)
 }
@@ -992,7 +986,7 @@ reslist <- function(residuals, jacobian = NULL) {
   }
   
   if (inherits(x2, "resObjlist")) {
-    out <- resObj(
+    out <- resObjlist(
       residuals = sqrt(x1) * x2$residuals,  # Scale residuals by sqrt(scalar)
       jacobian = if (!is.null(x2$jacobian)) sqrt(x1) * x2$jacobian else NULL
     )

@@ -11,7 +11,9 @@ resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "none")
 
 \item{x}{object of class \link{prdfn}}
 
-\item{errmodel}{object of class \link{obsfn}}
+\item{errmodel}{object of class \link{obsfn}. If provided, error model parameters
+are included in the optimization and artificial residuals for log(sigma) terms
+are added.}
 
 \item{times}{numeric vector, additional time points}
 
@@ -19,8 +21,8 @@ resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "none")
 }
 \value{
 Object of class `resObjfn` - a function that returns a list with:
-  \item{residuals}{Numeric vector of weighted residuals plus artificial residuals for log(sigma)}
-  \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters (model + error)}
+  \item{residuals}{Numeric vector of weighted residuals (plus artificial sigma residuals if errmodel given)}
+  \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters}
 }
 \description{
 Creates an objective function that returns residuals and Jacobians compatible
@@ -31,16 +33,19 @@ Unlike `normL2()` which returns an objlist with value/gradient/hessian,
 }
 \details{
 The returned function can be used with lsqcpp optimizers or combined with
-constraints using `+` operator:
+constraints using the `+` operator.
 
-```
-obj <- resL2(data, model) + constraintResL2(mu, sigma)
-```
-
-**Important:** This function includes artificial residuals for the log(sigma) terms
-from the likelihood. For each ALOQ data point, an additional residual 
-`sqrt(log(2*pi*sigma^2))` is added to ensure the likelihood is correctly 
-represented as a sum of squared residuals.
+**Artificial sigma residuals:** If an error model is provided, artificial residuals
+`sign(log σ) * sqrt(2*|log σ|)` are added for each ALOQ data point to represent
+the log-likelihood term. When squared, these give `2*log(σ)`, ensuring that
+`½·Σ[r²] = NLL`.
+}
+\examples{
+\dontrun{
+obj <- resL2(data, model, errmodel, optBLOQ = "M3")
+result <- obj(pars = initial_pars)
+# Use with lsqcpp optimizer
+}
 }
 \seealso{
 Other dMod interface: 
