@@ -4,7 +4,13 @@
 \alias{constraintResL2}
 \title{Soft L2 constraint on parameters (residual form)}
 \usage{
-constraintResL2(mu, sigma = 1, attr.name = "prior", condition = NULL)
+constraintResL2(
+  mu,
+  sigma = 1,
+  add_c = 50,
+  attr.name = "prior",
+  condition = NULL
+)
 }
 \arguments{
 \item{mu}{Named numeric, the prior values}
@@ -13,8 +19,11 @@ constraintResL2(mu, sigma = 1, attr.name = "prior", condition = NULL)
 If character, sigma parameters are estimated (on log scale) and artificial
 residuals are added for the log-likelihood term.}
 
+\item{add_c}{Numeric: additive constant for sigma residuals (default: 50).
+Only used when sigma is estimated (character).}
+
 \item{attr.name}{character. The constraint value is additionally returned in an 
-attributed with this name}
+attribute with this name}
 
 \item{condition}{Character, condition for which constraint applies}
 }
@@ -28,10 +37,32 @@ Equivalent to `constraintL2()` but returns residuals instead of objlist.
 \details{
 Returns residuals `(p - mu) / sigma` for each parameter.
 
-If `sigma` is character (estimated parameters), additional artificial residuals
-`sign(log σ) * sqrt(2*|log σ|)` are added to represent the log(sigma^2) term.
-When squared, these give `2*log(σ)`, ensuring that `Σ[r²]` equals the 
-constraint value from `constraintL2()`.
+**Fixed sigma (numeric):**
+Only parameter residuals are computed: `r = (p - mu) / σ`
+
+**Estimated sigma (character):**
+Additional artificial residuals are added for each sigma parameter, following
+\deqn{r_{\sigma} = \sqrt{2 \log(\sigma) + c}}
+where \eqn{c} is the additive constant `add_c` (default: 50).
+
+**Jacobian matrix:**
+For parameter residuals with respect to parameters:
+\deqn{\frac{\partial r}{\partial p} = \frac{1}{\sigma}}
+
+For parameter residuals with respect to sigma (on log scale):
+\deqn{\frac{\partial r}{\partial \log \sigma} = -\frac{p - \mu}{\sigma}}
+
+For sigma residuals with respect to sigma (on log scale):
+\deqn{\frac{\partial r_{\sigma}}{\partial \log \sigma} = \frac{1}{\sqrt{2 \log(\sigma) + c}}}
+
+**Constraint value:**
+The constraint value (stored in the attribute) is computed as:
+\deqn{constraint = \sum r_{param}^2 + 2 \sum \log(\sigma) + c \cdot n_{sigma}}
+
+This ensures proper likelihood evaluation where:
+- `Σr_{param}²` contributes the data fit term
+- `2*Σlog(σ)` contributes the log-likelihood term for variances
+- The additive constant ensures numerical stability
 }
 \examples{
 \dontrun{
@@ -39,7 +70,7 @@ constraint value from `constraintL2()`.
 constraint1 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = 0.5)
 
 # Estimated sigma
-constraint2 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = "sigma_prior")
+constraint2 <- constraintResL2(c(k1 = 1, k2 = 2), sigma = "sigma_prior", add_c = 50)
 obj <- resL2(data, model) + constraint2
 }
 }

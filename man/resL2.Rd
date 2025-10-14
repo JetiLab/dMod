@@ -4,7 +4,16 @@
 \alias{resL2}
 \title{Residual-based Objective Function for lsqcpp optimization}
 \usage{
-resL2(data, x, errmodel = NULL, times = NULL, optBLOQ = "none")
+resL2(
+  data,
+  x,
+  errmodel = NULL,
+  times = NULL,
+  optBLOQ = "none",
+  add_c = 50,
+  attr.name = "data",
+  useFitErrorCorrection = TRUE
+)
 }
 \arguments{
 \item{data}{object of class \link{datalist}}
@@ -18,6 +27,16 @@ are added.}
 \item{times}{numeric vector, additional time points}
 
 \item{optBLOQ}{Character: "none", "M1", "M3", or "M4NM" for BLOQ handling}
+
+\item{add_c}{Numeric: additive constant for error residuals (default: 50).
+This constant ensures that the error residuals are positive and properly
+scaled for the least-squares optimization.}
+
+\item{attr.name}{Character: name of the attribute to store -2*log(L) value (default: "data")}
+
+\item{useFitErrorCorrection}{Logical: apply bias correction for error parameter estimation
+(default: TRUE). Applies correction factor sqrt(n/(n-p)) to residuals
+to obtain unbiased variance estimates.}
 }
 \value{
 Object of class `resObjfn` - a function that returns a list with:
@@ -35,15 +54,41 @@ Unlike `normL2()` which returns an objlist with value/gradient/hessian,
 The returned function can be used with lsqcpp optimizers or combined with
 constraints using the `+` operator.
 
-**Artificial sigma residuals:** If an error model is provided, artificial residuals
-`sign(log σ) * sqrt(2*|log σ|)` are added for each ALOQ data point to represent
-the log-likelihood term. When squared, these give `2*log(σ)`, ensuring that
-`½·Σ[r²] = NLL`.
+**Residuals for data points:**
+For each data point, the weighted residual is computed as:
+\deqn{r_i = \frac{y_i - f_i}{\sigma_i} \sqrt{c_{corr}}}
+where \eqn{c_{corr}} is the bias correction factor (if enabled).
+
+**Artificial sigma residuals:**
+If an error model is provided, artificial residuals are added for each ALOQ 
+(above limit of quantification) data point, following
+\deqn{r_{\sigma,i} = \sqrt{2 \log(\sigma_i) + c}}
+where \eqn{c} is the additive constant `add_c` (default: 50).
+
+**Bias correction:**
+When `useFitErrorCorrection = TRUE` and error parameters are estimated, a correction
+factor is applied to ensure unbiased variance estimates:
+\deqn{c_{corr} = \frac{n_{data}}{n_{data} - n_{params}}}
+where \eqn{n_{params}} is the number of fitted non-error parameters.
+This is the Bessel correction factor that accounts for degrees of freedom lost
+due to parameter estimation.
+
+**Jacobian matrix:**
+The Jacobian matrix contains the derivatives of residuals with respect to parameters,
+including the correction factor when applicable. The positive sign ensures correct
+gradient direction for minimizing the negative log-likelihood via \eqn{\nabla f = J^T r}.
+
+**Likelihood calculation:**
+The attribute specified by `attr.name` contains:
+\deqn{-2 \log(L) = \chi^2_{data} + 2 \sum \log(\sigma_i) + n \log(2\pi)}
+where \eqn{\chi^2_{data}} is the sum of squared weighted residuals (without correction factor).
 }
 \examples{
 \dontrun{
-obj <- resL2(data, model, errmodel, optBLOQ = "M3")
+obj <- resL2(data, model, errmodel, optBLOQ = "M3", add_c = 50)
 result <- obj(pars = initial_pars)
+# Access -2*log(L)
+neg2logL <- attr(result, "data")
 # Use with lsqcpp optimizer
 }
 }
