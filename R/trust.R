@@ -1,5 +1,5 @@
 
-norm <- function(x) sqrt(sum(x^2))
+norm <- function(x) sqrt(crossprod(x))
 
 
 #' Non-Linear Optimization

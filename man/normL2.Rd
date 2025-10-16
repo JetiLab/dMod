@@ -4,7 +4,14 @@
 \alias{normL2}
 \title{L2 norm between data and model prediction}
 \usage{
-normL2(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1)
+normL2(
+  data,
+  x,
+  errmodel = NULL,
+  times = NULL,
+  attr.name = "data",
+  use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)
+)
 }
 \arguments{
 \item{data}{object of class \link{datalist}}
@@ -14,29 +21,20 @@ normL2(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1)
 \item{errmodel}{object of class \link{obsfn}. \code{errmodel} does not need to be defined for all conditions.}
 
 \item{times}{numeric vector, additional time points where the prediction function is 
-evaluated. If NULL, time points are extacted from the datalist solely. If the prediction
+evaluated. If NULL, time points are extracted from the datalist solely. If the prediction
 function makes use of events, hand over event \code{times} here.}
 
 \item{attr.name}{character. The constraint value is additionally returned in an 
-attributed with this name}
+attribute with this name}
 
-\item{cores}{to parallelize over conditions not over fits. This will be ignored on windows machines.}
-
-\item{forcings}{TO BE FILLED BY DANIEL K}
-
-\item{iiv}{Example: c("ka", "ETA_EMAX"). \cr 
-Vector with names which are individualized per condition}
-
-\item{conditional}{Example: data.frame(parname = "GR", covname = "SEX", covvalue = "1", stringsAsFactors = FALSE).\cr
-* covname can relate to any parameter in the condition.grid of the data. \cr
-* covvalue is the value of this variable to use for individualization}
-
-\item{fixed.grid}{data.frame(parname, partask, ids...) Lookup table for fixed parameters}
-
-\item{nauxtimes}{additional simulation times}
+\item{use.bessel}{logical. If TRUE and an error model is present, applies Bessel correction
+to account for the bias in maximum likelihood estimation of variance parameters. 
+The correction factor is sqrt(n/(n-p)) where n is the total number of data points and 
+p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
+is provided, FALSE otherwise.}
 }
 \value{
-Object of class \code{obsfn}, i.e. a function 
+Object of class \code{objfn}, i.e. a function 
 \code{obj(..., fixed, deriv, conditions, env)} that returns an objective list,
 \link{objlist}.
 }
@@ -48,6 +46,12 @@ optimization with the trust optimizer, see \link{mstrust}.
 }
 \details{
 Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
+
+The Bessel correction addresses the downward bias in maximum likelihood estimates of 
+variance parameters. When use.bessel = TRUE, the correction is applied globally across 
+all conditions based on the total number of data points and structural parameters, 
+consistent with NONMEM's approach where only THETA parameters (not SIGMA) contribute 
+to degrees of freedom.
 }
 \examples{
 ## Generate a prediction function

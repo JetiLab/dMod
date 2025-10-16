@@ -98,36 +98,36 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' is needed. \code{normL2} returns an objective function for the L2 norm of
 #' data and model prediction. The resulting objective function can be used for
 #' optimization with the trust optimizer, see \link{mstrust}.
+#' 
 #' @param data object of class \link{datalist}
 #' @param x object of class \link{prdfn}
 #' @param errmodel object of class \link{obsfn}. \code{errmodel} does not need to be defined for all conditions.
 #' @param times numeric vector, additional time points where the prediction function is 
-#' evaluated. If NULL, time points are extacted from the datalist solely. If the prediction
+#' evaluated. If NULL, time points are extracted from the datalist solely. If the prediction
 #' function makes use of events, hand over event \code{times} here.
 #' @param attr.name character. The constraint value is additionally returned in an 
-#' attributed with this name
+#' attribute with this name
+#' @param use.bessel logical. If TRUE and an error model is present, applies Bessel correction
+#' to account for the bias in maximum likelihood estimation of variance parameters. 
+#' The correction factor is sqrt(n/(n-p)) where n is the total number of data points and 
+#' p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
+#' is provided, FALSE otherwise.
 #' 
-#' 
-#' @param forcings TO BE FILLED BY DANIEL K
-#' @param iiv Example: c("ka", "ETA_EMAX"). \cr 
-#'   Vector with names which are individualized per condition
-#' @param conditional Example: data.frame(parname = "GR", covname = "SEX", covvalue = "1", stringsAsFactors = FALSE).\cr
-#'   * covname can relate to any parameter in the condition.grid of the data. \cr
-#'   * covvalue is the value of this variable to use for individualization
-#'
-#' @param fixed.grid data.frame(parname, partask, ids...) Lookup table for fixed parameters
-#' @param nauxtimes additional simulation times
-#' @param cores to parallelize over conditions not over fits. This will be ignored on windows machines.
-#' 
-#' 
-#' @return Object of class \code{obsfn}, i.e. a function 
+#' @return Object of class \code{objfn}, i.e. a function 
 #' \code{obj(..., fixed, deriv, conditions, env)} that returns an objective list,
 #' \link{objlist}.
 #' @details Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
+#' 
+#' The Bessel correction addresses the downward bias in maximum likelihood estimates of 
+#' variance parameters. When use.bessel = TRUE, the correction is applied globally across 
+#' all conditions based on the total number of data points and structural parameters, 
+#' consistent with NONMEM's approach where only THETA parameters (not SIGMA) contribute 
+#' to degrees of freedom.
+#' 
 #' @example inst/examples/normL2.R
-#' @importFrom parallel mclapply
 #' @export
-normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", cores = 1) {
+normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
+                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)) {
 
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
   if (!is.null(times)) timesD <- sort(union(times, timesD))
@@ -138,10 +138,22 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
     stop("The prediction function does not provide predictions for all conditions in the data.")
   e.conditions <- names(attr(errmodel, "mappings"))
   
-  controls <- list(times = timesD, attr.name = attr.name, conditions = intersect(x.conditions, data.conditions))
-
   # might be necessary to "store" errmodel in the objective function (-> runbg)
-  force(errmodel)  
+  force(errmodel)
+  
+  # use bessel correction for error estimates bessel.correction = sqrt(n.data / (n.data - n.par.structural)), n.par.structural = # non error params 
+  if(use.bessel && !is.null(errmodel)) {
+    parnames <- union(getParameters(x), getParameters(errmodel))
+    parnames.err <- setdiff(getSymbols(unlist(getEquations(errmodel))), names(unlist(getEquations(errmodel))))
+    bessel.correction <- sqrt(sum(sapply(data, nrow)) / (sum(sapply(data, nrow)) - length(parnames) + length(parnames.err)))
+  } else {
+    bessel.correction = 1
+  }
+  
+  controls <- list(times = timesD, 
+                   attr.name = attr.name, 
+                   conditions = intersect(x.conditions, data.conditions),
+                   bessel.correction = bessel.correction)
   
   myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = controls$conditions, env = NULL) {
     
@@ -155,6 +167,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
     # Import from controls
     timesD <- controls$times
     attr.name <- controls$attr.name
+    bessel.correction <- controls$bessel.correction
     
     # Create new environment if necessary
     if (is.null(env)) env <- new.env()
@@ -162,23 +175,13 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data", c
     prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, conditions = conditions)
     
     # Apply res() and wrss() to compute residuals and the weighted residual sum of squares
-    if (cores > 1 && .Platform$OS.type != "windows") {
-      out.data <- mclapply(conditions, function(cn) {
-        err <- NULL
-        if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
-          err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
-      }, mc.cores = cores)
-      out.data <- Reduce("+", out.data)
-    } else {
-      out.data <- lapply(conditions, function(cn) {
-        err <- NULL
-        if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
-          err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
-      })
-      out.data <- Reduce("+", out.data)
-    }
+    out.data <- lapply(conditions, function(cn) {
+      err <- NULL
+      if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
+        err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
+      nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
+    })
+    out.data <- Reduce("+", out.data)
     
     
     # Combine contributions and attach attributes
@@ -608,24 +611,37 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
 
 #' Compute the negative log-likelihood
 #' 
-#' Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4 and estimation of error models
+#' @description Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4 
+#' and estimation of error models with optional Bessel correction for variance parameter bias.
 #' 
 #' @param nout data.frame (result of [res]) or object of class [res].
-#' @param pars Example named vector of outer parameters to construct the objlist
-#' @param deriv TRUE or FALSE
-#' @param opt.BLOQ see [normIndiv]
-#' @param opt.hessian see [normIndiv]
+#' @param pars Named vector of outer parameters to construct the objlist
+#' @param deriv Logical. If TRUE, compute gradient and hessian
+#' @param opt.BLOQ Character denoting the method to deal with BLOQ data. 
+#' One of "M1", "M3", "M4NM", or "M4BEAL". See [normIndiv] for details.
+#' @param opt.hessian Named logical vector to include or exclude various 
+#' summands of the hessian matrix. Controls which parts contribute to the 
+#' Hessian calculation for both ALOQ and BLOQ data.
+#' @param bessel.correction Numeric. Bessel correction factor for variance estimation.
+#' Default is 1 (no correction). When use.bessel = TRUE in normL2(), this is set to 
+#' sqrt(n/(n-p)) where n is total data points and p is number of structural (non-errormodel) parameters.
 #' 
 #' @md
-#' @return list with entries value (numeric, the weighted residual sum of squares), 
-#' gradient (numeric, gradient) and 
-#' hessian (matrix of type numeric).
+#' @return list with entries value (numeric, the negative log-likelihood with Bessel correction applied), 
+#' gradient (numeric vector, gradient with respect to parameters) and 
+#' hessian (matrix of type numeric, second derivatives). The returned value includes the Bessel correction
+#' and is used for optimization. The TRUE maximum likelihood (for BIC/AIC) is stored in attr(*, "neg2ll").
+#' 
+#' @details The Bessel correction is applied by multiplying weighted residuals with bessel.correction.
+#' This changes both the objective value AND the gradient/Hessian, leading to corrected parameter 
+#' estimates during optimization. The TRUE maximum likelihood value (without correction) is stored 
+#' in the "neg2ll" attribute for use in BIC/AIC calculations.
+#' 
 #' @export
 nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
   ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE,
   BLOQ_part1 = TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE,
-  PD = TRUE  # enforce Hessian to be positive semidefinite, by setting nearest negative eigenvalues to zero
-  )) {
+  PD = TRUE), bessel.correction = 1) {
   
   # Split residuals into ALOQ and BLOQ
   is.bloq   <- nout$bloq
@@ -644,13 +660,19 @@ nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
   mywrss <- init_empty_objlist(pars, deriv = deriv)
   nll_ALOQ_result <- NULL
   if (!all(is.bloq))
-    nll_ALOQ_result <- nll_ALOQ(nout.aloq, derivs.aloq, derivs.err.aloq, opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
+    nll_ALOQ_result <- nll_ALOQ(nout.aloq, derivs.aloq, derivs.err.aloq, 
+                                opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian, 
+                                bessel.correction = bessel.correction)
   mywrss <- mywrss + nll_ALOQ_result
   if (any(is.bloq) && (!opt.BLOQ == "M1"))
-    mywrss <- mywrss + nll_BLOQ(nout.bloq, derivs.bloq, derivs.err.bloq, opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
+    mywrss <- mywrss + nll_BLOQ(nout.bloq, derivs.bloq, derivs.err.bloq, 
+                                opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
   
+  # Extract and store attributes
   chisquare <- attr(nll_ALOQ_result, "chisquare")
+  neg2ll <- attr(nll_ALOQ_result, "neg2ll")
   attr(mywrss, "chisquare") <- if (length(chisquare)) chisquare else 0
+  attr(mywrss, "neg2ll") <- if (length(neg2ll)) neg2ll else 0 
   
   mywrss
 }
@@ -658,12 +680,27 @@ nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
 
 
 #' Non-linear log likelihood for the ALOQ part of the data
-#' @md
+#' 
 #' @param nout output of [res()]
 #' @param derivs,derivs.err attributes of output of [res()]
 #' @param opt.BLOQ Character denoting the method to deal with BLOQ data
 #' @param opt.hessian Named logical vector to include or exclude
 #'   various non-convex summands of the hessian matrix
+#' @param bessel.correction Numeric. Bessel correction factor applied to the 
+#'   weighted residuals. Default is 1 (no correction). When use.bessel = TRUE 
+#'   in normL2(), this is already sqrt(n/(n-p)) where n is total data points 
+#'   and p is number of structural (non-errormodel) parameters.
+#'   
+#' @details The Bessel correction addresses downward bias in ML estimation of variance.
+#'   The correction is applied by multiplying weighted residuals with bessel.correction:
+#'   wr_corrected = wr * bessel.correction. This changes both the objective value 
+#'   AND the gradient/Hessian, leading to corrected parameter estimates during optimization.
+#'   
+#'   The returned objective value includes the Bessel correction and is used for optimization.
+#'   The TRUE maximum likelihood value (without correction) is stored in attr(*, "neg2ll")
+#'   for use in BIC/AIC calculations.
+#'   
+#' @md
 #' @importFrom stats pnorm dnorm
 nll_ALOQ <- function(nout,
                      derivs,
@@ -674,7 +711,8 @@ nll_ALOQ <- function(nout,
                        ALOQ_part1 = TRUE,
                        ALOQ_part2 = TRUE,
                        ALOQ_part3 = TRUE
-                     )) {
+                     ),
+                     bessel.correction = 1) {
   
   # opt.BLOQ: only M4BEAL changes something, all others are implicit, since they do not change anything in the ALOQ part
   # opt.hessian ALOQ_part1-ALOQ_part3
@@ -684,11 +722,26 @@ nll_ALOQ <- function(nout,
   w0 <- nout$weighted.0
   s  <- nout$sigma
   
-  # .. Compute objective value ----#
-  chisquare <- obj <- sum(wr^2)
-  obj <- obj + sum(log(2*pi*s^2))
-  if (opt.BLOQ %in% "M4BEAL")
-    obj <- obj + 2 * sum(stats::pnorm(w0, log.p = TRUE))
+  # .. Compute TRUE negative log-likelihood (for BIC/AIC) ----#
+  chisquare_ml <- sum(wr^2)
+  neg2ll_ml <- chisquare_ml + sum(log(2*pi*s^2))
+  
+  # .. Apply Bessel correction to weighted residuals ----#
+  use_bessel <- bessel.correction != 1
+  if (use_bessel) {
+    wr <- wr * bessel.correction
+    w0 <- w0 * bessel.correction
+  }
+  
+  # .. Compute corrected objective value (for optimization) ----#
+  chisquare <- sum(wr^2)
+  obj <- chisquare + sum(log(2*pi*s^2))
+  
+  if (opt.BLOQ %in% "M4BEAL") {
+    bloq_term <- 2 * sum(stats::pnorm(w0, log.p = TRUE))
+    obj <- obj + bloq_term
+    neg2ll_ml <- neg2ll_ml + bloq_term
+  }
   
   grad <- NULL
   hessian <- NULL
@@ -699,10 +752,20 @@ nll_ALOQ <- function(nout,
     dsdp <- 0 * dxdp
     if (!is.null(derivs.err))
       dsdp <- as.matrix(derivs.err[, -(1:2), drop = FALSE])
+    
+    # Compute base derivatives
     dwrdp <- 1/s*dxdp - wr/s*dsdp
     dw0dp <- 1/s*dxdp - w0/s*dsdp
+    
+    # Apply Bessel correction to derivatives if needed
+    if (use_bessel) {
+      dwrdp <- dwrdp * bessel.correction
+      dw0dp <- dw0dp * bessel.correction
+    }
+    
     dlogsdp <- (1/s)*dsdp # dlogsig.dp
     G_by_Phi <- function(w) exp(stats::dnorm(w, log = TRUE)- stats::pnorm(w, log.p = TRUE))
+    
     # .. 2nd Sensitivity terms ----#
     #   interaction terms of second derivative. d2adb2 means second derivative: d^2a/db^2
     #   d2wrdp2 does not solely consist of second derivatives but via the prefactors also of some combinations of first order derivs.
@@ -717,7 +780,7 @@ nll_ALOQ <- function(nout,
     names(grad) <- colnames(dxdp)
     
     # .. Compute hessian ----#
-    # >>>> All equations were double-checked, they should be fine. (Dont touch or read them, D2!) <<<<<<<<<<<
+    # >>>> All equations were double-checked, they should be fine. (Dont touch or read them, D2!) <<<<<<<
     hessian <- matrix(0, nrow = ncol(dwrdp), ncol = ncol(dwrdp), dimnames = list(colnames(dwrdp), colnames(dwrdp)))
     hessian <- hessian + 2 * t(dwrdp) %*% dwrdp # - 2 * t(dsig.dp) %*% dsig.dp # + 2. sens
     
@@ -738,7 +801,9 @@ nll_ALOQ <- function(nout,
   }
   
   out <- objlist(value = obj, gradient = grad, hessian = hessian)
-  attr(out, "chisquare") <- chisquare
+  attr(out, "chisquare") <- chisquare_ml      # TRUE chisquare (without Bessel)
+  attr(out, "neg2ll") <- neg2ll_ml            # TRUE -2*log(L) (for BIC/AIC)
+  attr(out, "besselcorrected") <- use_bessel
   out
 }
 

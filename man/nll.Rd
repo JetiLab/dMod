@@ -10,25 +10,41 @@ nll(
   deriv,
   opt.BLOQ = "M3",
   opt.hessian = c(ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE, BLOQ_part1 =
-    TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE, PD = TRUE)
+    TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE, PD = TRUE),
+  bessel.correction = 1
 )
 }
 \arguments{
 \item{nout}{data.frame (result of \link{res}) or object of class \link{res}.}
 
-\item{pars}{Example named vector of outer parameters to construct the objlist}
+\item{pars}{Named vector of outer parameters to construct the objlist}
 
-\item{deriv}{TRUE or FALSE}
+\item{deriv}{Logical. If TRUE, compute gradient and hessian}
 
-\item{opt.BLOQ}{see \link{normIndiv}}
+\item{opt.BLOQ}{Character denoting the method to deal with BLOQ data.
+One of "M1", "M3", "M4NM", or "M4BEAL". See \link{normIndiv} for details.}
 
-\item{opt.hessian}{see \link{normIndiv}}
+\item{opt.hessian}{Named logical vector to include or exclude various
+summands of the hessian matrix. Controls which parts contribute to the
+Hessian calculation for both ALOQ and BLOQ data.}
+
+\item{bessel.correction}{Numeric. Bessel correction factor for variance estimation.
+Default is 1 (no correction). When use.bessel = TRUE in normL2(), this is set to
+sqrt(n/(n-p)) where n is total data points and p is number of structural (non-errormodel) parameters.}
 }
 \value{
-list with entries value (numeric, the weighted residual sum of squares),
-gradient (numeric, gradient) and
-hessian (matrix of type numeric).
+list with entries value (numeric, the negative log-likelihood with Bessel correction applied),
+gradient (numeric vector, gradient with respect to parameters) and
+hessian (matrix of type numeric, second derivatives). The returned value includes the Bessel correction
+and is used for optimization. The TRUE maximum likelihood (for BIC/AIC) is stored in attr(*, "neg2ll").
 }
 \description{
-Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4 and estimation of error models
+Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4
+and estimation of error models with optional Bessel correction for variance parameter bias.
+}
+\details{
+The Bessel correction is applied by multiplying weighted residuals with bessel.correction.
+This changes both the objective value AND the gradient/Hessian, leading to corrected parameter
+estimates during optimization. The TRUE maximum likelihood value (without correction) is stored
+in the "neg2ll" attribute for use in BIC/AIC calculations.
 }
