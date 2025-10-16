@@ -2,7 +2,7 @@
 % Please edit documentation in R/resObjClass.R
 \name{resL2}
 \alias{resL2}
-\title{Residual-based Objective Function for lsqcpp optimization}
+\title{Residual-based Objective Function for lsqcpp Optimization}
 \usage{
 resL2(
   data,
@@ -16,87 +16,95 @@ resL2(
 )
 }
 \arguments{
-\item{data}{object of class \link{datalist}}
+\item{data}{Object of class `datalist`.}
 
-\item{x}{object of class \link{prdfn}}
+\item{x}{Object of class `prdfn`.}
 
-\item{errmodel}{object of class \link{obsfn}. If provided, error model parameters
-are included in the optimization and artificial residuals for log(sigma) terms
-are added.}
+\item{errmodel}{Optional object of class `obsfn`.
+If provided, error model parameters are included in the optimization and
+artificial residuals for log(sigma) terms are added.}
 
-\item{times}{numeric vector, additional time points}
+\item{times}{Numeric vector specifying additional time points to evaluate.}
 
-\item{optBLOQ}{Character: "none", "M1", "M3", or "M4NM" for BLOQ handling}
+\item{optBLOQ}{Character string defining the handling of BLOQ
+(Below Limit of Quantification) data.  
+One of `"none"`, `"M1"`, `"M3"`, or `"M4NM"`.  
+See the documentation on BLOQ handling in `dMod` for details.}
 
-\item{add_c}{Numeric: additive constant for error residuals (default: 50).
-This constant ensures that the error residuals are positive and properly
-scaled for the least-squares optimization.}
+\item{add_c}{Numeric scalar (default: `50`).
+Additive constant used in the artificial sigma residuals to ensure positivity
+and stable scaling during optimization.}
 
-\item{attr.name}{Character: name of the attribute to store -2*log(L) value (default: "data")}
+\item{attr.name}{Character string (default: `"data"`).
+Name of the attribute used to store the computed value of `-2*log(L)`.}
 
-\item{useFitErrorCorrection}{Logical: apply bias correction for error parameter estimation
-(default: TRUE). Applies correction factor sqrt(n/(n-p)) to residuals
-to obtain unbiased variance estimates.}
+\item{useFitErrorCorrection}{Logical (default: `TRUE`).
+If `TRUE`, applies a bias correction (Bessel correction) for error parameter
+estimation by scaling residuals with the factor √(n / (n − p)).}
 }
 \value{
-Object of class `resObjfn` - a function that returns a list with:
-  \item{residuals}{Numeric vector of weighted residuals (plus artificial sigma residuals if errmodel given)}
-  \item{jacobian}{Matrix with derivatives of residuals w.r.t. all parameters}
+A function of class `resObjfn`, which returns a list with:
+\describe{
+  \item{residuals}{Numeric vector of weighted residuals, including artificial
+    sigma residuals if an error model is specified.}
+  \item{jacobian}{Numeric matrix containing derivatives of residuals with respect
+    to all parameters.}
+}
 }
 \description{
-Creates an objective function that returns residuals and Jacobians compatible
-with lsqcpp C++ optimizers (Gauss-Newton, Levenberg-Marquardt, etc.).
+Creates a residual-based objective function for use with C++ least-squares
+optimizers such as Gauss–Newton or Levenberg–Marquardt via `lsqcpp`.
 
-Unlike `normL2()` which returns an objlist with value/gradient/hessian,
-`resL2()` returns residuals suitable for least-squares optimization.
+In contrast to `normL2()`, which returns an objective list with value,
+gradient, and Hessian, `resL2()` provides residuals and, optionally,
+Jacobians suitable for least-squares solvers.
 }
 \details{
-The returned function can be used with lsqcpp optimizers or combined with
-constraints using the `+` operator.
+### Data residuals
+For each observed data point, the weighted residual is computed as
+\deqn{r_i = \frac{y_i - f_i}{\sigma_i} \sqrt{c_{\mathrm{corr}}}}
+where \(c_{\mathrm{corr}}\) is the bias correction factor if enabled.
 
-**Residuals for data points:**
-For each data point, the weighted residual is computed as:
-\deqn{r_i = \frac{y_i - f_i}{\sigma_i} \sqrt{c_{corr}}}
-where \eqn{c_{corr}} is the bias correction factor (if enabled).
-
-**Artificial sigma residuals:**
-If an error model is provided, artificial residuals are added for each ALOQ 
-(above limit of quantification) data point, following
+### Artificial sigma residuals
+When an error model is estimated, artificial residuals are added for each
+data point above the limit of quantification (ALOQ):
 \deqn{r_{\sigma,i} = \sqrt{2 \log(\sigma_i) + c}}
-where \eqn{c} is the additive constant `add_c` (default: 50).
+where `c = add_c` ensures positivity.
 
-**Bias correction:**
-When `useFitErrorCorrection = TRUE` and error parameters are estimated, a correction
-factor is applied to ensure unbiased variance estimates:
-\deqn{c_{corr} = \frac{n_{data}}{n_{data} - n_{params}}}
-where \eqn{n_{params}} is the number of fitted non-error parameters.
-This is the Bessel correction factor that accounts for degrees of freedom lost
-due to parameter estimation.
+### Bias correction
+If `useFitErrorCorrection = TRUE` and error parameters are estimated,
+a correction factor is applied to obtain unbiased variance estimates:
+\deqn{c_{\mathrm{corr}} = \frac{n_{\mathrm{data}}}{n_{\mathrm{data}} - n_{\mathrm{params}}}}
+where \(n_{\mathrm{params}}\) excludes the error model parameters.
 
-**Jacobian matrix:**
-The Jacobian matrix contains the derivatives of residuals with respect to parameters,
-including the correction factor when applicable. The positive sign ensures correct
-gradient direction for minimizing the negative log-likelihood via \eqn{\nabla f = J^T r}.
+### Jacobian matrix
+The Jacobian contains the derivatives of residuals with respect to all parameters,
+including the applied bias correction if relevant.  
+The sign convention ensures correct gradient direction for least-squares minimization
+via \(\nabla f = J^{\top} r\).
 
-**Likelihood calculation:**
-The attribute specified by `attr.name` contains:
-\deqn{-2 \log(L) = \chi^2_{data} + 2 \sum \log(\sigma_i) + n \log(2\pi)}
-where \eqn{\chi^2_{data}} is the sum of squared weighted residuals (without correction factor).
+### Likelihood calculation
+The attribute specified by `attr.name` stores the value
+\deqn{-2 \log L = \chi^2_{\mathrm{data}} + 2 \sum_i \log(\sigma_i) + n \log(2\pi)}
+where \(\chi^2_{\mathrm{data}}\) is the sum of squared weighted residuals
+(without bias correction).
 }
 \examples{
 \dontrun{
 obj <- resL2(data, model, errmodel, optBLOQ = "M3", add_c = 50)
 result <- obj(pars = initial_pars)
-# Access -2*log(L)
-neg2logL <- attr(result, "data")
+
+# Access the -2*log(L) attribute
+neg2ll <- attr(result, "data")
+
 # Use with lsqcpp optimizer
 }
+
 }
 \seealso{
 Other dMod interface: 
 \code{\link{constraintResL2}()},
 \code{\link{datapointResL2}()},
-\code{\link{res}()},
 \code{\link{resCpp}()}
 }
 \concept{dMod interface}

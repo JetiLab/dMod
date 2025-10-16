@@ -16,7 +16,6 @@
 #' attribute "deriv" (data.frame with the derivatives of the residuals with
 #' respect to the parameters).
 #' @export
-#' @family dMod interface
 #' @importFrom stats setNames
 res <- function(data, out, err = NULL) {
   

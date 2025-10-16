@@ -38,7 +38,6 @@ obj <- resL2(data, model) + vali
 \seealso{
 Other dMod interface: 
 \code{\link{constraintResL2}()},
-\code{\link{res}()},
 \code{\link{resCpp}()},
 \code{\link{resL2}()}
 }

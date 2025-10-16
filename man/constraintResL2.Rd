@@ -77,7 +77,6 @@ obj <- resL2(data, model) + constraint2
 \seealso{
 Other dMod interface: 
 \code{\link{datapointResL2}()},
-\code{\link{res}()},
 \code{\link{resCpp}()},
 \code{\link{resL2}()}
 }

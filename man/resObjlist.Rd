@@ -2,22 +2,41 @@
 % Please edit documentation in R/classes.R
 \name{resObjlist}
 \alias{resObjlist}
-\title{Generate residual object}
+\title{Create a residual objective list}
 \usage{
 resObjlist(residuals, jacobian = NULL)
 }
 \arguments{
 \item{residuals}{Numeric vector of residuals}
 
-\item{jacobian}{Matrix with derivatives of residuals w.r.t. parameters (optional)}
+\item{jacobian}{Optional Jacobian matrix with dimensions (n_residuals x n_parameters).
+Can be a partial Jacobian (i.e., containing derivatives for only a subset of
+parameters). Missing columns will be computed automatically via finite differences.
+Column names should match parameter names.}
 }
 \value{
-Object of class \code{resObjlist}
+Object of class \code{resObjlist} with components:
+  \itemize{
+    \item \code{residuals}: The residual vector
+    \item \code{jacobian}: The Jacobian matrix (or NULL)
+  }
 }
 \description{
-A residual object contains residuals and an optional Jacobian matrix.
-This is the output format for lsqcpp-compatible objective functions.
+Constructs an object of class \code{resObjlist} containing residuals and
+optionally a Jacobian matrix for use with \code{lsqnl}.
+}
+\examples{
+# Without Jacobian (all derivatives computed via FD)
+resObjlist(residuals = c(0.1, -0.2, 0.05))
 
-Residual objects are returned by residual objective functions as being generated
-by \link{resL2}, \link{constraintResL2}, and \link{datapointResL2}.
+# With full Jacobian
+jac <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 3, ncol = 2)
+colnames(jac) <- c("a", "b")
+resObjlist(residuals = c(0.1, -0.2, 0.05), jacobian = jac)
+
+# With partial Jacobian (only one parameter)
+jac_partial <- matrix(c(1, 2, 3), ncol = 1)
+colnames(jac_partial) <- "a"
+resObjlist(residuals = c(0.1, -0.2, 0.05), jacobian = jac_partial)
+
 }

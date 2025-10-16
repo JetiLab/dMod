@@ -30,8 +30,8 @@ Imports:
     rlang,
     data.table,
     purrr,
-    optimx,
-    Rcpp
+    Rcpp,
+    RcppEigen
 Suggests:
     MASS,
     rPython,
@@ -42,4 +42,5 @@ RoxygenNote: 7.3.3
 VignetteBuilder: knitr
 Encoding: UTF-8
 LinkingTo: 
-    Rcpp
+    Rcpp,
+    RcppEigen
