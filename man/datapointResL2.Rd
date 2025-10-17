@@ -24,10 +24,20 @@ Object of class `resObjfn`
 Creates residual for a single validation point.
 Equivalent to `datapointL2()` but returns residual instead of objlist.
 }
+\details{
+Returns a single residual `(prediction - value) / sigma` for the validation point.
+The prediction is extracted from the environment passed via `env` argument.
+}
+\examples{
+\dontrun{
+vali <- datapointResL2("Drug", time = 24, value = "Drug_24h", 
+                       sigma = 0.1, condition = "treatment")
+obj <- resL2(data, model) + vali
+}
+}
 \seealso{
 Other dMod interface: 
 \code{\link{constraintResL2}()},
-\code{\link{res}()},
 \code{\link{resCpp}()},
 \code{\link{resL2}()}
 }

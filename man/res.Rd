@@ -28,11 +28,3 @@ respect to the parameters).
 \description{
 When sigma is given in the data, it always has priority over the sigma in the error model
 }
-\seealso{
-Other dMod interface: 
-\code{\link{constraintResL2}()},
-\code{\link{datapointResL2}()},
-\code{\link{resCpp}()},
-\code{\link{resL2}()}
-}
-\concept{dMod interface}

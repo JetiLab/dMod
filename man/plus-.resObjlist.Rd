@@ -15,5 +15,5 @@
 Combined resObjlist object
 }
 \description{
-Combine two resObj outputs by concatenating residuals and Jacobians.
+Combine two resObjlist outputs by concatenating residuals and Jacobians.
 }

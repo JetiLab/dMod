@@ -120,7 +120,6 @@ subset(result_m3, bloq == TRUE)
 Other dMod interface: 
 \code{\link{constraintResL2}()},
 \code{\link{datapointResL2}()},
-\code{\link{res}()},
 \code{\link{resL2}()}
 }
 \concept{dMod interface}
