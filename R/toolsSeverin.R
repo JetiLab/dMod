@@ -524,7 +524,7 @@ distributed_computing <- function(
       stop("No .o files found for linking! You must compile first.")
     
     # Remove any old .so files before linking
-    unlink(list.files(pattern = "(\\.so)$"))
+    # unlink(list.files(pattern = "(\\.so)$"))
     
     compile_files <- paste(object_files, collapse = " ")
     tar_locale <- paste0("tar -jcf - ", compile_files, " ", wd_path, "*")
