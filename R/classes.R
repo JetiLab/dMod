@@ -1,41 +1,79 @@
 ## ODE model class -------------------------------------------------------------------
 
 
-#' Generate the model objects for use in Xs (models with sensitivities)
+#' Generate model objects for use in Xs (models with sensitivities)
 #'
-#' @param f Something that can be converted to \link{eqnvec},
-#' e.g. a named character vector with the ODE
-#' @param deriv logical, generate sensitivities or not
-#' @param forcings Character vector with the names of the forcings
-#' @param events data.frame of events with columns "var" (character, the name of the state to be
-#' affected), "time" (character or numeric, time point), "value" (character or numeric, value),
-#' "method" (character, either
-#' "replace" or "add"). See \link[deSolve]{events}. Events need to be defined here if they contain
-#' parameters, like the event time or value. If both, time and value are purely numeric, they
-#' can be specified in \code{\link{Xs}()}, too.
+#' Creates and compiles model objects for systems of ordinary differential equations (ODEs)
+#' with optional first- and second-order sensitivities. Depending on the selected solver,
+#' the function interfaces either to \code{\link[cOde]{funC}} (for \code{solver = "deSolve"})
+#' or to \code{\link[CppODE]{CppODE}} (for \code{solver = "boost"}).
+#'
+#' @param f Something that can be converted to \link{eqnvec}, e.g. a named character vector
+#'   specifying the right-hand sides of the ODE system.
+#' @param deriv Logical. If \code{TRUE}, generate first-order sensitivities.
+#'   Defaults to \code{TRUE}.
+#' @param deriv2 Logical. If \code{TRUE}, generate second-order sensitivities.
+#'   Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.
+#'   If \code{TRUE} with \code{solver = "deSolve"}, an error is raised.
+#' @param forcings Character vector with the names of external forcings.
+#' @param events \code{data.frame} specifying discrete events during integration.
+#'   Must contain the columns \code{"var"} (character, name of the affected state),
+#'   \code{"time"} (character or numeric, time point),
+#'   \code{"value"} (character or numeric, value to apply), and
+#'   \code{"method"} (character, either \code{"replace"} or \code{"add"}).
+#'   Events must be defined here if they depend on parameters (e.g., event time or value).
+#'   If both \code{time} and \code{value} are purely numeric, such events may alternatively
+#'   be specified in \code{\link{Xs}()}, but this is only supported for
+#'   \code{solver = "deSolve"}.
+#'   See \link[deSolve]{events} for details on the \code{deSolve} implementation, or
+#'   \code{\link[CppODE]{CppODE}} for information on event handling in the \code{boost} solver.
 #' @param outputs Named character vector for additional output variables.
-#' @param fixed Character vector with the names of parameters (initial values and dynamic) for which
-#' no sensitivities are required (will speed up the integration).
-#' @param estimate Character vector specifying parameters (initial values and dynamic) for which
-#' sensitivities are returned. If estimate is specified, it overwrites `fixed`.
-#' @param modelname Character, the name of the C file being generated.
-#' @param solver Solver for which the equations are prepared.
-#' @param gridpoints Integer, the minimum number of time points where the ODE is evaluated internally
-#' @param verbose Print compiler output to R command line.
-#' @param ... Further arguments being passed to funC.
-#' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
-#' @export
+#' @param fixed Character vector with the names of parameters (initial values and dynamic)
+#'   for which no sensitivities are required (this speeds up integration).
+#' @param estimate Character vector specifying parameters (initial values and dynamic)
+#'   for which sensitivities are returned. If specified, \code{estimate} overwrites \code{fixed}.
+#' @param modelname Character. The base name of the generated C/C++ file.
+#' @param solver Character string specifying the solver backend.
+#'   One of \code{"deSolve"}, \code{"Sundials"} (deprecated), or \code{"boost"}.
+#' @param gridpoints Integer specifying the minimum number of internal time points
+#'   where the ODE is evaluated.
+#' @param verbose Logical. If \code{TRUE}, print compiler output to the R console.
+#' @param ... Additional arguments passed to \code{\link[cOde]{funC}} or
+#'   \code{\link[CppODE]{CppODE}}.
+#'
+#' @return A list containing the generated model objects.
+#'   For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
+#'   and optionally \code{extended} (ODE + sensitivities object).
+#'   For \code{solver = "boost"}, the list contains compiled C++ solvers:
+#'   \code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
+#'
+#' @seealso \code{\link[cOde]{funC}}, \code{\link[CppODE]{CppODE}}
+#'
 #' @example inst/examples/odemodel.R
-#' @import cOde CppODE
-odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost::rosenbrock34"), gridpoints = NULL, verbose = FALSE, ...) {
+#' @export
+odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NULL, outputs = NULL, 
+                     fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost"), 
+                     gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
   solver <- match.arg(solver)
+  
+  if (deriv2 && !deriv) {
+    warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
+    deriv <- TRUE
+  }
 
   if (solver == "Sundials") {
     stop("Sundials support has been removed. If you were an active user of the Sundials implementation, please get in touch.")
   } 
   else if (solver == "deSolve") {
+    
+    if (deriv2) {
+      stop(
+        "Second-order sensitivities are not available with the 'deSolve' solver.\n",
+        "Consider using solver = 'boost'."
+      )
+    }
     
     if (is.null(gridpoints)) gridpoints <- 2
     func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
@@ -89,7 +127,7 @@ odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NU
     out <- list(func = func, extended = extended)
     class(out) <- c("deSolve", "odemodel")
   }
-  else if (solver == "boost::rosenbrock34") {
+  else if (solver == "boost") {
     # Check and warn about unsupported arguments for boost::rosenbrock4
     unsupported_args <- list(
       forcings = forcings,
@@ -106,13 +144,16 @@ odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NU
     if (length(unsupported) > 0) {
       warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
     }
-    funCpp <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, verbose = verbose, ...)
-    out <- list(funCpp = funCpp)
+    boostODE <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, verbose = verbose, ...)
+    out <- list(boostODE = boostODE)
     
-    if (deriv) {
-      out$funCpp_sens <- CppODE::CppFun(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
+    if (!deriv2 & deriv) {
+      out$boostODE_sens <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
+    } else if (deriv2 & deriv) {
+      out$boostODE_sens <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
+      out$boostODE_sens2 <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2"), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
     }
-    class(out) <- c("Boost", "odemodel")
+    class(out) <- c("boost", "odemodel")
   }
   return(out)
 }
@@ -549,34 +590,58 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
 
 #' Prediction frame
 #'
-#' @description A prediction frame is used to store a model prediction in a matrix. The columns
-#' of the matrix are "time" and one column per state. The prediction frame has attributes "deriv",
-#' the matrix of sensitivities with respect to "outer parameters" (see \link{P}), an attribute
-#' "sensitivities", the matrix of sensitivities with respect to the "inner parameters" (the model
-#' parameters, left-hand-side of the parameter transformation) and an attributes "parameters", the
-#' parameter vector of inner parameters to produce the prediction frame.
+#' @description
+#' A prediction frame stores model predictions in a matrix along with sensitivity information.
+#' The columns of the prediction matrix are typically \code{"time"} and one column per state variable.
+#' The object carries several attributes containing sensitivities and parameter information:
+#' \itemize{
+#'   \item \code{"deriv"} – 3D array of first-order sensitivities with respect to outer parameters
+#'     (see \link{P}); dimensions: \code{(time, state, outer parameter)}
+#'   \item \code{"sensitivities"} – 3D array of first-order sensitivities with respect to inner parameters
+#'     (the model parameters, i.e. the left-hand side of the parameter transformation);
+#'     dimensions: \code{(time, state, inner parameter)}
+#'   \item \code{"deriv2"} – 4D array of second-order sensitivities with respect to outer parameters;
+#'     dimensions: \code{(time, state, outer parameter, outer parameter)}
+#'   \item \code{"sensitivities2"} – 4D array of second-order sensitivities with respect to inner parameters;
+#'     dimensions: \code{(time, state, inner parameter, inner parameter)}
+#'   \item \code{"parameters"} – vector of the inner parameters used to generate the prediction
+#' }
 #'
-#' Prediction frames are usually the constituents of prediction lists (\link{prdlist}). They are
-#' produced by \link{Xs}, \link{Xd} or \link{Xf}. When you define your own prediction functions,
-#' see \code{P2X} in \link{prdfn}, the result should be returned as a prediction frame.
-#' @param prediction matrix of model prediction
-#' @param deriv matrix of sensitivities wrt outer parameters
-#' @param sensitivities matrix of sensitivitie wrt inner parameters
-#' @param parameters names of the outer paramters
-#' @return Object of class \code{prdframe}, i.e. a matrix with other matrices and vectors as attributes.
+#' Prediction frames are usually elements of prediction lists (\link{prdlist}), produced by
+#' \link{Xs}, \link{Xd}, or \link{Xf}. When defining custom prediction functions
+#' (see \code{P2X} in \link{prdfn}), the result should be returned as a prediction frame.
+#'
+#' @param prediction Numeric matrix of model predictions.
+#' @param deriv 3D numeric array of first-order sensitivities with respect to outer parameters.
+#' @param sensitivities 3D numeric array of first-order sensitivities with respect to inner parameters.
+#' @param deriv2 4D numeric array of second-order sensitivities with respect to outer parameters.
+#' @param sensitivities2 4D numeric array of second-order sensitivities with respect to inner parameters.
+#' @param parameters Named numeric vector of the inner parameters used for the prediction.
+#'
+#' @return
+#' An object of class \code{"prdframe"} (inheriting from \code{"matrix"}) with attached arrays of
+#' sensitivities and the corresponding parameter vector as attributes.
+#'
 #' @export
-prdframe <- function(prediction = NULL, deriv = NULL, sensitivities = NULL, parameters = NULL) {
-
-  out <- if (!is.null(prediction)) as.matrix(prediction) else matrix()
-
+prdframe <- function(prediction = NULL,
+                     deriv = NULL,
+                     sensitivities = NULL,
+                     deriv2 = NULL,
+                     sensitivities2 = NULL,
+                     parameters = NULL) {
+  
+  out <- if (!is.null(prediction)) as.matrix(prediction) else matrix(, 0, 0)
+  
   attr(out, "deriv") <- deriv
   attr(out, "sensitivities") <- sensitivities
+  attr(out, "deriv2") <- deriv2
+  attr(out, "sensitivities2") <- sensitivities2
   attr(out, "parameters") <- parameters
   class(out) <- c("prdframe", "matrix")
-
+  
   return(out)
-
 }
+
 
 #' Prediction list
 #'
