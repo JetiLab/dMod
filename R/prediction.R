@@ -29,7 +29,7 @@ Xs <- function(odemodel, ...) {
 }
 
 #' @export
-#' @import deSolve
+#' @import deSolve einsum
 Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condition = NULL, optionsOde=list(method = "lsoda"), optionsSens=list(method = "lsodes"), fcontrol = NULL) {
   
   func <- odemodel$func
@@ -108,7 +108,7 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
     if (!is.null(events)) events <- events[order(events$time),]
 
     
-    myderivs <- NULL
+    dX <- NULL
     mysensitivities <- NULL
     if (!deriv) {
       
@@ -117,40 +117,35 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
       if (!is.null(forcings)) forc <- setForcings(func, forcings) else forc <- NULL
       out <- suppressWarnings(do.call(odeC, c(list(y = unclass(yini), times = times, func = func, parms = mypars, forcings = forc, events = list(data = events), fcontrol = fcontrol), optionsOde)))
       out <- submatrix(out, cols = c("time", names))
-      #out <- cbind(out, out.inputs)
       
       
     } else {
       
-      # Evaluate extended model
-      # loadDLL(extended)
       if (!is.null(forcings)) forc <- setForcings(extended, forcings) else forc <- NULL
       
       outSens <- suppressWarnings(do.call(odeC, c(list(y = c(unclass(yini), yiniSens), times = times, func = extended, parms = mypars, 
                                       forcings = forc, fcontrol = fcontrol,
                                       events = list(data = events)), optionsSens)))
-      #out <- cbind(outSens[,c("time", variables)], out.inputs)
+      
       out <- submatrix(outSens, cols = c("time", names))
-      mysensitivities <- submatrix(outSens, cols = !colnames(outSens) %in% c(variables, forcnames))
+      mysensitivities <- reshapeSens(submatrix(outSens, cols = !colnames(outSens) %in% c(variables, forcnames, "time")), variables, c(svariables, sparameters))
       
-      
-      # Apply parameter transformation to the derivatives
+      # --- Apply parameter transformation to sensitivities (chain rule) ---
       variables <- intersect(variables, names)
-      sensLong <- matrix(outSens[,sensNames], nrow = dim(outSens)[1]*length(variables))
       dP <- attr(pars, "deriv")
+      
       if (!is.null(dP)) {
-        sensLong <- sensLong %*% submatrix(dP, rows = c(svariables, sparameters))
-        sensGrid <- expand.grid.alt(variables, colnames(dP))
-        sensNames <- paste(sensGrid[,1], sensGrid[,2], sep = ".")
+        dPsub <- submatrix(dP, rows = c(svariables, sparameters))
+        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
+        dimnames(dX) <- list(NULL, dimnames(mysensitivities)[[2]], colnames(dPsub))
+      } else {
+        dX <- mysensitivities
       }
-      myderivs <- matrix(0, nrow = nrow(outSens), ncol = 1 + length(sensNames), dimnames = list(NULL, c("time", sensNames)))
-      myderivs[, 1] <- out[, 1]
-      myderivs[, -1] <- sensLong
       
     }
     
     #prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = unique(sensGrid[,2]))
-    prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = pars)
+    prdframe(out, deriv = dX, sensitivities = mysensitivities, parameters = pars)
     
   }
   
@@ -162,6 +157,50 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
   
   
   prdfn(P2X, c(variables, parameters), condition) 
+}
+
+#' Reshape ODE sensitivities from wide matrix (var.par) to 3D array [time, variable, parameter]
+#'
+#' @description
+#' Converts a flat sensitivity matrix (as produced by deSolve-based ODE integrations)
+#' with column names of the form "variable.parameter" into a structured 3D array
+#' with dimensions [n_time, n_variables, n_parameters].
+#'
+#' @param sensMatrix A numeric matrix of sensitivities with column names
+#'   formatted as "variable.parameter". Rows correspond to time points.
+#' @param variables Character vector of state variable names.
+#' @param parameters Character vector of parameter names.
+#'
+#' @return A numeric 3D array with dimensions [time, variable, parameter],
+#'   and proper `dimnames` for variables and parameters.
+#'
+#' @examples
+#' # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
+#' mysens <- matrix(runif(40), nrow = 10)
+#' colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
+#' reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
+#'
+#' @keywords internal
+reshapeSens <- function(sensMatrix, variables, parameters) {
+  n_times <- nrow(sensMatrix)
+  n_vars <- length(variables)
+  n_pars <- length(parameters)
+  
+  # Expected column order: var1.par1, var2.par1, ..., varN.par1, var1.par2, var2.par2, ...
+  expected_cols <- as.vector(outer(variables, parameters, paste, sep = "."))
+  
+  # Reorder columns if necessary
+  sensMatrix_ordered <- sensMatrix[, expected_cols, drop = FALSE]
+  
+  # Convert directly to array - array() fills column-wise
+  # This matches the data structure perfectly: all vars for par1, then all vars for par2, etc.
+  sensArray <- array(
+    data = as.matrix(sensMatrix_ordered),
+    dim = c(n_times, n_vars, n_pars),
+    dimnames = list(NULL, variables, parameters)
+  )
+  
+  return(sensArray)
 }
 
 #' @export
@@ -219,7 +258,6 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   
   dimnames <- attr(boostODE, "dim_names")
   dimnames_sens <- attr(boostODE_sens, "dim_names")
-  dimnames_sens2 <- attr(boostODE_sens2, "dim_names")
   
   # Only a subset of all variables is returned
   if (is.null(names)) names <- variables
@@ -230,8 +268,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     optionsOde = optionsOde,
     optionsSens = optionsSens,
     dimnames = dimnames,
-    dimnames_sens = dimnames_sens,
-    dimnames_sens2 = dimnames_sens2
+    dimnames_sens = dimnames_sens
   )
   
   P2X <- function(times, pars, deriv=TRUE, deriv2=FALSE) {
@@ -306,7 +343,9 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       mysensitivities <- outSens$sens1[ , variables, ]
       dP <- attr(pars, "deriv")
       if (!is.null(dP)) {
-        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dP)
+        dPsub <- dP[controls$dimnames_sens$sens, ]
+        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
+        dimnames(dX) <- list(NULL, variables, colnames(dPsub))
       } else {
         dX <- mysensitivities
       }
@@ -328,8 +367,8 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       
       colnames(outSens2$variable) <- controls$dimnames_sens$variable
       
-      dimnames(outSens2$sens1) <- list(NULL, controls$dimnames_sens2$variable, controls$dimnames_sens2$sens)
-      dimnames(outSens2$sens2) <- list(NULL, controls$dimnames_sens2$variable, controls$dimnames_sens2$sens, controls$dimnames_sens2$sens)
+      dimnames(outSens2$sens1) <- list(NULL, controls$dimnames_sens$variable, controls$dimnames_sens$sens)
+      dimnames(outSens2$sens2) <- list(NULL, controls$dimnames_sens$variable, controls$dimnames_sens$sens, controls$dimnames_sens$sens)
       
       out <- cbind(outSens2$time, submatrix(outSens2$variable, cols = names))
       colnames(out)[1] <- "time"
