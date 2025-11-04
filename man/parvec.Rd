@@ -3,37 +3,17 @@
 \name{parvec}
 \alias{parvec}
 \alias{as.parvec}
-\alias{as.parvec.numeric}
-\alias{[.parvec}
-\alias{c.parvec}
 \title{Parameter vector}
 \usage{
 parvec(..., deriv = NULL)
 
 as.parvec(x, ...)
-
-\method{as.parvec}{numeric}(x, names = NULL, deriv = NULL, ...)
-
-\method{[}{parvec}(x, ..., drop = FALSE)
-
-\method{c}{parvec}(...)
 }
 \arguments{
 \item{...}{objects to be concatenated}
 
 \item{deriv}{matrix with rownames (according to names of \code{...}) and colnames
 according to the names of the parameter by which the parameter vector was generated.}
-
-\item{x}{numeric or named numeric, the parameter values}
-
-\item{names}{optional character vector, the parameter names. Otherwise, names
-are taken from \code{x}.}
-
-\item{drop}{logical, drop empty columns in Jacobian after subsetting. 
-ATTENTION: Be careful with this option. The default behavior is to keep
-the columns in the Jacobian. This can lead to unintended results when
-subsetting the parvec and using it e.g. in another parameter
-transformation.}
 }
 \value{
 An object of class \code{parvec}, i.e. a named numeric vector with attribute "deriv".

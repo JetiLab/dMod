@@ -271,76 +271,130 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 
 ## Parameter classes --------------------------------------------------------
 
-#' Parameter transformation function
+#' Parameter transformation function (supports first and second derivatives)
 #'
-#' Generate functions that transform one parameter vector into another
-#' by means of a transformation, pushing forward the jacobian matrix
-#' of the original parameter.
-#' Usually, this function is called internally, e.g. by \link{P}.
-#' However, you can use it to add your own specialized parameter
-#' transformations to the general framework.
-#' @param p2p a transformation function for one condition, i.e. a function
-#' \code{p2p(p, fixed, deriv)} which translates a parameter vector \code{p}
-#' and a vector of fixed parameter values \code{fixed} into a new parameter
-#' vector. If \code{deriv = TRUE}, the function should return an attribute
-#' \code{deriv} with the Jacobian matrix of the parameter transformation.
-#' @param parameters character vector, the parameters accepted by the function
-#' @param condition character, the condition for which the transformation is defined
-#' @return object of class \code{parfn}, i.e. a function \code{p(..., fixed, deriv,
-#'  conditions, env)}. The argument \code{pars} should be passed via the \code{...}
-#'  argument.
+#' @description
+#' Generates functions that transform one parameter vector into another
+#' by means of a symbolic or numeric transformation, propagating both
+#' first- and second-order derivatives through the mapping.
 #'
-#'  Contains attributes "mappings", a list of \code{p2p}
-#' functions, "parameters", the union of parameters acceted by the mappings and
-#' "conditions", the total set of conditions.
-#' @seealso \link{sumfn}, \link{P}
+#' The resulting function pushes forward the **Jacobian** (first derivatives)
+#' and, if requested, the **Hessian** (second derivatives) of the original
+#' parameter vector, enabling analytic gradient and curvature propagation
+#' throughout hierarchical parameter models.
+#'
+#' Usually, this function is called internally (e.g. by [P()] or [Pexpl()]),
+#' but it can also be used directly to register user-defined parameter
+#' transformations into the framework.
+#'
+#' @param p2p A transformation function for one condition, i.e.
+#'   a function \code{p2p(p, fixed, deriv, deriv2)} that maps
+#'   a parameter vector \code{p} and optional fixed parameters \code{fixed}
+#'   into a new parameter vector.
+#'   \itemize{
+#'     \item If \code{deriv = TRUE}, the function should attach a matrix
+#'       attribute \code{"deriv"} representing the Jacobian of the transformation.
+#'     \item If \code{deriv2 = TRUE}, it may additionally attach a 3D array
+#'       attribute \code{"deriv2"} representing the Hessian tensor.
+#'   }
+#' @param parameters Character vector of parameter names accepted by the
+#'   transformation function.
+#' @param condition Character string indicating the condition for which the
+#'   transformation is defined.
+#' @param env Environment in which the parameter transformation function
+#'   should be evaluated. This allows condition-specific transformations
+#'   to be resolved within a given modeling context.
+#'
+#' @return
+#' An object of class \code{"parfn"}, i.e. a function of the form
+#' \code{p(..., fixed, deriv, deriv2, conditions, env)}.
+#'
+#' When evaluated, this function returns a parameter vector (of class
+#' \code{"parvec"}) carrying derivative attributes:
+#' \itemize{
+#'   \item \code{attr(x, "deriv")} — Jacobian matrix
+#'   \item \code{attr(x, "deriv2")} — Hessian tensor (if available)
+#' }
+#'
+#' @details
+#' The \code{env} argument is used to control the environment in which
+#' expressions are evaluated. This is particularly useful when building
+#' models with multiple conditions or nested transformations, where each
+#' mapping might depend on its own set of local variables.
+#'
+#' This constructor provides the lowest-level interface for defining
+#' condition-specific parameter transformations in the model hierarchy.
+#' It is typically used as a building block by higher-level interfaces
+#' such as [Pexpl()] (explicit transformations) and [Pimpl()]
+#' (implicit transformations).
+#'
+#' @seealso
+#' [P()], [Pexpl()], [Pimpl()] for creating symbolic transformation functions,
+#' [as.parvec()] for parameter vector construction.
+#'
 #' @example inst/examples/prediction.R
 #' @export
+#' Parameter transformation function (supports first and second derivatives)
+#'
+#' @description
+#' Generates functions that transform one parameter vector into another,
+#' propagating both first- and second-order derivatives through the mapping.
+#' This function pushes forward the Jacobian and, if requested, the Hessian
+#' of the original parameter vector.
+#'
+#' @export
 parfn <- function(p2p, parameters = NULL, condition = NULL) {
-
+  
   force(condition)
   mappings <- list()
   mappings[[1]] <- p2p
   names(mappings) <- condition
-
-  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition, env = NULL) {
-
-
+  
+  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
+                    conditions = condition, env = NULL) {
+    
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pars <- arglist[[1]]
-
+    
     overlap <- test_conditions(conditions, condition)
-    # NULL if at least one argument is NULL
-    # character(0) if no overlap
-    # character if overlap
-
-    if (is.null(overlap)) conditions <- union(condition, conditions)
-
-    if (is.null(overlap) | length(overlap) > 0)
-      result <- p2p(pars = pars, fixed = fixed, deriv = deriv)
-    else
+    
+    if (is.null(overlap)) 
+      conditions <- union(condition, conditions)
+    
+    if (is.null(overlap) || length(overlap) > 0) {
+      # Pass environment to transformation function if applicable
+      if (!is.null(env))
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, env = env)
+      else
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
+    } else {
       result <- NULL
-
-    # Initialize output object
+    }
+    
+    # Initialize output
     length.out <- max(c(1, length(conditions)))
     outlist <- structure(vector("list", length.out), names = conditions)
-
-    if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
-    for (C in available[!is.na(available)]) outlist[[C]] <- result
-
-
-    return(outlist)
-
+    
+    if (is.null(condition))
+      available <- 1:length.out
+    else
+      available <- match(condition, conditions)
+    
+    for (C in available[!is.na(available)])
+      outlist[[C]] <- result
+    
+    outlist
   }
-  attr(outfn, "mappings") <- mappings
+  
+  attr(outfn, "mappings")   <- mappings
   attr(outfn, "parameters") <- parameters
   attr(outfn, "conditions") <- condition
   class(outfn) <- c("parfn", "fn")
+  
   return(outfn)
-
-
 }
+
 
 #' Generate a parameter frame
 #'
@@ -398,35 +452,46 @@ parlist <- function(...) {
 
 #' Parameter vector
 #'
-#' @description A parameter vector is a named numeric vector (the parameter values)
-#' together with a "deriv" attribute
-#' (the Jacobian of a parameter transformation by which the parameter vector was generated).
-#' @param ... objects to be concatenated
-#' @param deriv matrix with rownames (according to names of \code{...}) and colnames
-#' according to the names of the parameter by which the parameter vector was generated.
-#' @return An object of class \code{parvec}, i.e. a named numeric vector with attribute "deriv".
+#' @description 
+#' A parameter vector is a named numeric vector (the parameter values)
+#' together with derivative attributes describing how it was generated by
+#' a parameter transformation.  
+#' The first derivative (Jacobian) is stored in the `"deriv"` attribute,
+#' and, if available, the second derivative (Hessian) is stored in the `"deriv2"` attribute.
+#'
+#' @param ... Objects to be concatenated.
+#' @param deriv Matrix with row names corresponding to the names of \code{...}
+#'   and column names corresponding to the parameters by which the vector
+#'   was generated (the Jacobian).
+#' @param deriv2 Optional 3D array representing second derivatives
+#'   (the Hessian tensor), with dimensions
+#'   \code{[n_par × n_par × n_input]} and names matching the parameter vector.
+#'
+#' @return 
+#' An object of class \code{"parvec"}, i.e. a named numeric vector with
+#' attributes:
+#' \itemize{
+#'   \item \code{attr(x, "deriv")} — Jacobian matrix
+#'   \item \code{attr(x, "deriv2")} — Hessian tensor (if available)
+#' }
+#'
 #' @example inst/examples/parvec.R
 #' @export
-parvec <- function(..., deriv = NULL) {
-
+parvec <- function(..., deriv = NULL, deriv2 = NULL) {
+  
   mylist <- list(...)
   if (length(mylist) > 0) {
-    mynames <- paste0("par", 1:length(mylist))
+    mynames <- paste0("par", seq_along(mylist))
     is.available <- !is.null(names(mylist))
     mynames[is.available] <- names(mylist)[is.available]
-
+    
     out <- as.numeric(unlist(mylist))
     names(out) <- mynames
-
-    return(as.parvec(out, deriv = deriv))
-
+    
+    return(as.parvec(out, deriv = deriv, deriv2 = deriv2))
   } else {
-
     return(NULL)
-
   }
-
-
 }
 
 
@@ -1546,6 +1611,32 @@ getDerivs.objlist <- function(x, ...) {
 
   x$gradient
 
+}
+
+
+#' Extract the second derivatives of an object
+#'
+#' Generic function to extract second derivatives (Hessians)
+#' from various model objects.
+#'
+#' @param x Object from which the second derivatives should be extracted.
+#' @param ... Additional arguments (currently unused).
+#'
+#' @return The second derivatives, in a format depending on the class of \code{x}.
+#' For now:
+#' \itemize{
+#'   \item \code{parvec -> 3D array (Hessian tensor)}
+#' }
+#'
+#' @export
+getDerivs2 <- function(x, ...) {
+  UseMethod("getDerivs2", x)
+}
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.parvec <- function(x, ...) {
+  attr(x, "deriv2")
 }
 
 

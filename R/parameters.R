@@ -20,6 +20,15 @@
 #' @param method character, either \code{"explicit"} or \code{"implicit"}
 #' @param verbose Print out information during compilation
 #' @return An object of class \link{parfn}.
+#' @examples
+#' 
+#' logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", 
+#'               A = "exp(logA)", B = "exp(logB)")
+#' p_log <- P(logtrafo)
+#' 
+#' pars <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
+#' out <- p_log(pars)
+#' getDerivs(out)
 #' @export
 P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FALSE,  keep.root = TRUE, compile = FALSE, modelname = NULL, method = c("explicit", "implicit"), verbose = FALSE) {
   
@@ -43,118 +52,202 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
   
 }
 
-#' Parameter transformation
+#' Explicit parameter transformation
+#'
+#' Constructs a parameter transformation function that maps outer parameters
+#' to inner parameters according to symbolic expressions. 
 #' 
 #' @param trafo Named character vector. Names correspond to the parameters being fed into
-#' the model (the inner parameters). The elements of tafo are equations that express 
-#' the inner parameters in terms of other parameters (the outer parameters)
+#' the model (the inner parameters). The elements of \code{trafo} are equations that express 
+#' the inner parameters in terms of other parameters (the outer parameters).
 #' @param parameters Character vector. Optional. If given, the generated parameter
 #' transformation returns values for each element in \code{parameters}. If elements of
 #' \code{parameters} are not in \code{names(trafo)} the identity transformation is assumed.
-#' @param attach.input attach those incoming parameters to output which are not overwritten by
+#' @param attach.input Attach those incoming parameters to the output which are not overwritten by
 #' the parameter transformation. 
-#' @param compile Logical, compile the function (see \link{funC0})
-#' @param condition character, the condition for which the transformation is generated
+#' @param compile Logical, compile the function (see \link{funCpp}).
+#' @param condition Character, the condition for which the transformation is generated.
 #' @param modelname Character, used if \code{compile = TRUE}, sets a fixed filename for the
 #' C file.
-#' @param verbose Print compiler output to R command line.
-#' @return a function \code{p2p(p, fixed = NULL, deriv = TRUE)} representing the parameter 
-#' transformation. Here, \code{p} is a named numeric vector with the values of the outer parameters,
-#' \code{fixed} is a named numeric vector with values of the outer parameters being considered
-#' as fixed (no derivatives returned) and \code{deriv} is a logical determining whether the Jacobian
-#' of the parameter transformation is returned as attribute "deriv".
-#' @seealso \link{Pimpl} for implicit parameter transformations
-#' @examples
+#' @param verbose Print compiler output to the R console.
+#' @param deriv Logical, if \code{TRUE} the Jacobian of the transformation is precomputed 
+#' symbolically and returned as attribute \code{"deriv"}.
+#' @param deriv2 Logical, if \code{TRUE} the Hessian of the transformation is also precomputed 
+#' symbolically and returned as attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.
+#' @param fixed Character vector of parameter names treated as fixed (no derivatives returned 
+#' with respect to them).
 #' 
-#' logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", 
-#'               A = "exp(logA)", B = "exp(logB)")
-#' p_log <- P(logtrafo)
+#' @return A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing the 
+#' parameter transformation. Here, \code{p} is a named numeric vector with the values of the 
+#' outer parameters, \code{fixed} is a named numeric vector with values of the outer parameters 
+#' being considered as fixed (no derivatives returned), and \code{deriv}/\code{deriv2} determine 
+#' whether the Jacobian and Hessian of the transformation are attached as attributes 
+#' \code{"deriv"} and \code{"deriv2"}.
 #' 
-#' pars <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
-#' out <- p_log(pars)
-#' getDerivs(out)
+#' @seealso \link{Pimpl} for implicit parameter transformations.
+#' @importFrom CppODE funCpp
+#' @importFrom einsum einsum
 #' @export
-Pexpl <- function(trafo, parameters=NULL, attach.input = FALSE, condition = NULL, compile = FALSE, modelname = NULL, verbose = FALSE) {
+Pexpl <- function(trafo,
+                  parameters = NULL,
+                  deriv = TRUE,
+                  deriv2 = FALSE,
+                  fixed = NULL,
+                  attach.input = FALSE,
+                  condition = NULL,
+                  compile = FALSE,
+                  modelname = NULL,
+                  verbose = FALSE) {
   
-  # get outer parameters
+  # ---------------------------------------------------------------------------
+  # Determine parameter sets
+  # ---------------------------------------------------------------------------
   symbols <- getSymbols(trafo)
   
-  if(is.null(parameters)) {
-    parameters <- symbols 
+  if (is.null(parameters)) {
+    parameters <- symbols
   } else {
-    identity <- parameters[which(!parameters%in%symbols)]
+    identity <- parameters[!(parameters %in% names(trafo))]
     names(identity) <- identity
     trafo <- c(trafo, identity)
   }
   
-  # Modify modelname by condition
-  if (!is.null(modelname) && !is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
-  modelname_deriv <- NULL
-  if (!is.null(modelname)) modelname_deriv <- paste(modelname, "deriv", sep = "_")
-
-  dtrafo <- jacobianSymb(trafo, parameters)
+  # Model name with condition label
+  if (is.null(modelname)) modelname <- "expl_parfn"
+  if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
-  PEval <- funC0(trafo, parameters = parameters, compile = compile, modelname = modelname, 
-                 verbose = verbose, convenient = FALSE, warnings = FALSE)
-  dPEval <- funC0(dtrafo, parameters = parameters, compile = compile, 
-                  modelname = modelname_deriv, 
-                  verbose = verbose, convenient = FALSE, warnings = FALSE)
+  # ---------------------------------------------------------------------------
+  # Build compiled (or fallback R) evaluator for transformation
+  # ---------------------------------------------------------------------------
+  PEval <- CppODE::funCpp(
+    x          = unclass(trafo),
+    variables  = NULL,
+    parameters = parameters,
+    fixed      = fixed,
+    compile    = compile,
+    modelname  = modelname,
+    verbose    = verbose,
+    convenient = FALSE,
+    deriv      = deriv,
+    deriv2     = deriv2
+  )
   
-  
-  # Controls to be modified from outside
-  controls <- list(attach.input = attach.input)
-  
-  # the parameter transformation function to be returned
-  p2p <- function(pars, fixed=NULL, deriv = TRUE) {
+  # ---------------------------------------------------------------------------
+  # Define returned parameter transformation function
+  # ---------------------------------------------------------------------------
+  p2p <- function(pars, fixed = NULL, deriv = deriv, deriv2 = deriv2) {
     
-    p <- pars
-    attach.input <- controls$attach.input
+    if (deriv2 && !deriv) {
+      warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
+      deriv <- TRUE
+    }
     
-    # Evaluate transformation
-    args <- c(p, fixed)
-    pinner <- PEval(p = args)[1,]
+    # Build full outer parameter vector
+    args <- c(pars, fixed)
+    args <- args[unique(c(parameters, names(args)))]
+    args[setdiff(parameters, names(args))] <- 0
+    args <- args[parameters]
     
-    # sanity check: non of pinner should be NaN
-    if(any(is.nan(pinner))) {
+    # Evaluate inner parameters
+    pinner <- PEval(NULL, args, attach.input = attach.input, deriv = deriv, deriv2 = deriv2)
+    
+    if (any(is.nan(pinner))) {
       stop(
         paste0(
           "The following inner parameter(s) evaluate to NaN:\n\t",
-          paste0(names(pinner)[is.nan(pinner)], collapse = "\n\t"), ".\n",
-          "Perhaps a trafo devides by zero? All necessery parameters fixed?"
+          paste0(names(pinner)[is.nan(pinner)], collapse = "\n\t"),
+          ".\nLikely cause: division by zero or missing inputs."
         )
       )
     }
-
-    myderiv <- NULL
-    if(deriv) {
-      
-      jac.matrix <- matrix(0, nrow = length(pinner), ncol = length(args), dimnames = list(names(pinner), names(args)))
-      col.idx <- match(parameters, names(args))
-      if(any(is.na(col.idx))) stop("Parameters are not found in input arguments:\n", paste0(parameters[is.na(col.idx)], collapse = ", "), "\n=========Input parameters were:\n", paste0(names(args), ", "))
-      jac.matrix[1:length(pinner), col.idx] <- dPEval(p = args)[1,]
-      jac.matrix <- jac.matrix[, names(p), drop = FALSE] # delete fixed
-  
-      dP <- attr(p, "deriv", exact = TRUE)
-      if(!is.null(dP)) jac.matrix <- jac.matrix %*% submatrix(dP, rows = colnames(jac.matrix))
-      
-      myderiv <- jac.matrix
+    
+    # Identify fixed vs. active parameters
+    fixed_now <- if (is.null(fixed)) character(0) else names(fixed)
+    nonfixed  <- setdiff(parameters, fixed_now)
+    
+    # -------------------------------------------------------------------------
+    # Efficient derivative propagation (vectorized einsum operations)
+    # -------------------------------------------------------------------------
+    myderiv  <- NULL
+    myderiv2 <- NULL
+    
+    # ----------------- Jacobian -----------------
+    if (deriv) {
+      J_outer <- attr(pinner, "jacobian")
+      if (!is.null(J_outer)) {
+        J_outer <- J_outer[, nonfixed, 1, drop = FALSE]
+        
+        dP <- attr(pars, "deriv", exact = TRUE)
+        if (!is.null(dP)) {
+          dP <- dP[nonfixed, , drop = FALSE]
+          myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP)
+        } else {
+          myderiv <- J_outer
+        }
+      }
     }
     
-    pinner <- as.parvec(pinner, deriv = myderiv)
-    if (attach.input & !all(names(pars) %in% names(pinner)))
+    # ----------------- Hessian -----------------
+    if (deriv2) {
+      H_outer <- attr(pinner, "hessian")
+      if (!is.null(H_outer)) {
+        H_outer <- H_outer[, nonfixed, nonfixed, 1, drop = FALSE]
+        dP  <- attr(pars, "deriv",  exact = TRUE)
+        dP2 <- attr(pars, "deriv2", exact = TRUE)
+        
+        if (!is.null(dP))  dP  <- dP[nonfixed, , drop = FALSE]
+        if (!is.null(dP2)) dP2 <- dP2[nonfixed, nonfixed, , drop = FALSE]
+        
+        # H_outer: [inner, n1, n2]
+        # dP: [n1, o1], [n2, o2]
+        # dP2: [n1, n2, o]
+        term1 <- NULL
+        term2 <- NULL
+        
+        # Contraction for outer Hessian with two Jacobians
+        if (!is.null(dP)) {
+          term1 <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP, dP)
+        }
+        
+        # Contraction for Jacobian with second derivative of outer parameters
+        if (!is.null(dP2)) {
+          J_outer <- attr(pinner, "jacobian")[, nonfixed, 1, drop = FALSE]
+          term2 <- einsum::einsum("im,mjk->ijk", J_outer, dP2)
+        }
+        
+        # Combine terms
+        if (!is.null(term1) && !is.null(term2)) {
+          myderiv2 <- term1 + term2
+        } else if (!is.null(term1)) {
+          myderiv2 <- term1
+        } else if (!is.null(term2)) {
+          myderiv2 <- term2
+        }
+      }
+    }
+    
+    # -------------------------------------------------------------------------
+    # Assemble result and return
+    # -------------------------------------------------------------------------
+    pinner <- as.parvec(unclass(pinner), deriv = myderiv, deriv2 = myderiv2)
+    
+    if (attach.input && !all(names(pars) %in% names(pinner))) {
       pinner <- c(pinner, as.parvec(pars[setdiff(names(pars), names(pinner))]))
+    }
     
-    return(pinner)
-    
+    pinner
   }
   
-  attr(p2p, "equations") <- as.eqnvec(trafo)
+  # ---------------------------------------------------------------------------
+  # Attach metadata
+  # ---------------------------------------------------------------------------
+  attr(p2p, "equations")  <- as.eqnvec(trafo)
   attr(p2p, "parameters") <- parameters
-  attr(p2p, "modelname") <- modelname
+  attr(p2p, "modelname")  <- modelname
   
   parfn(p2p, parameters, condition)
-  
 }
+
 
 
 #' Parameter transformation (implicit)
