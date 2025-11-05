@@ -271,7 +271,7 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 
 ## Parameter classes --------------------------------------------------------
 
-#' Parameter transformation function (supports first and second derivatives)
+#' Parameter transformation function
 #'
 #' @description
 #' Generates functions that transform one parameter vector into another
@@ -333,15 +333,6 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 #' [as.parvec()] for parameter vector construction.
 #'
 #' @example inst/examples/prediction.R
-#' @export
-#' Parameter transformation function (supports first and second derivatives)
-#'
-#' @description
-#' Generates functions that transform one parameter vector into another,
-#' propagating both first- and second-order derivatives through the mapping.
-#' This function pushes forward the Jacobian and, if requested, the Hessian
-#' of the original parameter vector.
-#'
 #' @export
 parfn <- function(p2p, parameters = NULL, condition = NULL) {
   

@@ -2,7 +2,7 @@
 % Please edit documentation in R/parClass.R
 \name{[.parvec}
 \alias{[.parvec}
-\title{Subset method for parvec objects (supports second derivatives)}
+\title{Subset method for parvec objects}
 \usage{
 \method{[}{parvec}(x, ..., drop = FALSE)
 }

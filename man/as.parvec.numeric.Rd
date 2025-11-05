@@ -11,13 +11,24 @@
 
 \item{names}{Optional character vector of parameter names.}
 
-\item{deriv}{Optional Jacobian matrix (first derivatives).
-If `NULL`, an identity matrix is used.}
+\item{deriv}{Either a logical flag, a Jacobian matrix, or `NULL`.
+* If `FALSE`, no Jacobian is stored (attribute set to `NULL`).
+* If `NULL`, an identity matrix is assumed.
+* If a matrix, it is used (and missing parameters are filled with identity rows/cols).}
 
-\item{deriv2}{Optional 3D array of Hessians (second derivatives).
-If `NULL`, a zero tensor is created.}
+\item{deriv2}{Either a logical flag, a 3D array, or `NULL`.
+* If `FALSE`, no Hessian is stored (attribute set to `NULL`).
+* If `NULL`, a zero tensor is assumed.
+* If an array, it is used (and missing parameters are filled with zeros).}
+}
+\value{
+An object of class `"parvec"`, i.e. a named numeric vector with attributes:
+\itemize{
+  \item \code{attr(x, "deriv")} — Jacobian matrix (or `NULL`)
+  \item \code{attr(x, "deriv2")} — Hessian tensor (or `NULL`)
+}
 }
 \description{
-Creates an object of class `parvec`, storing parameter values
-together with their first (`deriv`) and second (`deriv2`) derivatives.
+Creates an object of class `parvec`, storing parameter values together with
+their first (`deriv`) and second (`deriv2`) derivatives.
 }

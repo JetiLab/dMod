@@ -2,7 +2,7 @@
 % Please edit documentation in R/parClass.R
 \name{c.parvec}
 \alias{c.parvec}
-\title{Concatenate parvec objects (supports second derivatives)}
+\title{Concatenate parvec objects}
 \usage{
 \method{c}{parvec}(...)
 }

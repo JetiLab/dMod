@@ -2,11 +2,14 @@
 % Please edit documentation in R/parameters.R
 \name{Pexpl}
 \alias{Pexpl}
-\title{Parameter transformation}
+\title{Parameter transformation (explicit)}
 \usage{
 Pexpl(
   trafo,
   parameters = NULL,
+  deriv = TRUE,
+  deriv2 = FALSE,
+  fixed = NULL,
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -15,36 +18,47 @@ Pexpl(
 )
 }
 \arguments{
-\item{trafo}{Named character vector. Names correspond to the parameters being fed into
-the model (the inner parameters). The elements of tafo are equations that express 
-the inner parameters in terms of other parameters (the outer parameters)}
+\item{trafo}{eqnvec or named character vector. Names correspond to the parameters being fed into
+the model (the inner parameters). The elements of \code{trafo} are equations that express 
+the inner parameters in terms of other parameters (the outer parameters).}
 
 \item{parameters}{Character vector. Optional. If given, the generated parameter
 transformation returns values for each element in \code{parameters}. If elements of
 \code{parameters} are not in \code{names(trafo)} the identity transformation is assumed.}
 
-\item{attach.input}{attach those incoming parameters to output which are not overwritten by
+\item{deriv}{Logical, if \code{TRUE} the Jacobian of the transformation is precomputed 
+symbolically and returned as attribute \code{"deriv"}.}
+
+\item{deriv2}{Logical, if \code{TRUE} the Hessian of the transformation is also precomputed 
+symbolically and returned as attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.}
+
+\item{fixed}{Character vector of parameter names treated as fixed (no derivatives returned 
+with respect to them).}
+
+\item{attach.input}{Attach those incoming parameters to the output which are not overwritten by
 the parameter transformation.}
 
-\item{condition}{character, the condition for which the transformation is generated}
+\item{condition}{Character, the condition for which the transformation is generated.}
 
-\item{compile}{Logical, compile the function (see \link{funC0})}
+\item{compile}{Logical, compile the function (see \link{funCpp}).}
 
 \item{modelname}{Character, used if \code{compile = TRUE}, sets a fixed filename for the
 C file.}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{verbose}{Print compiler output to the R console.}
 }
 \value{
-a function \code{p2p(p, fixed = NULL, deriv = TRUE)} representing the parameter 
-transformation. Here, \code{p} is a named numeric vector with the values of the outer parameters,
-\code{fixed} is a named numeric vector with values of the outer parameters being considered
-as fixed (no derivatives returned) and \code{deriv} is a logical determining whether the Jacobian
-of the parameter transformation is returned as attribute "deriv".
+A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing the 
+parameter transformation. Here, \code{p} is a named numeric vector with the values of the 
+outer parameters, \code{fixed} is a named numeric vector with values of the outer parameters 
+being considered as fixed (no derivatives returned), and \code{deriv}/\code{deriv2} determine 
+whether the Jacobian and Hessian of the transformation are attached as attributes 
+\code{"deriv"} and \code{"deriv2"}.
 }
 \description{
-Parameter transformation
+Constructs a parameter transformation function that maps outer parameters
+to inner parameters according to symbolic expressions.
 }
 \seealso{
-\link{Pimpl} for implicit parameter transformations
+\link{Pimpl} for implicit parameter transformations.
 }

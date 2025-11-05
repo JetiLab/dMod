@@ -655,7 +655,7 @@ as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
 }
 
 
-#' Pretty printing for parvec objects (supports second derivatives)
+#' Pretty printing for parvec objects
 #'
 #' Prints a parameter vector along with information about
 #' its attached derivative matrices (`deriv`, `deriv2`).
@@ -701,7 +701,7 @@ print.parvec <- function(x) {
   invisible(x)
 }
 
-#' Subset method for parvec objects (supports second derivatives)
+#' Subset method for parvec objects
 #'
 #' This method subsets a parameter vector (`parvec`) while keeping its
 #' first (`deriv`) and second (`deriv2`) derivative attributes consistent.
@@ -753,7 +753,7 @@ print.parvec <- function(x) {
 
 
 
-#' Concatenate parvec objects (supports second derivatives)
+#' Concatenate parvec objects
 #'
 #' Combines multiple parameter vectors (`parvec`) into a single object,
 #' preserving their first (`deriv`) and second (`deriv2`) derivatives.

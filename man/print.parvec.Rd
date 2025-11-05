@@ -2,7 +2,7 @@
 % Please edit documentation in R/parClass.R
 \name{print.parvec}
 \alias{print.parvec}
-\title{Pretty printing for parvec objects (supports second derivatives)}
+\title{Pretty printing for parvec objects}
 \usage{
 \method{print}{parvec}(x)
 }

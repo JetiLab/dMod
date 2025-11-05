@@ -52,12 +52,12 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
   
 }
 
-#' Explicit parameter transformation
+#' Parameter transformation (explicit)
 #'
 #' Constructs a parameter transformation function that maps outer parameters
 #' to inner parameters according to symbolic expressions. 
 #' 
-#' @param trafo Named character vector. Names correspond to the parameters being fed into
+#' @param trafo eqnvec or named character vector. Names correspond to the parameters being fed into
 #' the model (the inner parameters). The elements of \code{trafo} are equations that express 
 #' the inner parameters in terms of other parameters (the outer parameters).
 #' @param parameters Character vector. Optional. If given, the generated parameter
@@ -85,9 +85,9 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
 #' \code{"deriv"} and \code{"deriv2"}.
 #' 
 #' @seealso \link{Pimpl} for implicit parameter transformations.
+#' @export
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
-#' @export
 Pexpl <- function(trafo,
                   parameters = NULL,
                   deriv = TRUE,
@@ -151,6 +151,7 @@ Pexpl <- function(trafo,
     # Evaluate inner parameters
     pinner <- PEval(NULL, args, attach.input = attach.input, deriv = deriv, deriv2 = deriv2)
     
+    # Sanity check
     if (any(is.nan(pinner))) {
       stop(
         paste0(
@@ -229,7 +230,9 @@ Pexpl <- function(trafo,
     # -------------------------------------------------------------------------
     # Assemble result and return
     # -------------------------------------------------------------------------
-    pinner <- as.parvec(unclass(pinner), deriv = myderiv, deriv2 = myderiv2)
+    pinner <- as.parvec(pinner, 
+                        deriv = ifelse(deriv, myderiv, FALSE), 
+                        deriv2 = ifelse(deriv2, myderiv2, FALSE))
     
     if (attach.input && !all(names(pars) %in% names(pinner))) {
       pinner <- c(pinner, as.parvec(pars[setdiff(names(pars), names(pinner))]))

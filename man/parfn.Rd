@@ -7,32 +7,63 @@
 parfn(p2p, parameters = NULL, condition = NULL)
 }
 \arguments{
-\item{p2p}{a transformation function for one condition, i.e. a function
-\code{p2p(p, fixed, deriv)} which translates a parameter vector \code{p}
-and a vector of fixed parameter values \code{fixed} into a new parameter
-vector. If \code{deriv = TRUE}, the function should return an attribute
-\code{deriv} with the Jacobian matrix of the parameter transformation.}
+\item{p2p}{A transformation function for one condition, i.e.
+a function \code{p2p(p, fixed, deriv, deriv2)} that maps
+a parameter vector \code{p} and optional fixed parameters \code{fixed}
+into a new parameter vector.
+\itemize{
+  \item If \code{deriv = TRUE}, the function should attach a matrix
+    attribute \code{"deriv"} representing the Jacobian of the transformation.
+  \item If \code{deriv2 = TRUE}, it may additionally attach a 3D array
+    attribute \code{"deriv2"} representing the Hessian tensor.
+}}
 
-\item{parameters}{character vector, the parameters accepted by the function}
+\item{parameters}{Character vector of parameter names accepted by the
+transformation function.}
 
-\item{condition}{character, the condition for which the transformation is defined}
+\item{condition}{Character string indicating the condition for which the
+transformation is defined.}
+
+\item{env}{Environment in which the parameter transformation function
+should be evaluated. This allows condition-specific transformations
+to be resolved within a given modeling context.}
 }
 \value{
-object of class \code{parfn}, i.e. a function \code{p(..., fixed, deriv,
- conditions, env)}. The argument \code{pars} should be passed via the \code{...}
- argument.
+An object of class \code{"parfn"}, i.e. a function of the form
+\code{p(..., fixed, deriv, deriv2, conditions, env)}.
 
- Contains attributes "mappings", a list of \code{p2p}
-functions, "parameters", the union of parameters acceted by the mappings and
-"conditions", the total set of conditions.
+When evaluated, this function returns a parameter vector (of class
+\code{"parvec"}) carrying derivative attributes:
+\itemize{
+  \item \code{attr(x, "deriv")} — Jacobian matrix
+  \item \code{attr(x, "deriv2")} — Hessian tensor (if available)
+}
 }
 \description{
-Generate functions that transform one parameter vector into another
-by means of a transformation, pushing forward the jacobian matrix
-of the original parameter.
-Usually, this function is called internally, e.g. by \link{P}.
-However, you can use it to add your own specialized parameter
-transformations to the general framework.
+Generates functions that transform one parameter vector into another
+by means of a symbolic or numeric transformation, propagating both
+first- and second-order derivatives through the mapping.
+
+The resulting function pushes forward the **Jacobian** (first derivatives)
+and, if requested, the **Hessian** (second derivatives) of the original
+parameter vector, enabling analytic gradient and curvature propagation
+throughout hierarchical parameter models.
+
+Usually, this function is called internally (e.g. by [P()] or [Pexpl()]),
+but it can also be used directly to register user-defined parameter
+transformations into the framework.
+}
+\details{
+The \code{env} argument is used to control the environment in which
+expressions are evaluated. This is particularly useful when building
+models with multiple conditions or nested transformations, where each
+mapping might depend on its own set of local variables.
+
+This constructor provides the lowest-level interface for defining
+condition-specific parameter transformations in the model hierarchy.
+It is typically used as a building block by higher-level interfaces
+such as [Pexpl()] (explicit transformations) and [Pimpl()]
+(implicit transformations).
 }
 \examples{
 # Define a time grid on which to make a prediction by peace-wise linear function.
@@ -73,5 +104,6 @@ out2 <- (g*x*p)(times, pars)
 plot(out2)
 }
 \seealso{
-\link{sumfn}, \link{P}
+[P()], [Pexpl()], [Pimpl()] for creating symbolic transformation functions,
+[as.parvec()] for parameter vector construction.
 }
