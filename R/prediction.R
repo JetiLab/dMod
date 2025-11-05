@@ -30,11 +30,22 @@ Xs <- function(odemodel, ...) {
 
 #' @export
 #' @import deSolve einsum
-Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condition = NULL, optionsOde=list(method = "lsoda"), optionsSens=list(method = "lsodes"), fcontrol = NULL) {
+Xs.deSolve <- function(odemodel, 
+                       deriv = TRUE, 
+                       forcings=NULL, 
+                       events=NULL, 
+                       names = NULL, 
+                       condition = NULL, 
+                       optionsOde=list(method = "lsoda"), 
+                       optionsSens=list(method = "lsodes"), 
+                       fcontrol = NULL) {
   
   func <- odemodel$func
   extended <- odemodel$extended
-  if (is.null(extended)) warning("Element 'extended' empty. ODE model does not contain sensitivities.")
+  if (is.null(extended)){
+    warning("Element 'extended' empty. ODE model does not contain sensitivities.")
+    deriv = FALSE
+  }
   
   myforcings <- forcings
   myevents <- events
@@ -87,8 +98,14 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
     fcontrol = myfcontrol
   )
   
-  P2X <- function(times, pars, deriv=TRUE){
+  P2X <- function(times, pars, deriv=TRUE, deriv2 = FALSE, env = parent.frame()){
     
+    if (deriv2) {
+      stop(
+        "Second-order sensitivities are not available with the 'deSolve' solver.\n",
+        "Consider using solver = 'boost' in odemodel()."
+      )
+    }
     
     yini <- unclass(pars)[variables]
     mypars <- unclass(pars)[parameters]
@@ -376,21 +393,38 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       # Apply parameter transformation to the derivatives (chain rule)
       variables <- intersect(variables, names)
       
-      mysensitivities <- outSens2$sens1[ , variables, ]
-      mysensitivities2 <- outSens2$sens2[ , variables, , ]
-      dP <- attr(pars, "deriv")
-      dP2 <- attr(pars, "deriv2")
+      mysensitivities  <- outSens2$sens1[, variables, ]
+      mysensitivities2 <- outSens2$sens2[, variables, , ]
       
-      if (!is.null(dP) & !is.null(dP2)) {
-        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dP)
-        dX2 <- einsum::einsum("aikl,kj,lm->aijm", mysensitivities2, dP, dP) + einsum::einsum("aik,kmj->aijm", mysensitivities, dP2)
+      # Extract parameter derivatives (first and second order)
+      dP  <- attr(pars, "deriv",  exact = TRUE)
+      dP2 <- attr(pars, "deriv2", exact = TRUE)
+      
+      if (!is.null(dP) && !is.null(dP2)) {
+        # Subset relevant inner parameters (theta)
+        dPsub  <- dP [controls$dimnames_sens$sens, , drop = FALSE]
+        dP2sub <- dP2[controls$dimnames_sens$sens, , , drop = FALSE]
+        
+        # --- First-order chain rule: dX/dp = dX/dθ * dθ/dp
+        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
+        
+        # --- Second-order chain rule:
+        # term1: d²X/dθ² * dθ/dp * dθ/dp
+        # term2: dX/dθ * d²θ/dp²
+        term1 <- einsum::einsum("aikl,kj,lm->aijm", mysensitivities2, dPsub, dPsub)
+        term2 <- einsum::einsum("aik,kmj->aijm",  mysensitivities,  dP2sub)
+        dX2 <- term1 + term2
+        
+        # Assign dimension names
+        dimnames(dX)  <- list(NULL, variables, colnames(dPsub))
+        dimnames(dX2) <- list(NULL, variables, colnames(dPsub), colnames(dPsub))
+        
       } else {
-        dX <- mysensitivities
+        # No parameter transformation provided
+        dX  <- mysensitivities
         dX2 <- mysensitivities2
       }
-      
     }
-    
     prdframe(out, deriv = dX, sensitivities = mysensitivities, deriv2 = d2X, sensitivities2 = mysensitivities2, parameters = pars)
     
   }

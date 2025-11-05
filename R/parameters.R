@@ -30,7 +30,18 @@
 #' out <- p_log(pars)
 #' getDerivs(out)
 #' @export
-P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FALSE,  keep.root = TRUE, compile = FALSE, modelname = NULL, method = c("explicit", "implicit"), verbose = FALSE) {
+P <- function(trafo = NULL, 
+              parameters=NULL, 
+              condition = NULL, 
+              deriv = TRUE,
+              deriv2 = FALSE,
+              fixed = NULL,
+              attach.input = FALSE,  
+              keep.root = TRUE, 
+              compile = FALSE, 
+              modelname = NULL, 
+              method = c("explicit", "implicit"), 
+              verbose = FALSE) {
   
   if (is.null(trafo)) return()
   if (!is.list(trafo)) {
@@ -39,12 +50,30 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
   }
   
   method <- match.arg(method)
+  force(deriv)
+  force(deriv2)
+  force(fixed)
   
   Reduce("+", lapply(1:length(trafo), function(i) {
   
       switch(method, 
-           explicit = Pexpl(trafo = as.eqnvec(trafo[[i]]), parameters = parameters, attach.input = attach.input, condition = names(trafo[i]), compile = compile, modelname = modelname, verbose = verbose),
-           implicit = Pimpl(trafo = as.eqnvec(trafo[[i]]), parameters = parameters, keep.root = keep.root, condition = names(trafo[i]), compile = compile, modelname = modelname, verbose = verbose))
+           explicit = Pexpl(trafo = as.eqnvec(trafo[[i]]), 
+                            parameters = parameters,
+                            deriv = deriv,
+                            deriv2 = deriv2,
+                            fixed = fixed,
+                            attach.input = attach.input,
+                            compile = compile,
+                            condition = names(trafo[i]),
+                            modelname = modelname, 
+                            verbose = verbose),
+           implicit = Pimpl(trafo = as.eqnvec(trafo[[i]]), 
+                            parameters = parameters, 
+                            keep.root = keep.root, 
+                            condition = names(trafo[i]), 
+                            compile = compile, 
+                            modelname = modelname, 
+                            verbose = verbose))
     
     
   }))
@@ -63,6 +92,12 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
 #' @param parameters Character vector. Optional. If given, the generated parameter
 #' transformation returns values for each element in \code{parameters}. If elements of
 #' \code{parameters} are not in \code{names(trafo)} the identity transformation is assumed.
+#' @param deriv Logical, if \code{TRUE} the Jacobian of the transformation is precomputed 
+#' symbolically and returned as attribute \code{"deriv"}.
+#' @param deriv2 Logical, if \code{TRUE} the Hessian of the transformation is also precomputed 
+#' symbolically and returned as attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.
+#' @param fixed Character vector of parameter names treated as fixed (no derivatives returned 
+#' with respect to them).
 #' @param attach.input Attach those incoming parameters to the output which are not overwritten by
 #' the parameter transformation. 
 #' @param compile Logical, compile the function (see \link{funCpp}).
@@ -70,12 +105,6 @@ P <- function(trafo = NULL, parameters=NULL, condition = NULL, attach.input = FA
 #' @param modelname Character, used if \code{compile = TRUE}, sets a fixed filename for the
 #' C file.
 #' @param verbose Print compiler output to the R console.
-#' @param deriv Logical, if \code{TRUE} the Jacobian of the transformation is precomputed 
-#' symbolically and returned as attribute \code{"deriv"}.
-#' @param deriv2 Logical, if \code{TRUE} the Hessian of the transformation is also precomputed 
-#' symbolically and returned as attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.
-#' @param fixed Character vector of parameter names treated as fixed (no derivatives returned 
-#' with respect to them).
 #' 
 #' @return A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing the 
 #' parameter transformation. Here, \code{p} is a named numeric vector with the values of the 
@@ -110,6 +139,7 @@ Pexpl <- function(trafo,
     identity <- parameters[!(parameters %in% names(trafo))]
     names(identity) <- identity
     trafo <- c(trafo, identity)
+    parameters <- getSymbols(trafo)
   }
   
   # Model name with condition label
@@ -120,7 +150,7 @@ Pexpl <- function(trafo,
   # Build compiled (or fallback R) evaluator for transformation
   # ---------------------------------------------------------------------------
   PEval <- CppODE::funCpp(
-    x          = unclass(trafo),
+    x          = trafo,
     variables  = NULL,
     parameters = parameters,
     fixed      = fixed,
@@ -135,22 +165,17 @@ Pexpl <- function(trafo,
   # ---------------------------------------------------------------------------
   # Define returned parameter transformation function
   # ---------------------------------------------------------------------------
-  p2p <- function(pars, fixed = NULL, deriv = deriv, deriv2 = deriv2) {
+  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, env = parent.frame()) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
       deriv <- TRUE
     }
     
-    # Build full outer parameter vector
-    args <- c(pars, fixed)
-    args <- args[unique(c(parameters, names(args)))]
-    args[setdiff(parameters, names(args))] <- 0
-    args <- args[parameters]
-    
     # Evaluate inner parameters
-    pinner <- PEval(NULL, args, attach.input = attach.input, deriv = deriv, deriv2 = deriv2)
+    outPEval <- PEval(NULL, pars, attach.input = attach.input, deriv = deriv, deriv2 = deriv2)
     
+    pinner <- setNames(as.numeric(outPEval$out), colnames(outPEval$out))
     # Sanity check
     if (any(is.nan(pinner))) {
       stop(
@@ -164,22 +189,69 @@ Pexpl <- function(trafo,
     
     # Identify fixed vs. active parameters
     fixed_now <- if (is.null(fixed)) character(0) else names(fixed)
-    nonfixed  <- setdiff(parameters, fixed_now)
+    nonfixed  <- setdiff(attr(PEval, "parameter"), fixed_now)
     
-    # -------------------------------------------------------------------------
-    # Efficient derivative propagation (vectorized einsum operations)
-    # -------------------------------------------------------------------------
+    # ----------------- Apply chain rules -----------------
     myderiv  <- NULL
     myderiv2 <- NULL
     
-    # ----------------- Jacobian -----------------
-    if (deriv) {
-      J_outer <- attr(pinner, "jacobian")
+    if (deriv2) {
+      
+      # ----- First-order derivative -----
+      J_outer <- outPEval$jacobian[,,1]
       if (!is.null(J_outer)) {
-        J_outer <- J_outer[, nonfixed, 1, drop = FALSE]
+        J_outer <- J_outer[, nonfixed, drop = FALSE]
         
-        dP <- attr(pars, "deriv", exact = TRUE)
-        if (!is.null(dP)) {
+        dP  <- attr(pars, "deriv",  exact = TRUE)
+        dP2 <- attr(pars, "deriv2", exact = TRUE)
+        
+        if (!is.null(dP) && !is.null(dP2)) {
+          # Parameter transformation active
+          dP <- dP[nonfixed, , drop = FALSE]
+          myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP)
+        } else {
+          # No transformation
+          myderiv <- J_outer
+        }
+      }
+      
+      # ----- Second-order derivative -----
+      H_outer <- outPEval$hessian[,,,1]
+      if (!is.null(H_outer)) {
+        H_outer <- H_outer[, nonfixed, nonfixed, drop = FALSE]
+        
+        dP  <- attr(pars, "deriv",  exact = TRUE)
+        dP2 <- attr(pars, "deriv2", exact = TRUE)
+        
+        if (!is.null(dP) && !is.null(dP2)) {
+          dP  <- dP [nonfixed, , drop = FALSE]
+          dP2 <- dP2[nonfixed, , , drop = FALSE]
+          
+          # term1: contraction of outer Hessian with two Jacobians
+          term1 <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP, dP)
+          # term2: contraction of outer Jacobian with second parameter derivatives
+          J_outer <- attr(pinner, "jacobian")[, nonfixed, 1, drop = FALSE]
+          term2 <- einsum::einsum("im,mjk->ijk", J_outer, dP2)
+          # combine both
+          myderiv2 <- term1 + term2
+          
+        } else {
+          # no parameter transformation
+          myderiv2 <- H_outer
+        }
+      }
+      
+    } else if (deriv) {
+      
+      # ----- First-order derivative only -----
+      J_outer <- outPEval$jacobian[,,1]
+      if (!is.null(J_outer)) {
+        J_outer <- J_outer[, nonfixed, drop = FALSE]
+        
+        dP  <- attr(pars, "deriv",  exact = TRUE)
+        dP2 <- attr(pars, "deriv2", exact = TRUE)
+        
+        if (!is.null(dP) && !is.null(dP2)) {
           dP <- dP[nonfixed, , drop = FALSE]
           myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP)
         } else {
@@ -188,54 +260,19 @@ Pexpl <- function(trafo,
       }
     }
     
-    # ----------------- Hessian -----------------
-    if (deriv2) {
-      H_outer <- attr(pinner, "hessian")
-      if (!is.null(H_outer)) {
-        H_outer <- H_outer[, nonfixed, nonfixed, 1, drop = FALSE]
-        dP  <- attr(pars, "deriv",  exact = TRUE)
-        dP2 <- attr(pars, "deriv2", exact = TRUE)
-        
-        if (!is.null(dP))  dP  <- dP[nonfixed, , drop = FALSE]
-        if (!is.null(dP2)) dP2 <- dP2[nonfixed, nonfixed, , drop = FALSE]
-        
-        # H_outer: [inner, n1, n2]
-        # dP: [n1, o1], [n2, o2]
-        # dP2: [n1, n2, o]
-        term1 <- NULL
-        term2 <- NULL
-        
-        # Contraction for outer Hessian with two Jacobians
-        if (!is.null(dP)) {
-          term1 <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP, dP)
-        }
-        
-        # Contraction for Jacobian with second derivative of outer parameters
-        if (!is.null(dP2)) {
-          J_outer <- attr(pinner, "jacobian")[, nonfixed, 1, drop = FALSE]
-          term2 <- einsum::einsum("im,mjk->ijk", J_outer, dP2)
-        }
-        
-        # Combine terms
-        if (!is.null(term1) && !is.null(term2)) {
-          myderiv2 <- term1 + term2
-        } else if (!is.null(term1)) {
-          myderiv2 <- term1
-        } else if (!is.null(term2)) {
-          myderiv2 <- term2
-        }
-      }
-    }
     
     # -------------------------------------------------------------------------
     # Assemble result and return
     # -------------------------------------------------------------------------
     pinner <- as.parvec(pinner, 
-                        deriv = ifelse(deriv, myderiv, FALSE), 
-                        deriv2 = ifelse(deriv2, myderiv2, FALSE))
+                        deriv = if(deriv) myderiv else FALSE, 
+                        deriv2 = if(deriv2) myderiv2 else FALSE)
     
     if (attach.input && !all(names(pars) %in% names(pinner))) {
-      pinner <- c(pinner, as.parvec(pars[setdiff(names(pars), names(pinner))]))
+      pinner <- c(pinner, 
+                  as.parvec(pars[setdiff(names(pars), names(pinner))],
+                            deriv = if(deriv) NULL else FALSE,
+                            deriv2 = if(deriv2) NULL else FALSE))
     }
     
     pinner
@@ -247,6 +284,7 @@ Pexpl <- function(trafo,
   attr(p2p, "equations")  <- as.eqnvec(trafo)
   attr(p2p, "parameters") <- parameters
   attr(p2p, "modelname")  <- modelname
+  
   
   parfn(p2p, parameters, condition)
 }
@@ -320,150 +358,151 @@ Pexpl <- function(trafo,
 Pimpl <- function(trafo, parameters=NULL, condition = NULL, keep.root = TRUE, positive = TRUE, compile = FALSE, modelname = NULL, verbose = FALSE) {
   
   
-  states <- names(trafo)
-  nonstates <- getSymbols(trafo, exclude = states)
-  dependent <- setdiff(states, parameters)
-
-  # Modify modelname by condition
-  if (!is.null(modelname) && !is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
+  # states <- names(trafo)
+  # nonstates <- getSymbols(trafo, exclude = states)
+  # dependent <- setdiff(states, parameters)
+  # 
+  # # Modify modelname by condition
+  # if (!is.null(modelname) && !is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
+  # 
+  # # Then add suffix(es) for derivative function
+  # modelname_dfdx <- NULL
+  # modelname_dfdp <- NULL
+  # if (!is.null(modelname)) {
+  #   modelname_dfdx <- paste(modelname, "dfdx", sep = "_")
+  #   modelname_dfdp <- paste(modelname, "dfdp", sep = "_")
+  # }
+  # 
+  # 
+  # # Introduce a guess where Newton method starts
+  # guess <- NULL
+  # 
+  # trafo0 <- trafo[dependent]
+  # trafo0.dfdx <- jacobianSymb(trafo0, dependent)
+  # trafo0.dfdp <- jacobianSymb(trafo0, c(nonstates, parameters))
+  # 
+  # 
+  # trafo.alg <- funC0(trafo0, parameters = c(states, nonstates), 
+  #                    compile = compile, modelname = modelname, verbose = verbose,
+  #                    convenient = FALSE, warnings = FALSE)
+  # trafo.alg.dfdx <- funC0(trafo0.dfdx, parameters = c(states, nonstates), 
+  #                         compile = compile, modelname = modelname_dfdx, verbose = verbose,
+  #                         convenient = FALSE, warnings = FALSE)
+  # trafo.alg.dfdp <- funC0(trafo0.dfdp, parameters = c(states, nonstates), 
+  #                         compile = compile, modelname = modelname_dfdp, verbose = verbose,
+  #                         convenient = FALSE, warnings = FALSE)
+  # 
+  # ftrafo <- function(x, parms) {
+  #   trafo.alg(p = c(x, parms))[1,]
+  # }
+  # ftrafo.dfdx <- function(x, parms) {
+  #   matrix(trafo.alg.dfdx(p = c(x, parms))[1,], nrow = length(dependent), ncol = length(dependent), dimnames = list(dependent, dependent))
+  # }
+  # ftrafo.dfdp <- function(x, parms) {
+  #   matrix(trafo.alg.dfdp(p = c(x, parms))[1,], nrow = length(dependent), ncol = length(nonstates) + length(parameters), dimnames = list(dependent, c(nonstates, parameters)))
+  # }
+  # 
+  # 
+  # # Controls to be modified from outside
+  # controls <- list(keep.root = keep.root,
+  #                  positive = positive)
+  # 
+  # # the parameter transformation function to be returned
+  # p2p <- function(pars, fixed=NULL, deriv = TRUE) {
+  #   
+  #   
+  #   p <- pars
+  #   keep.root <- controls$keep.root
+  #   positive <- controls$positive
+  #   
+  #   # Inherit from p
+  #   dP <- attr(p, "deriv")
+  #   
+  #   # replace fixed parameters by values given in fixed
+  #   if(!is.null(fixed)) {
+  #     is.fixed <- which(names(p)%in%names(fixed)) 
+  #     if(length(is.fixed)>0) p <- p[-is.fixed]
+  #     p <- c(p, fixed)
+  #   }
+  #   
+  #   # check for parameters which are not computed by multiroot
+  #   emptypars <- names(p)[!names(p)%in%c(dependent, fixed)]
+  #   
+  #   # Set guess if available
+  #   p0 <- p
+  #   if(!is.null(guess)) 
+  #     p[intersect(dependent, names(guess))] <- guess[intersect(dependent, names(guess))]
+  #   
+  #   # If no initial guesses provides, set to 1
+  #   if (!all(dependent %in% names(p)))
+  #     p[setdiff(dependent, names(p))] <- 1
+  #   
+  #   getRoot <- function(p) {
+  #     
+  #     # Compute steady state concentrations
+  #     rootSolve::multiroot(ftrafo, positive = FALSE,
+  #                          start = p[dependent], 
+  #                          parms = p[setdiff(names(p), dependent)])
+  #   }
+  #   
+  #   myroot <- getRoot(p)
+  #   if (any(myroot$root < 0) & positive) {
+  #     
+  #     p <- p0
+  #     
+  #     # try again with empty guess
+  #     myroot <- getRoot(p)
+  #     
+  #     myroot$root[myroot$root < 0] <- 0
+  #     warning("Found negative steady state. Negative elements have been set to 0.")
+  #     
+  #     out <- c(myroot$root, p[setdiff(names(p), names(myroot$root))])
+  #     if (keep.root) guess <<- NULL
+  #     
+  #   } else {
+  #     
+  #     # Output parameters, write in outer environment if doGuess
+  #     out <- c(myroot$root, p[setdiff(names(p), names(myroot$root))])
+  #     if (keep.root) guess <<- out
+  #     
+  #   }
+  #   
+  #   
+  #   # Compute jacobian d(root)/dp
+  #   dfdx <- ftrafo.dfdx(x = myroot$root, parms = p[setdiff(names(p), names(myroot$root))])
+  #   dfdp <- ftrafo.dfdp(x = p[setdiff(names(p), names(myroot$root))], parms = myroot$root)
+  #   dxdp <- solve(dfdx, -dfdp)
+  #   #print(dxdp)
+  #   
+  #   
+  #   # Assemble total jacobian
+  #   jacobian <- matrix(0, length(out), length(p))
+  #   colnames(jacobian) <- names(p)
+  #   rownames(jacobian) <- names(out)
+  #   for(ep in emptypars) jacobian[ep, ep] <- 1
+  #   jacobian[rownames(dxdp), colnames(dxdp)] <- dxdp 
+  #   jacobian <- submatrix(jacobian, cols = setdiff(names(p), names(fixed)))
+  #   
+  #   # Multiplication with deriv of p
+  #   if(!is.null(dP)) jacobian <- jacobian%*%submatrix(dP, rows = colnames(jacobian))
+  #   
+  #   myderiv <- NULL
+  #   if(deriv) myderiv <- jacobian
+  #   
+  #   as.parvec(out, deriv = myderiv)
+  #   
+  # }
+  # 
+  # attr(p2p, "equations") <- as.eqnvec(trafo)
+  # attr(p2p, "parameters") <- parameters
+  # attr(p2p, "modelname") <- modelname
+  # 
+  # parfn(p2p, parameters, condition)
+  # 
+  # 
+  # 
   
-  # Then add suffix(es) for derivative function
-  modelname_dfdx <- NULL
-  modelname_dfdp <- NULL
-  if (!is.null(modelname)) {
-    modelname_dfdx <- paste(modelname, "dfdx", sep = "_")
-    modelname_dfdp <- paste(modelname, "dfdp", sep = "_")
-  }
-  
-  
-  # Introduce a guess where Newton method starts
-  guess <- NULL
-  
-  trafo0 <- trafo[dependent]
-  trafo0.dfdx <- jacobianSymb(trafo0, dependent)
-  trafo0.dfdp <- jacobianSymb(trafo0, c(nonstates, parameters))
-  
-  
-  trafo.alg <- funC0(trafo0, parameters = c(states, nonstates), 
-                     compile = compile, modelname = modelname, verbose = verbose,
-                     convenient = FALSE, warnings = FALSE)
-  trafo.alg.dfdx <- funC0(trafo0.dfdx, parameters = c(states, nonstates), 
-                          compile = compile, modelname = modelname_dfdx, verbose = verbose,
-                          convenient = FALSE, warnings = FALSE)
-  trafo.alg.dfdp <- funC0(trafo0.dfdp, parameters = c(states, nonstates), 
-                          compile = compile, modelname = modelname_dfdp, verbose = verbose,
-                          convenient = FALSE, warnings = FALSE)
-  
-  ftrafo <- function(x, parms) {
-    trafo.alg(p = c(x, parms))[1,]
-  }
-  ftrafo.dfdx <- function(x, parms) {
-    matrix(trafo.alg.dfdx(p = c(x, parms))[1,], nrow = length(dependent), ncol = length(dependent), dimnames = list(dependent, dependent))
-  }
-  ftrafo.dfdp <- function(x, parms) {
-    matrix(trafo.alg.dfdp(p = c(x, parms))[1,], nrow = length(dependent), ncol = length(nonstates) + length(parameters), dimnames = list(dependent, c(nonstates, parameters)))
-  }
-  
-  
-  # Controls to be modified from outside
-  controls <- list(keep.root = keep.root,
-                   positive = positive)
-  
-  # the parameter transformation function to be returned
-  p2p <- function(pars, fixed=NULL, deriv = TRUE) {
-    
-    
-    p <- pars
-    keep.root <- controls$keep.root
-    positive <- controls$positive
-    
-    # Inherit from p
-    dP <- attr(p, "deriv")
-    
-    # replace fixed parameters by values given in fixed
-    if(!is.null(fixed)) {
-      is.fixed <- which(names(p)%in%names(fixed)) 
-      if(length(is.fixed)>0) p <- p[-is.fixed]
-      p <- c(p, fixed)
-    }
-    
-    # check for parameters which are not computed by multiroot
-    emptypars <- names(p)[!names(p)%in%c(dependent, fixed)]
-    
-    # Set guess if available
-    p0 <- p
-    if(!is.null(guess)) 
-      p[intersect(dependent, names(guess))] <- guess[intersect(dependent, names(guess))]
-    
-    # If no initial guesses provides, set to 1
-    if (!all(dependent %in% names(p)))
-      p[setdiff(dependent, names(p))] <- 1
-    
-    getRoot <- function(p) {
-      
-      # Compute steady state concentrations
-      rootSolve::multiroot(ftrafo, positive = FALSE,
-                           start = p[dependent], 
-                           parms = p[setdiff(names(p), dependent)])
-    }
-    
-    myroot <- getRoot(p)
-    if (any(myroot$root < 0) & positive) {
-      
-      p <- p0
-      
-      # try again with empty guess
-      myroot <- getRoot(p)
-      
-      myroot$root[myroot$root < 0] <- 0
-      warning("Found negative steady state. Negative elements have been set to 0.")
-      
-      out <- c(myroot$root, p[setdiff(names(p), names(myroot$root))])
-      if (keep.root) guess <<- NULL
-      
-    } else {
-      
-      # Output parameters, write in outer environment if doGuess
-      out <- c(myroot$root, p[setdiff(names(p), names(myroot$root))])
-      if (keep.root) guess <<- out
-      
-    }
-    
-    
-    # Compute jacobian d(root)/dp
-    dfdx <- ftrafo.dfdx(x = myroot$root, parms = p[setdiff(names(p), names(myroot$root))])
-    dfdp <- ftrafo.dfdp(x = p[setdiff(names(p), names(myroot$root))], parms = myroot$root)
-    dxdp <- solve(dfdx, -dfdp)
-    #print(dxdp)
-    
-    
-    # Assemble total jacobian
-    jacobian <- matrix(0, length(out), length(p))
-    colnames(jacobian) <- names(p)
-    rownames(jacobian) <- names(out)
-    for(ep in emptypars) jacobian[ep, ep] <- 1
-    jacobian[rownames(dxdp), colnames(dxdp)] <- dxdp 
-    jacobian <- submatrix(jacobian, cols = setdiff(names(p), names(fixed)))
-    
-    # Multiplication with deriv of p
-    if(!is.null(dP)) jacobian <- jacobian%*%submatrix(dP, rows = colnames(jacobian))
-    
-    myderiv <- NULL
-    if(deriv) myderiv <- jacobian
-    
-    as.parvec(out, deriv = myderiv)
-    
-  }
-  
-  attr(p2p, "equations") <- as.eqnvec(trafo)
-  attr(p2p, "parameters") <- parameters
-  attr(p2p, "modelname") <- modelname
-  
-  parfn(p2p, parameters, condition)
-  
-  
-  
-  
+  stop("TODO")
   
 }
 
@@ -705,6 +744,3 @@ repar <- function(expr, trafo = NULL, ..., reset = FALSE) {
 }
 
 paste_ <- function(...) paste(..., sep = "_")
-
-
-

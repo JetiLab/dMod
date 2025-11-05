@@ -2,7 +2,7 @@
 % Please edit documentation in R/parClass.R
 \name{as.parvec.numeric}
 \alias{as.parvec.numeric}
-\title{Parameter vector (augmented with first- and second-order derivatives)}
+\title{Parameter vector (with optional first- and second-order derivatives)}
 \usage{
 \method{as.parvec}{numeric}(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
 }
@@ -14,12 +14,12 @@
 \item{deriv}{Either a logical flag, a Jacobian matrix, or `NULL`.
 * If `FALSE`, no Jacobian is stored (attribute set to `NULL`).
 * If `NULL`, an identity matrix is assumed.
-* If a matrix, it is used (and missing parameters are filled with identity rows/cols).}
+* If a matrix, it is used as-is (no missing entries are filled).}
 
 \item{deriv2}{Either a logical flag, a 3D array, or `NULL`.
 * If `FALSE`, no Hessian is stored (attribute set to `NULL`).
 * If `NULL`, a zero tensor is assumed.
-* If an array, it is used (and missing parameters are filled with zeros).}
+* If an array, it is used as-is (no missing entries are filled).}
 }
 \value{
 An object of class `"parvec"`, i.e. a named numeric vector with attributes:
@@ -31,4 +31,10 @@ An object of class `"parvec"`, i.e. a named numeric vector with attributes:
 \description{
 Creates an object of class `parvec`, storing parameter values together with
 their first (`deriv`) and second (`deriv2`) derivatives.
+}
+\details{
+The function does not attempt to reconcile or complete partially specified
+Jacobians or Hessians. If custom derivative objects are provided, they are
+attached exactly as given. Only when `deriv = NULL` or `deriv2 = NULL` are
+default identity and zero structures created, respectively.
 }

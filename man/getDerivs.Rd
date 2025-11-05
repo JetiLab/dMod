@@ -7,6 +7,7 @@
 \alias{getDerivs.prdlist}
 \alias{getDerivs.list}
 \alias{getDerivs.objlist}
+\alias{getDerivs2.prdlist}
 \title{Extract the derivatives of an object}
 \usage{
 getDerivs(x, ...)
@@ -20,6 +21,8 @@ getDerivs(x, ...)
 \method{getDerivs}{list}(x, ...)
 
 \method{getDerivs}{objlist}(x, ...)
+
+\method{getDerivs2}{prdlist}(x, full = FALSE, ...)
 }
 \arguments{
 \item{x}{object from which the derivatives should be extracted}

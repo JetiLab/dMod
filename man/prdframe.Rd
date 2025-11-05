@@ -7,8 +7,8 @@
 prdframe(
   prediction = NULL,
   deriv = NULL,
-  sensitivities = NULL,
   deriv2 = NULL,
+  sensitivities = NULL,
   sensitivities2 = NULL,
   parameters = NULL
 )
@@ -18,9 +18,9 @@ prdframe(
 
 \item{deriv}{3D numeric array of first-order sensitivities with respect to outer parameters.}
 
-\item{sensitivities}{3D numeric array of first-order sensitivities with respect to inner parameters.}
-
 \item{deriv2}{4D numeric array of second-order sensitivities with respect to outer parameters.}
+
+\item{sensitivities}{3D numeric array of first-order sensitivities with respect to inner parameters.}
 
 \item{sensitivities2}{4D numeric array of second-order sensitivities with respect to inner parameters.}
 

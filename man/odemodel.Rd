@@ -28,8 +28,7 @@ specifying the right-hand sides of the ODE system.}
 Defaults to \code{TRUE}.}
 
 \item{deriv2}{Logical. If \code{TRUE}, generate second-order sensitivities.
-Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.
-If \code{TRUE} with \code{solver = "deSolve"}, an error is raised.}
+Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.}
 
 \item{forcings}{Character vector with the names of external forcings.}
 

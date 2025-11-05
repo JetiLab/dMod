@@ -24,7 +24,7 @@ reactions <- eqnlist() %>%
 #             TCA_cell = "import * TCA_buffer - export_sinus * TCA_cell - export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = T, solver = "boost")
 
 
 # Generate trajectories for the default condition
@@ -32,7 +32,7 @@ x <- Xs(mymodel, condition = NULL)
 
 
 # For demonstration define parameters (initials and dynamic parameters)
-pars <- c(reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, import = 0.2, export_sinus = 0.2, export_cana = 0.04)
+pars <- c(reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, import_ = 0.2, export_sinus = 0.2, export_cana = 0.04)
 
 
 # Plot trjectories
@@ -75,11 +75,11 @@ plot(out, data)
 
 
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
-innerpars <- getParameters(x,g)
+innerpars <- getParameters(x)
 trafo <- NULL %>% 
   define("x~x", x = innerpars) %>% # identity
   define("TCA_buffer~0") %>% 
-  insert("x~exp(log(10)*x)", x = .currentSymbols)
+  insert("x~exp(log(10)*y)", x = .currentSymbols, y = toupper(.currentSymbols))
 
 
 # # Explicit trafo

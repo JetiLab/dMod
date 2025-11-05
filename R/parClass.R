@@ -569,7 +569,7 @@ as.parvec <- function(x, ...) {
 }
 
 
-#' Parameter vector (augmented with first- and second-order derivatives)
+#' Parameter vector (with optional first- and second-order derivatives)
 #'
 #' Creates an object of class `parvec`, storing parameter values together with
 #' their first (`deriv`) and second (`deriv2`) derivatives.
@@ -579,17 +579,24 @@ as.parvec <- function(x, ...) {
 #' @param deriv Either a logical flag, a Jacobian matrix, or `NULL`.
 #'   * If `FALSE`, no Jacobian is stored (attribute set to `NULL`).
 #'   * If `NULL`, an identity matrix is assumed.
-#'   * If a matrix, it is used (and missing parameters are filled with identity rows/cols).
+#'   * If a matrix, it is used as-is (no missing entries are filled).
 #' @param deriv2 Either a logical flag, a 3D array, or `NULL`.
 #'   * If `FALSE`, no Hessian is stored (attribute set to `NULL`).
 #'   * If `NULL`, a zero tensor is assumed.
-#'   * If an array, it is used (and missing parameters are filled with zeros).
+#'   * If an array, it is used as-is (no missing entries are filled).
 #'
 #' @return An object of class `"parvec"`, i.e. a named numeric vector with attributes:
 #' \itemize{
 #'   \item \code{attr(x, "deriv")} — Jacobian matrix (or `NULL`)
 #'   \item \code{attr(x, "deriv2")} — Hessian tensor (or `NULL`)
 #' }
+#'
+#' @details
+#' The function does not attempt to reconcile or complete partially specified
+#' Jacobians or Hessians. If custom derivative objects are provided, they are
+#' attached exactly as given. Only when `deriv = NULL` or `deriv2 = NULL` are
+#' default identity and zero structures created, respectively.
+#'
 #' @export
 as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...) {
   
@@ -605,21 +612,12 @@ as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
   } else {
     if (is.null(deriv)) deriv <- attr(x, "deriv", exact = TRUE)
     if (is.null(deriv)) {
+      # default identity
       full_deriv <- diag(n)
       dimnames(full_deriv) <- list(pnames, pnames)
     } else {
-      full_deriv <- matrix(0, n, n, dimnames = list(pnames, pnames))
-      rn <- rownames(deriv); cn <- colnames(deriv)
-      if (!is.null(rn) && !is.null(cn)) {
-        row.idx <- match(rn, pnames, nomatch = 0)
-        col.idx <- match(cn, pnames, nomatch = 0)
-        valid.r <- row.idx > 0; valid.c <- col.idx > 0
-        if (any(valid.r) && any(valid.c))
-          full_deriv[row.idx[valid.r], col.idx[valid.c]] <- deriv[valid.r, valid.c, drop = FALSE]
-      }
-      missing <- setdiff(pnames, rn)
-      if (length(missing) > 0)
-        full_deriv[missing, missing] <- diag(length(missing))
+      # use provided matrix as-is
+      full_deriv <- deriv
     }
   }
   
@@ -629,21 +627,12 @@ as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
   } else {
     if (is.null(deriv2)) deriv2 <- attr(x, "deriv2", exact = TRUE)
     if (is.null(deriv2)) {
+      # default zero tensor
       full_deriv2 <- array(0, dim = c(n, n, n),
                            dimnames = list(pnames, pnames, pnames))
     } else {
-      full_deriv2 <- array(0, dim = c(n, n, n),
-                           dimnames = list(pnames, pnames, pnames))
-      dn <- dimnames(deriv2)
-      if (!is.null(dn[[1]]) && !is.null(dn[[2]]) && !is.null(dn[[3]])) {
-        idx1 <- match(dn[[1]], pnames, nomatch = 0)
-        idx2 <- match(dn[[2]], pnames, nomatch = 0)
-        idx3 <- match(dn[[3]], pnames, nomatch = 0)
-        valid1 <- idx1 > 0; valid2 <- idx2 > 0; valid3 <- idx3 > 0
-        if (any(valid1) && any(valid2) && any(valid3))
-          full_deriv2[idx1[valid1], idx2[valid2], idx3[valid3]] <-
-          deriv2[valid1, valid2, valid3, drop = FALSE]
-      }
+      # use provided array as-is
+      full_deriv2 <- deriv2
     }
   }
   
@@ -653,6 +642,7 @@ as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
   class(p) <- c("parvec", "numeric")
   p
 }
+
 
 
 #' Pretty printing for parvec objects

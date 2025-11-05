@@ -7,103 +7,32 @@
 parfn(p2p, parameters = NULL, condition = NULL)
 }
 \arguments{
-\item{p2p}{A transformation function for one condition, i.e.
-a function \code{p2p(p, fixed, deriv, deriv2)} that maps
-a parameter vector \code{p} and optional fixed parameters \code{fixed}
-into a new parameter vector.
-\itemize{
-  \item If \code{deriv = TRUE}, the function should attach a matrix
-    attribute \code{"deriv"} representing the Jacobian of the transformation.
-  \item If \code{deriv2 = TRUE}, it may additionally attach a 3D array
-    attribute \code{"deriv2"} representing the Hessian tensor.
-}}
+\item{p2p}{Function of the form \code{p2p(pars, fixed, deriv, deriv2, env)}
+that returns transformed parameters with attached derivative attributes.}
 
-\item{parameters}{Character vector of parameter names accepted by the
-transformation function.}
+\item{parameters}{Character vector of parameter names accepted by \code{p2p}.}
 
-\item{condition}{Character string indicating the condition for which the
-transformation is defined.}
+\item{condition}{Character string identifying the experimental condition.}
 
-\item{env}{Environment in which the parameter transformation function
-should be evaluated. This allows condition-specific transformations
-to be resolved within a given modeling context.}
+\item{env}{Optional environment used for evaluation (passed to \code{p2p}).}
 }
 \value{
-An object of class \code{"parfn"}, i.e. a function of the form
-\code{p(..., fixed, deriv, deriv2, conditions, env)}.
-
-When evaluated, this function returns a parameter vector (of class
-\code{"parvec"}) carrying derivative attributes:
+A function of class \code{"parfn"}:
+\code{p(..., fixed, deriv, deriv2, conditions, env)} returning a [parvec]
+with optional attributes:
 \itemize{
   \item \code{attr(x, "deriv")} — Jacobian matrix
-  \item \code{attr(x, "deriv2")} — Hessian tensor (if available)
+  \item \code{attr(x, "deriv2")} — Hessian tensor
 }
 }
 \description{
-Generates functions that transform one parameter vector into another
-by means of a symbolic or numeric transformation, propagating both
-first- and second-order derivatives through the mapping.
-
-The resulting function pushes forward the **Jacobian** (first derivatives)
-and, if requested, the **Hessian** (second derivatives) of the original
-parameter vector, enabling analytic gradient and curvature propagation
-throughout hierarchical parameter models.
-
-Usually, this function is called internally (e.g. by [P()] or [Pexpl()]),
-but it can also be used directly to register user-defined parameter
-transformations into the framework.
-}
-\details{
-The \code{env} argument is used to control the environment in which
-expressions are evaluated. This is particularly useful when building
-models with multiple conditions or nested transformations, where each
-mapping might depend on its own set of local variables.
-
-This constructor provides the lowest-level interface for defining
-condition-specific parameter transformations in the model hierarchy.
-It is typically used as a building block by higher-level interfaces
-such as [Pexpl()] (explicit transformations) and [Pimpl()]
-(implicit transformations).
-}
-\examples{
-# Define a time grid on which to make a prediction by peace-wise linear function.
-# Then define a (generic) prediction function based on thid grid.
-times <- 0:5
-grid <- data.frame(name = "A", time = times, row.names = paste0("p", times))
-x <- Xd(grid)
-
-# Define an observable and an observation function
-observables <- eqnvec(Aobs = "s*A")
-g <- Y(g = observables, f = NULL, states = "A", parameters = "s")
-
-# Collect parameters and define an overarching parameter transformation
-# for two "experimental condtions".
-dynpars <- attr(x, "parameters")
-obspars <- attr(g, "parameters")
-innerpars <- c(dynpars, obspars)
-
-trafo <- structure(innerpars, names = innerpars)
-trafo_C1 <- replaceSymbols(innerpars, paste(innerpars, "C1", sep = "_"), trafo)
-trafo_C2 <- replaceSymbols(innerpars, paste(innerpars, "C2", sep = "_"), trafo)
-
-p <- NULL
-p <- p + P(trafo = trafo_C1, condition = "C1")
-p <- p + P(trafo = trafo_C2, condition = "C2")
-
-# Collect outer (overarching) parameters and 
-# initialize with random values
-outerpars <- attr(p, "parameters")
-pars <- structure(runif(length(outerpars), 0, 1), names = outerpars)
-
-# Predict internal/unobserved states
-out1 <- (x*p)(times, pars)
-plot(out1)
-
-# Predict observed states in addition to unobserved
-out2 <- (g*x*p)(times, pars)
-plot(out2)
+Generate functions that transform one parameter vector into another
+by means of a transformation, pushing forward the jacobian matrix
+of the original parameter.
+Usually, this function is called internally, e.g. by \link{P}.
+However, you can use it to add your own specialized parameter
+transformations to the general framework.
 }
 \seealso{
-[P()], [Pexpl()], [Pimpl()] for creating symbolic transformation functions,
-[as.parvec()] for parameter vector construction.
+[Pexpl()], [Pimpl()], [sumfn()]
 }

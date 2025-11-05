@@ -3,11 +3,14 @@
 \name{getDerivs2}
 \alias{getDerivs2}
 \alias{getDerivs2.parvec}
+\alias{getDerivs2.prdframe}
 \title{Extract the second derivatives of an object}
 \usage{
-getDerivs2(x, ...)
+getDerivs2(x, full = FALSE, ...)
 
 \method{getDerivs2}{parvec}(x, ...)
+
+\method{getDerivs2}{prdframe}(x, full = FALSE, ...)
 }
 \arguments{
 \item{x}{Object from which the second derivatives should be extracted.}
