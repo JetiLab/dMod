@@ -309,7 +309,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     
     dX <- NULL
     mysensitivities <- NULL
-    d2X <- NULL
+    dX2 <- NULL
     mysensitivities2 <- NULL
     
     if (!deriv) {
@@ -425,7 +425,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
         dX2 <- mysensitivities2
       }
     }
-    prdframe(out, deriv = dX, sensitivities = mysensitivities, deriv2 = d2X, sensitivities2 = mysensitivities2, parameters = pars)
+    prdframe(out, deriv = dX, sensitivities = mysensitivities, deriv2 = dX2, sensitivities2 = mysensitivities2, parameters = pars)
     
   }
   

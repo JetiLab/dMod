@@ -1504,16 +1504,38 @@ controls.fn <- function(x, condition = NULL, name = NULL, ...) {
 }
 
 
-#' Extract the derivatives of an object
+#' Extract the first derivatives of an object
 #'
-#' @param x object from which the derivatives should be extracted
-#' @param ... additional arguments (not used right now)
-#' @return The derivatives in a format that depends on the class of \code{x}.
-#' This is
-#' \code{parvec -> matrix},
-#' \code{prdframe -> prdframe},
-#' \code{prdlist -> prdlist},
-#' \code{objlist -> named numeric}.
+#' Generic function to extract first-order derivatives
+#' from various model-related objects such as \code{parvec}, \code{prdframe}, or lists thereof.
+#'
+#' The output format depends on the class of the input object.
+#'
+#' @param x Object from which the first derivatives should be extracted.
+#'   Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.
+#' @param ... Additional arguments passed to specific methods (currently unused).
+#'
+#' @return The structure of the returned object depends on the class of \code{x}:
+#' \itemize{
+#'   \item \code{parvec} – a matrix containing first-order parameter derivatives.
+#'   \item \code{prdframe} – a \code{prdframe} containing time and first-order sensitivities
+#'     of each model variable with respect to all parameters.
+#'   \item \code{prdlist} – a \code{prdlist} whose elements are first-derivative \code{prdframe}s.
+#'   \item \code{list} – a list of derivative objects, depending on the elements.
+#'   \item \code{objlist} – directly returns the stored gradient (named numeric vector).
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Extract sensitivities from a model prediction frame:
+#' d1 <- getDerivs(myprdframe)
+#'
+#' # Extract parameter derivatives from a parameter vector:
+#' getDerivs(myparvec)
+#' }
+#'
+#' @seealso \link{getDerivs2} for second-order derivatives.
+#'
 #' @export
 getDerivs <- function(x, ...) {
   UseMethod("getDerivs", x)
@@ -1523,40 +1545,40 @@ getDerivs <- function(x, ...) {
 #' @rdname getDerivs
 getDerivs.parvec <- function(x, ...) {
 
-  attr(x, "deriv")
-
+  derivs <- attr(x, "deriv")
+  if (is.null(derivs))
+    stop("Object does not contain first-order derivatives.")
+  
+  return(derivs)
 }
 
 #' @export
 #' @rdname getDerivs
 getDerivs.prdframe <- function(x, ...) {
-  
-  times <- x[,"time"]
+  times  <- x[,"time", drop = FALSE]
   derivs <- attr(x, "deriv")
-  if (is.null(deriv))
-    stop("Object does not contain derivatives.")
+  if (is.null(derivs))
+    stop("Object does not contain first-order derivatives.")
   
-  n <- length(times)
-  m <- dim(derivs)[2]
-  d <- dim(derivs)[3]
+  n <- dim(derivs)[1]  # time
+  v <- dim(derivs)[2]  # variables
+  d <- dim(derivs)[3]  # parameters
   
   `%||%` <- function(x, y) if (!is.null(x)) x else y
   
-  diname2  <- dimnames(derivs)[[2]] %||% paste0("var", seq_len(m))
-  dinames3 <- dimnames(derivs)[[3]] %||% paste0("d", seq_len(d))
+  varnames <- dimnames(derivs)[[2]] %||% paste0("var", seq_len(v))
+  derivswide <- times
   
-  # Spaltennamen im Format ∂var/∂d
-  dnames <- as.vector(outer(diname2, dinames3,
-                            function(a, b) paste0("∂", a, "/∂", b)))
-  
-  derivswide <- cbind(
-    time = times,
-    matrix(aperm(derivs, c(1, 3, 2)), nrow = n,
-           dimnames = list(NULL, dnames))
-  )
+  for (var in varnames) {
+    varderivs <- derivs[,var,]
+    colnames(varderivs) <- paste0("∂",var,"/∂",colnames(varderivs))
+    derivswide <- cbind(derivswide, varderivs)
+  }
   
   prdframe(prediction = derivswide, parameters = attr(x, "parameters"))
 }
+
+
 
 #' @export
 #' @rdname getDerivs
@@ -1591,17 +1613,44 @@ getDerivs.objlist <- function(x, ...) {
 
 #' Extract the second derivatives of an object
 #'
-#' Generic function to extract second derivatives (Hessians)
-#' from various model objects.
+#' Generic function to extract second-order derivatives
+#' from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
+#' 
+#' The output format depends on the class of the input object.
 #'
-#' @param x Object from which the second derivatives should be extracted.
-#' @param ... Additional arguments (currently unused).
+#' @param x Object from which the second-order derivatives should be extracted.
+#'   Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.
+#' @param full Logical flag indicating whether to return all second-order derivatives.
+#'   If `FALSE` (default), only the unique upper-triangular parameter pairs
+#'   with `i <= j` are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
+#'   If `TRUE`, all parameter pairs (i,j) are returned.
+#'   This argument is only relevant for `prdframe` and `prdlist` objects;
+#'   it is ignored for `parvec` and `objlist` inputs.
+#' @param ... Additional arguments passed to specific methods (currently unused).
 #'
-#' @return The second derivatives, in a format depending on the class of \code{x}.
-#' For now:
+#' @return The structure of the returned object depends on the class of \code{x}:
 #' \itemize{
-#'   \item \code{parvec -> 3D array (Hessian tensor)}
+#'   \item \code{parvec} – a 3D array representing the Hessian tensor.
+#'   \item \code{prdframe} – a data frame in wide format containing time and the second derivatives
+#'     of each model variable with respect to all (unique) parameter pairs.
+#'   \item \code{prdlist} – a \code{prdlist} whose elements are second-derivative \code{prdframe}s.
+#'   \item \code{list} – a list of Hessians or second-derivative objects, depending on the elements.
+#'   \item \code{objlist} – directly returns the stored Hessian matrix or tensor.
 #' }
+#'
+#' @examples
+#' \dontrun{
+#' # Extract second derivatives from a model prediction frame:
+#' d2 <- getDerivs2(myprdframe)
+#'
+#' # Return all parameter pairs instead of only unique ones:
+#' d2_full <- getDerivs2(myprdframe, full = TRUE)
+#'
+#' # For a parameter vector:
+#' getDerivs2(myparvec)
+#' }
+#'
+#' @seealso \link{getDerivs} for first-order derivatives.
 #'
 #' @export
 getDerivs2 <- function(x, full = FALSE, ...) {
@@ -1611,58 +1660,59 @@ getDerivs2 <- function(x, full = FALSE, ...) {
 #' @export
 #' @rdname getDerivs2
 getDerivs2.parvec <- function(x, ...) {
-  attr(x, "deriv2")
+  deriv2 <- attr(x, "deriv2")
+  if (is.null(deriv2))
+    stop("The prdframe does not contain second-order derivatives.")
+  return(deriv2)
 }
 
 #' @export
 #' @rdname getDerivs2
 getDerivs2.prdframe <- function(x, full = FALSE, ...) {
-  times  <- x[,"time"]
+  times  <- x[,"time", drop = FALSE]
   deriv2 <- attr(x, "deriv2")
   if (is.null(deriv2))
     stop("The prdframe does not contain second-order derivatives.")
   
-  n <- dim(deriv2)[1]
-  v <- dim(deriv2)[2]
-  d <- dim(deriv2)[3]
+  n <- dim(deriv2)[1]  # time
+  v <- dim(deriv2)[2]  # variables
+  d <- dim(deriv2)[3]  # parameters
   
   `%||%` <- function(x, y) if (!is.null(x)) x else y
-  varnames <- dimnames(deriv2)[[2]] %||% paste0("v", seq_len(v))
+  varnames <- dimnames(deriv2)[[2]] %||% paste0("var", seq_len(v))
   parnames <- dimnames(deriv2)[[3]] %||% paste0("p", seq_len(d))
   
   # Parameter index pairs
   pairs <- expand.grid(i = seq_len(d), j = seq_len(d))
   if (!full) pairs <- subset(pairs, i <= j)
+  pairs <- pairs[order(pairs$i, pairs$j), , drop = FALSE]
   
-  # Prepare result
-  derivs2wide <- matrix(NA_real_, nrow = n, ncol = v * nrow(pairs))
-  colnames_list <- character(v * nrow(pairs))
+  # Prepare result container
+  derivs2wide <- times
   
-  col_idx <- 1
-  for (vv in seq_len(v)) {
+  for (var in varnames) {
+    varderivs2 <- matrix(NA_real_, nrow = n, ncol = nrow(pairs))
+    colnames_var <- character(nrow(pairs))
     for (pp in seq_len(nrow(pairs))) {
       i <- pairs$i[pp]; j <- pairs$j[pp]
-      derivs2wide[, col_idx] <- deriv2[, vv, i, j]
-      
-      # Name: ∂²var/∂p_i∂p_j   or   ∂²var/∂²p_i if i==j
+      varderivs2[, pp] <- deriv2[, var, parnames[i], parnames[j]]
+      # Column name: ∂²var/∂p_i∂p_j or ∂²var/∂²p_i if i==j
       if (i == j) {
-        colnames_list[col_idx] <- paste0("∂²", varnames[vv], "/∂²", parnames[i])
+        colnames_var[pp] <- paste0("∂²", var, "/∂²", parnames[i])
       } else {
-        colnames_list[col_idx] <- paste0("∂²", varnames[vv], "/∂", parnames[i], "∂", parnames[j])
+        colnames_var[pp] <- paste0("∂²", var, "/∂", parnames[i], "∂", parnames[j])
       }
-      
-      col_idx <- col_idx + 1
     }
+    colnames(varderivs2) <- colnames_var
+    derivs2wide <- cbind(derivs2wide, varderivs2)
   }
-  
-  derivs2wide <- cbind(time = times, derivs2wide)
-  colnames(derivs2wide) <- c("time", colnames_list)
   
   prdframe(prediction = derivs2wide, parameters = attr(x, "parameters"))
 }
 
+
 #' @export
-#' @rdname getDerivs
+#' @rdname getDerivs2
 getDerivs2.prdlist <- function(x, full = FALSE, ...) {
   
   as.prdlist(
@@ -1673,6 +1723,24 @@ getDerivs2.prdlist <- function(x, full = FALSE, ...) {
   )
   
 }
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.list <- function(x, ...) {
+  
+  lapply(x, function(myx) getDerivs2(myx))
+  
+}
+
+
+#' @export
+#' @rdname getDerivs
+getDerivs2.objlist <- function(x, ...) {
+  
+  x$hessian
+  
+}
+
 
 
 

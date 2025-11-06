@@ -6,58 +6,90 @@
 \usage{
 P(
   trafo = NULL,
+  method = c("explicit", "implicit"),
   parameters = NULL,
-  condition = NULL,
   deriv = TRUE,
   deriv2 = FALSE,
   fixed = NULL,
-  attach.input = FALSE,
   keep.root = TRUE,
+  positive = TRUE,
+  attach.input = FALSE,
+  condition = NULL,
   compile = FALSE,
   modelname = NULL,
-  method = c("explicit", "implicit"),
   verbose = FALSE
 )
 }
 \arguments{
-\item{trafo}{object of class \code{eqnvec} or named character or list thereof. In case,
-trafo is a list, \code{P()} is called on each element and conditions are assumed to be
-the list names.}
+\item{trafo}{Object of class \code{eqnvec} or a named character vector,
+or a list thereof. If a list is provided, \code{P()} is called on each
+element and conditions are taken from the list names.}
 
-\item{parameters}{character vector}
+\item{method}{Character, either \code{"explicit"} or \code{"implicit"}.
+Determines whether to use \link{Pexpl} or \link{Pimpl}.}
 
-\item{condition}{character, the condition for which the transformation is generated}
+\item{parameters}{Character vector of outer parameters.}
 
-\item{attach.input}{attach those incoming parameters to output which are not overwritten by
-the parameter transformation.}
+\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian of the
+transformation as attribute \code{"deriv"}.}
 
-\item{keep.root}{logical, applies for \code{method = "implicit"}. The root of the last
-evaluation of the parameter transformation function is saved as guess for the next 
-evaluation.}
+\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian as
+attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.}
 
-\item{compile}{logical, compile the function (see \link{funC0})}
+\item{fixed}{Character vector of parameter names treated as fixed (no
+derivatives returned with respect to them).}
 
-\item{modelname}{character, see \link{funC0}}
+\item{keep.root}{Logical. Applies to \code{method = "implicit"} only.
+If \code{TRUE}, reuse the root from the previous call as a warm-start guess
+for faster convergence.}
 
-\item{method}{character, either \code{"explicit"} or \code{"implicit"}}
+\item{positive}{Logical. Applies to \code{method = "implicit"} only.
+If \code{TRUE}, the steady-state solver is performed in log-space
+(\eqn{x = exp(z)}) to enforce positive solutions.}
 
-\item{verbose}{Print out information during compilation}
+\item{attach.input}{Logical. Attach input parameters to the output if they
+are not overwritten by the transformation (identity mapping).}
+
+\item{condition}{Character. Condition label for which the transformation is
+generated. If \code{trafo} is a list, this is inferred from list names.}
+
+\item{compile}{Logical. If \code{TRUE}, compile the transformation via
+\link{funCpp} for improved performance.}
+
+\item{modelname}{Character. Used when \code{compile = TRUE} to define the
+base name of the generated C code file.}
+
+\item{verbose}{Logical. Print compiler output and diagnostic messages to the
+R console.}
 }
 \value{
-An object of class \link{parfn}.
+An object of class \link{parfn}, representing the parameter transformation.
+The returned function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+computes inner parameters and attaches derivatives as attributes
+\code{"deriv"} and \code{"deriv2"} when requested.
 }
 \description{
-Generate parameter transformation function from a
-named character vector or object of class \link{eqnvec}. This is a wrapper
-function for \link{Pexpl} and \link{Pimpl}. See for more details there.
+The function \code{P()} generates a parameter transformation function that maps
+**outer parameters** to **inner parameters** used in a model.  
+It can operate in two modes:
+
+- **Explicit mode** (`method = "explicit"`, see \link{Pexpl}):  
+  Inner parameters are directly computed from symbolic expressions.
+
+- **Implicit mode** (`method = "implicit"`, see \link{Pimpl}):  
+  Inner parameters are defined as steady states satisfying \eqn{f(x, p) = 0}.
+
+Both types can be combined with other transformations via arithmetic operators
+(`+`, `*`, etc.) thanks to the \link{parfn} interface.
 }
-\examples{
-
-logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", 
-              A = "exp(logA)", B = "exp(logB)")
-p_log <- P(logtrafo)
-
-pars <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
-out <- p_log(pars)
-getDerivs(out)
+\details{
+Constructs a parameter transformation from symbolic expressions, either
+**explicitly** (\eqn{x = g(p)}) or **implicitly** (\eqn{f(x, p) = 0}).
+This function serves as a high-level wrapper for \link{Pexpl} and \link{Pimpl},
+allowing for easy generation of condition-specific parameter mappings.
+}
+\seealso{
+\link{Pexpl} for explicit parameter transformations,
+\link{Pimpl} for implicit (steady-state) transformations,
+and \link{parfn} for details on combining transformations.
 }

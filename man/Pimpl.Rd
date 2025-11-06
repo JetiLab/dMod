@@ -7,54 +7,90 @@
 Pimpl(
   trafo,
   parameters = NULL,
-  condition = NULL,
+  deriv = TRUE,
+  deriv2 = FALSE,
+  fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  attach.input = FALSE,
+  condition = NULL,
   compile = FALSE,
   modelname = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{trafo}{Named character vector defining the equations to be set to zero. 
-Names correspond to dependent variables.}
+\item{trafo}{Named character vector defining the equations to be set to zero
+(\eqn{f(x, p) = 0}). Names correspond to dependent variables \eqn{x}.}
 
-\item{parameters}{Character vector, the independent variables.}
+\item{parameters}{Character vector. Optional. If provided, determines which
+outer parameters are expected as inputs.}
 
-\item{condition}{character, the condition for which the transformation is generated}
+\item{deriv}{Logical. If \code{TRUE}, the Jacobian of the implicit transformation
+is computed and attached as attribute \code{"deriv"}.}
 
-\item{keep.root}{logical, applies for \code{method = "implicit"}. The root of the last
-evaluation of the parameter transformation function is saved as guess for the next 
-evaluation.}
+\item{deriv2}{Logical. If \code{TRUE}, the Hessian of the transformation is
+also computed and attached as attribute \code{"deriv2"}. Implies
+\code{deriv = TRUE}.}
 
-\item{positive}{logical, returns projection to the (semi)positive range. Comes with a warning if
-the steady state has been found to be negative.}
+\item{fixed}{Character vector of parameter names treated as fixed (no
+derivatives are returned with respect to them).}
 
-\item{compile}{Logical, compile the function (see \link{funC0})}
+\item{keep.root}{Logical. Whether to reuse the root from the previous call as
+initial guess for the next evaluation (warm start). Can improve convergence
+for related parameter sets.}
 
-\item{modelname}{Character, used if \code{compile = TRUE}, sets a fixed filename for the
-C file.}
+\item{positive}{Logical. If \code{TRUE}, the dependent variables are reparameterized
+as \eqn{x = exp(z)} internally to enforce positivity of steady-state solutions.}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{attach.input}{Logical. Attach those incoming parameters to the output
+that are not overwritten by the implicit transformation (identity mapping).}
+
+\item{condition}{Character. Condition label for the transformation (optional).}
+
+\item{compile}{Logical. If \code{TRUE}, compile the function via \link{funCpp}
+for improved performance.}
+
+\item{modelname}{Character. Base name for the generated C file(s) if compiled.}
+
+\item{verbose}{Logical. Print compiler output and additional diagnostic
+messages to the R console.}
 }
 \value{
-a function \code{p2p(p, fixed = NULL, deriv = TRUE)} representing the parameter 
-transformation. Here, \code{p} is a named numeric vector with the values of the outer parameters,
-\code{fixed} is a named numeric vector with values of the outer parameters being considered
-as fixed (no derivatives returned) and \code{deriv} is a logical determining whether the Jacobian
-of the parameter transformation is returned as attribute "deriv".
+A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing
+the implicit parameter transformation. It returns a named numeric vector of inner
+parameters with attached Jacobian (\code{"deriv"}) and optionally Hessian
+(\code{"deriv2"}) attributes.
 }
 \description{
-Parameter transformation (implicit)
+This function computes steady-state mappings (implicit transformations)
+using a numerical root solver. It supports both first- and second-order
+derivatives obtained symbolically via \link{funCpp} and combined with the
+implicit function theorem. If \code{positive = TRUE}, the dependent variables
+are internally reparameterized as \eqn{x = exp(z)} to guarantee positive
+steady-state solutions.
 }
 \details{
-Usually, the equations contain the dependent variables, the independent variables and 
-other parameters. The argument \code{p} of \code{p2p} must provide values for the independent
-variables and the parameters but ALSO FOR THE DEPENDENT VARIABLES. Those serve as initial guess
-for the dependent variables. The dependent variables are then numerically computed by 
-\link[rootSolve]{multiroot}. The Jacobian of the solution with respect to dependent variables
-and parameters is computed by the implicit function theorem. The function \code{p2p} returns
-all parameters as they are with corresponding 1-entries in the Jacobian.
+Constructs an implicit parameter transformation that solves a set of
+steady-state equations of the form \eqn{f(x, p) = 0}. The solution
+\eqn{x(p)} defines the implicit mapping from outer parameters \eqn{p}
+to inner steady-state parameters \eqn{x}.
+
+
+The transformation is defined implicitly by the steady-state condition
+\eqn{f(x, p) = 0}. Given the outer parameters \eqn{p}, the steady state
+\eqn{x(p)} is computed by \link[rootSolve]{multiroot}.  
+
+First- and second-order derivatives are obtained using the implicit function
+theorem:
+\deqn{dx/dp = - (df/dx)^{-1} (df/dp)}
+\deqn{d^2x/dp^2 = - (df/dx)^{-1}(f_{xx}[dx/dp,dx/dp] + f_{xp}dx/dp + f_{xp}^Tdx/dp + f_{pp})}
+
+If \code{positive = TRUE}, the root is solved in log-space (\eqn{z = log(x)}),
+ensuring \eqn{x > 0}. The corresponding derivatives are automatically
+transformed back to \eqn{x}-space using the chain rule:
+\eqn{dx/dp = diag(x) \, dz/dp},  
+\eqn{d^2x/dp^2 = diag(x)(dz/dp \, dz/dp^T + d^2z/dp^2)}.
 }
 \examples{
 ########################################################################
@@ -74,7 +110,8 @@ f <- c(A = "-k1*A + k2*B",
        B = "k1*A - k2*B")
 P.steadyState <- Pimpl(f, "A")
 
-logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", A = "exp(logA)", B = "exp(logB)")
+logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)",
+              A = "exp(logA)", B = "exp(logB)")
 P.log <- P(logtrafo)
 
 p.outerValue <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
@@ -82,7 +119,7 @@ p.outerValue <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
 (P.steadyState * P.log)(p.outerValue)
 
 ########################################################################
-## Example 3: Steady-states with conserved quantitites
+## Example 3: Steady-states with conserved quantities
 ########################################################################
 f <- c(A = "-k1*A + k2*B", B = "k1*A - k2*B")
 replacement <- c(B = "A + B - total")
@@ -90,7 +127,10 @@ f[names(replacement)] <- replacement
 
 pSS <- Pimpl(f, "total")
 pSS(c(k1 = 1, k2 = 2, A = 5, B = 5, total = 3))
+
 }
 \seealso{
-\link{Pexpl} for explicit parameter transformations
+\link{Pexpl} for explicit parameter transformations,
+\link[rootSolve]{multiroot} for steady-state computation,
+and \link{funCpp} for the underlying symbolic compilation.
 }

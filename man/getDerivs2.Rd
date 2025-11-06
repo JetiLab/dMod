@@ -4,6 +4,8 @@
 \alias{getDerivs2}
 \alias{getDerivs2.parvec}
 \alias{getDerivs2.prdframe}
+\alias{getDerivs2.prdlist}
+\alias{getDerivs2.list}
 \title{Extract the second derivatives of an object}
 \usage{
 getDerivs2(x, full = FALSE, ...)
@@ -11,20 +13,55 @@ getDerivs2(x, full = FALSE, ...)
 \method{getDerivs2}{parvec}(x, ...)
 
 \method{getDerivs2}{prdframe}(x, full = FALSE, ...)
+
+\method{getDerivs2}{prdlist}(x, full = FALSE, ...)
+
+\method{getDerivs2}{list}(x, ...)
 }
 \arguments{
-\item{x}{Object from which the second derivatives should be extracted.}
+\item{x}{Object from which the second-order derivatives should be extracted.
+Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.}
 
-\item{...}{Additional arguments (currently unused).}
+\item{full}{Logical flag indicating whether to return all second-order derivatives.
+If `FALSE` (default), only the unique upper-triangular parameter pairs
+with `i <= j` are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
+If `TRUE`, all parameter pairs (i,j) are returned.
+This argument is only relevant for `prdframe` and `prdlist` objects;
+it is ignored for `parvec` and `objlist` inputs.}
+
+\item{...}{Additional arguments passed to specific methods (currently unused).}
 }
 \value{
-The second derivatives, in a format depending on the class of \code{x}.
-For now:
+The structure of the returned object depends on the class of \code{x}:
 \itemize{
-  \item \code{parvec -> 3D array (Hessian tensor)}
+  \item \code{parvec} – a 3D array representing the Hessian tensor.
+  \item \code{prdframe} – a data frame in wide format containing time and the second derivatives
+    of each model variable with respect to all (unique) parameter pairs.
+  \item \code{prdlist} – a \code{prdlist} whose elements are second-derivative \code{prdframe}s.
+  \item \code{list} – a list of Hessians or second-derivative objects, depending on the elements.
+  \item \code{objlist} – directly returns the stored Hessian matrix or tensor.
 }
 }
 \description{
-Generic function to extract second derivatives (Hessians)
-from various model objects.
+Generic function to extract second-order derivatives
+from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
+}
+\details{
+The output format depends on the class of the input object.
+}
+\examples{
+\dontrun{
+# Extract second derivatives from a model prediction frame:
+d2 <- getDerivs2(myprdframe)
+
+# Return all parameter pairs instead of only unique ones:
+d2_full <- getDerivs2(myprdframe, full = TRUE)
+
+# For a parameter vector:
+getDerivs2(myparvec)
+}
+
+}
+\seealso{
+\link{getDerivs} for first-order derivatives.
 }
