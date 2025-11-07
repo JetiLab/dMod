@@ -446,7 +446,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   for (i in 1:length(objects)) {
     if (inherits(objects[[i]], c("obsfn", "parfn", "prdfn"))) {
       filename <- modelname(objects[[i]])
-      filename <- outer(filename, c("", "_deriv", "_s", "_sdcv", "_dfdx", "_dfdp"), paste0)
+      filename <- outer(filename, c("", "_deriv", "_s", "_s2", "_sdcv", "_dfdx", "_dfdp"), paste0)
       files.obj <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
       files.obj <- files.obj[file.exists(files.obj)]
       files <- union(files, files.obj)

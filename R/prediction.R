@@ -223,9 +223,9 @@ reshapeSens <- function(sensMatrix, variables, parameters) {
 #' @export
 #' @import einsum
 Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
-                     optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5),
-                     optionsSens = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5),
-                     optionsSens2 = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5)) {
+                     optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1),
+                     optionsSens = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1),
+                     optionsSens2 = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)) {
   
   if (!is.null(forcings)) {
     stop("Forcings are not yet supported for boost solver")
@@ -235,9 +235,9 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     stop("Events should be passed to odemodel()")
   }
   
-  defaultsOde  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5)
-  defaultsSens <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5)
-  defaultsSens2 <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1, precision = 1e-5)
+  defaultsOde  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
+  defaultsSens <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
+  defaultsSens2 <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
   
   if (!is.list(optionsOde))  optionsOde  <- as.list(optionsOde)
   if (!is.list(optionsSens)) optionsSens <- as.list(optionsSens)
@@ -284,6 +284,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     names = names,
     optionsOde = optionsOde,
     optionsSens = optionsSens,
+    optionsSens2 = optionsSens2,
     dimnames = dimnames,
     dimnames_sens = dimnames_sens
   )
@@ -324,8 +325,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.integer(optionsOde$maxattemps),
               as.integer(optionsOde$maxsteps),
               as.numeric(optionsOde$roottol),
-              as.integer(optionsOde$maxroot),
-              as.numeric(optionsOde$precision))
+              as.integer(optionsOde$maxroot))
       )
       
       colnames(out$variable) <- dimnames$variable
@@ -344,8 +344,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.integer(optionsSens$maxattemps),
               as.integer(optionsSens$maxsteps),
               as.numeric(optionsSens$roottol),
-              as.integer(optionsSens$maxroot),
-              as.numeric(optionsSens$precision))
+              as.integer(optionsSens$maxroot))
       )
       
       colnames(outSens$variable) <- controls$dimnames_sens$variable
@@ -373,13 +372,12 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
         .Call(paste0("solve_", as.character(boostODE_sens2)),
               as.numeric(times),
               as.numeric(mypars),
-              as.numeric(optionsSens$atol),
-              as.numeric(optionsSens$rtol),
-              as.integer(optionsSens$maxattemps),
-              as.integer(optionsSens$maxsteps),
-              as.numeric(optionsSens$roottol),
-              as.integer(optionsSens$maxroot),
-              as.numeric(optionsSens$precision))
+              as.numeric(optionsSens2$atol),
+              as.numeric(optionsSens2$rtol),
+              as.integer(optionsSens2$maxattemps),
+              as.integer(optionsSens2$maxsteps),
+              as.numeric(optionsSens2$roottol),
+              as.integer(optionsSens2$maxroot))
       )
       
       colnames(outSens2$variable) <- controls$dimnames_sens$variable

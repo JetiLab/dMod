@@ -20,117 +20,63 @@ Pimpl(
 )
 }
 \arguments{
-\item{trafo}{Named character vector defining the equations to be set to zero
-(\eqn{f(x, p) = 0}). Names correspond to dependent variables \eqn{x}.}
+\item{trafo}{Residual system as \code{eqnvec}/named character vector
+(names are states), or an \code{eqnlist} from which the residuals are derived.}
 
-\item{parameters}{Character vector. Optional. If provided, determines which
-outer parameters are expected as inputs.}
+\item{parameters}{Character vector of outer parameter names (optional).
+For \code{eqnlist} input, if omitted, this is inferred as
+\{model/rate parameters\} ∪ \{totals\}. If provided, it is validated.
+If \code{parameters} contains some of the state names, those states are treated
+as independent (not solved).}
 
-\item{deriv}{Logical. If \code{TRUE}, the Jacobian of the implicit transformation
-is computed and attached as attribute \code{"deriv"}.}
+\item{deriv}{Logical; if \code{TRUE}, attach the Jacobian as attribute \code{"deriv"}.}
 
-\item{deriv2}{Logical. If \code{TRUE}, the Hessian of the transformation is
-also computed and attached as attribute \code{"deriv2"}. Implies
-\code{deriv = TRUE}.}
+\item{deriv2}{Logical; if \code{TRUE}, also attach the Hessian as attribute \code{"deriv2"}.
+Implies \code{deriv = TRUE}.}
 
-\item{fixed}{Character vector of parameter names treated as fixed (no
-derivatives are returned with respect to them).}
+\item{fixed}{Character vector of parameter names to be treated as fixed
+(no derivatives returned w.r.t. them).}
 
-\item{keep.root}{Logical. Whether to reuse the root from the previous call as
-initial guess for the next evaluation (warm start). Can improve convergence
-for related parameter sets.}
+\item{keep.root}{Logical; reuse the last root as starting guess.}
 
-\item{positive}{Logical. If \code{TRUE}, the dependent variables are reparameterized
-as \eqn{x = exp(z)} internally to enforce positivity of steady-state solutions.}
+\item{positive}{Logical; enforce positivity of solved dependent states by solving
+in log-space internally. Derivatives are still taken in \eqn{x}-space.}
 
-\item{attach.input}{Logical. Attach those incoming parameters to the output
-that are not overwritten by the implicit transformation (identity mapping).}
+\item{attach.input}{Logical; attach incoming parameters to the output if they are
+not overwritten by the implicit transformation (identity mapping).}
 
-\item{condition}{Character. Condition label for the transformation (optional).}
+\item{condition}{Character; condition label (optional).}
 
-\item{compile}{Logical. If \code{TRUE}, compile the function via \link{funCpp}
-for improved performance.}
+\item{compile}{Logical; compile generated functions via \link[CppODE]{funCpp}.}
 
-\item{modelname}{Character. Base name for the generated C file(s) if compiled.}
+\item{modelname}{Character; base name for compiled code files when \code{compile=TRUE}.}
 
-\item{verbose}{Logical. Print compiler output and additional diagnostic
-messages to the R console.}
+\item{verbose}{Logical; print compiler output and diagnostics.}
 }
 \value{
-A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing
-the implicit parameter transformation. It returns a named numeric vector of inner
-parameters with attached Jacobian (\code{"deriv"}) and optionally Hessian
-(\code{"deriv2"}) attributes.
+A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} returning the inner
+parameter vector with attached attributes \code{"deriv"} and optionally \code{"deriv2"}.
+The set of expected outer parameters is stored in \code{attr(p2p, "parameters")}.
 }
 \description{
-This function computes steady-state mappings (implicit transformations)
-using a numerical root solver. It supports both first- and second-order
-derivatives obtained symbolically via \link{funCpp} and combined with the
-implicit function theorem. If \code{positive = TRUE}, the dependent variables
-are internally reparameterized as \eqn{x = exp(z)} to guarantee positive
-steady-state solutions.
+This function computes steady-state mappings using a root solver and attaches
+first- and optionally second-order derivatives via the implicit function theorem.
+If \code{positive = TRUE}, dependent states are solved in log-space (\eqn{x=\exp(z)})
+to enforce positivity, but derivatives are returned in \eqn{x}-space (no extra
+\eqn{\mathrm{diag}(x)} factors are applied).
+
+The input \code{trafo} may be an \code{eqnvec} (named character vector) specifying
+residuals \eqn{f(x,p)=0} directly, or an \code{eqnlist} (stoichiometric representation).
+For \code{eqnlist}, residuals are built via \code{as.eqnvec()}, conserved quantities
+are detected via \code{conservedQuantities()}, and each conservation law is turned
+into an algebraic constraint using an automatically introduced "total" parameter.
+This removes rank deficiency without requiring users to choose independent states.
 }
 \details{
-Constructs an implicit parameter transformation that solves a set of
-steady-state equations of the form \eqn{f(x, p) = 0}. The solution
-\eqn{x(p)} defines the implicit mapping from outer parameters \eqn{p}
-to inner steady-state parameters \eqn{x}.
-
-
-The transformation is defined implicitly by the steady-state condition
-\eqn{f(x, p) = 0}. Given the outer parameters \eqn{p}, the steady state
-\eqn{x(p)} is computed by \link[rootSolve]{multiroot}.  
-
-First- and second-order derivatives are obtained using the implicit function
-theorem:
-\deqn{dx/dp = - (df/dx)^{-1} (df/dp)}
-\deqn{d^2x/dp^2 = - (df/dx)^{-1}(f_{xx}[dx/dp,dx/dp] + f_{xp}dx/dp + f_{xp}^Tdx/dp + f_{pp})}
-
-If \code{positive = TRUE}, the root is solved in log-space (\eqn{z = log(x)}),
-ensuring \eqn{x > 0}. The corresponding derivatives are automatically
-transformed back to \eqn{x}-space using the chain rule:
-\eqn{dx/dp = diag(x) \, dz/dp},  
-\eqn{d^2x/dp^2 = diag(x)(dz/dp \, dz/dp^T + d^2z/dp^2)}.
-}
-\examples{
-########################################################################
-## Example 1: Steady-state trafo
-########################################################################
-f <- c(A = "-k1*A + k2*B",
-       B = "k1*A - k2*B")
-P.steadyState <- Pimpl(f, "A")
-
-p.outerValues <- c(k1 = 1, k2 = 0.1, A = 10, B = 1)
-P.steadyState(p.outerValues)
-
-########################################################################
-## Example 2: Steady-state trafo combined with log-transform
-########################################################################
-f <- c(A = "-k1*A + k2*B",
-       B = "k1*A - k2*B")
-P.steadyState <- Pimpl(f, "A")
-
-logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)",
-              A = "exp(logA)", B = "exp(logB)")
-P.log <- P(logtrafo)
-
-p.outerValue <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
-(P.log)(p.outerValue)
-(P.steadyState * P.log)(p.outerValue)
-
-########################################################################
-## Example 3: Steady-states with conserved quantities
-########################################################################
-f <- c(A = "-k1*A + k2*B", B = "k1*A - k2*B")
-replacement <- c(B = "A + B - total")
-f[names(replacement)] <- replacement
-
-pSS <- Pimpl(f, "total")
-pSS(c(k1 = 1, k2 = 2, A = 5, B = 5, total = 3))
-
+Constructs an implicit parameter transformation that solves a system of
+steady-state equations \eqn{f(x, p) = 0}. The solution \eqn{x(p)} defines
+the mapping from outer parameters \eqn{p} to inner steady-state parameters \eqn{x}.
 }
 \seealso{
-\link{Pexpl} for explicit parameter transformations,
-\link[rootSolve]{multiroot} for steady-state computation,
-and \link{funCpp} for the underlying symbolic compilation.
+\link{Pexpl}, \link[rootSolve]{multiroot}, \link{as.eqnvec}, \link{conservedQuantities}
 }

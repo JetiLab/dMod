@@ -7,13 +7,12 @@
 \method{c}{parvec}(...)
 }
 \arguments{
-\item{...}{parvec objects to concatenate}
+\item{...}{`parvec` objects to concatenate.}
+}
+\value{
+A combined `parvec` object.
 }
 \description{
-Combines multiple parameter vectors (`parvec`) into a single object,
-preserving their first (`deriv`) and second (`deriv2`) derivatives.
-}
-\details{
-The Jacobians are combined block-diagonally, and the Hessians are
-combined as block-diagonal tensors (no cross-terms between distinct blocks).
+Combines multiple `parvec` objects into one, preserving first (`deriv`)
+and second (`deriv2`) derivatives when available.
 }

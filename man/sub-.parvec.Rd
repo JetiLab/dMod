@@ -2,23 +2,29 @@
 % Please edit documentation in R/parClass.R
 \name{[.parvec}
 \alias{[.parvec}
-\title{Subset method for parvec objects}
+\title{Subset method for parvec objects (optimized)}
 \usage{
 \method{[}{parvec}(x, ..., drop = FALSE)
 }
 \arguments{
-\item{x}{parvec object}
+\item{x}{A `parvec` object.}
 
-\item{...}{indices or names to subset}
+\item{...}{Parameter indices or names to subset.}
 
-\item{drop}{logical; if TRUE, remove empty Jacobian columns
-and matching Hessian dimensions}
+\item{drop}{Logical; if `TRUE`, drop zero Jacobian columns and matching
+Hessian dimensions.}
+}
+\value{
+A `parvec` object with updated numeric values and derivative
+  attributes.
 }
 \description{
-This method subsets a parameter vector (`parvec`) while keeping its
-first (`deriv`) and second (`deriv2`) derivative attributes consistent.
+Efficiently subsets a `parvec` while keeping its numeric values, Jacobian
+(`deriv`), and Hessian (`deriv2`) consistent. Assumes that parameter and
+derivative dimensions are aligned and consistent.
 }
 \details{
-If `drop = TRUE`, all-zero columns are removed from the Jacobian,
-and the corresponding dimensions are also removed from the Hessian.
+Only the parameter dimension (rows) is subset; derivative basis dimensions
+remain unchanged. When `drop = TRUE`, zero columns in the Jacobian and the
+corresponding Hessian dimensions are removed.
 }
