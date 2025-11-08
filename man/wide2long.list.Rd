@@ -14,14 +14,14 @@
 \item{na.rm}{Logical, if \code{TRUE}, missing values are removed in the long format.}
 }
 \value{
-data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-"value" (out[,-1]) and, if out was a list, "condition" (names(out))
+data.frame in long format, i.e. columns "time" (out\link{,1}), "name" (colnames(out\link{,-1})),
+"value" (out\link{,-1}) and, if out was a list, "condition" (names(out))
 }
 \description{
 Translate wide output format (e.g. from ode) into long format
 }
 \details{
-The function assumes that out[,1] represents a time-like vector
-whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
+The function assumes that out\link{,1} represents a time-like vector
+whereas out\link{,-1} represents the values. Useful for plotting with ggplot. If
 a list is supplied, the names of the list are added as extra column names "condition"
 }

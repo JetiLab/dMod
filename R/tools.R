@@ -6,12 +6,12 @@
 #' objects themselves also some of their attributes are compared,
 #' i.e. "equations", "parameters" and "events" and "forcings".
 #' 
-#' @param vec1 object of class \link{eqnvec}, \code{character} or
-#' \code{data.frame}. Alternatively, a list of such objects.
+#' @param vec1 object of class [eqnvec], `character` or
+#' `data.frame`. Alternatively, a list of such objects.
 #' @param vec2 same as vec1. Not used if vec1 is a list.
 #' @param reference numeric of length one, the reference entry.
 #' @param ... arguments going to the corresponding methods
-#' @return \code{data.frame} or list of data.frames with the differences. 
+#' @return `data.frame` or list of data.frames with the differences. 
 #' 
 #' @export
 #' @examples
@@ -164,9 +164,9 @@ compare.data.frame <- function(vec1, vec2 = NULL, ...) {
 #' @param ... data.frames or matrices with not necessarily overlapping colnames
 #' @details This function is useful when separating models into independent csv model files,
 #' e.g.~a receptor model and several downstream pathways. Then, the models can be recombined 
-#' into one model by \code{combine()}.
+#' into one model by `combine()`.
 #' 
-#' @return A \code{data.frame}
+#' @return A `data.frame`
 #' @export
 #' @examples
 #' data1 <- data.frame(Description = "reaction 1", Rate = "k1*A", A = -1, B = 1)
@@ -218,7 +218,7 @@ combine <- function(...) {
 #' @param M matrix
 #' @param rows Index vector
 #' @param cols Index vector
-#' @return The matrix \code{M[rows, cols]}, keeping/adjusting attributes like ncol nrow and dimnames.
+#' @return The matrix `M[rows, cols]`, keeping/adjusting attributes like ncol nrow and dimnames.
 #' @export
 submatrix <- function(M, rows = 1:nrow(M), cols = 1:ncol(M)) {
   
@@ -273,7 +273,7 @@ blockdiagSymb <- function(M, N) {
 #' 
 #' @param out data.frame or matrix or list of matrices in wide format 
 #' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
+#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
 #' @details The function assumes that out[,1] represents a time-like vector
 #' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
 #' a list is supplied, the names of the list are added as extra column names "condition"
@@ -291,7 +291,7 @@ wide2long <- function(out, keep = 1, na.rm = FALSE) {
 #' 
 #' @param out data.frame or matrix or list of matrices in wide format 
 #' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
+#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
 #' @details The function assumes that out[,1] represents a time-like vector
 #' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
 #' a list is supplied, the names of the list are added as extra column names "condition"
@@ -309,7 +309,7 @@ wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
 #' 
 #' @param out data.frame or matrix or list of matrices in wide format 
 #' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
+#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
 #' @details The function assumes that out[,1] represents a time-like vector
 #' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
 #' a list is supplied, the names of the list are added as extra column names "condition"
@@ -340,7 +340,7 @@ wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
 #' 
 #' @param out list of matrices in wide format 
 #' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
+#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
 #' @details The function assumes that out[,1] represents a time-like vector
 #' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
 #' a list is supplied, the names of the list are added as extra column names "condition"
@@ -388,7 +388,7 @@ long2wide <- function(out) {
 #' 
 #' @param mylist A named list of data.frame. The data.frames are expected to have the same structure.
 #' @details Each data.frame ist augented by a "condition" column containing the name attributed of
-#' the list entry. Subsequently, the augmented data.frames are bound together by \code{rbind}.
+#' the list entry. Subsequently, the augmented data.frames are bound together by `rbind`.
 #' @return data.frame with the originial columns augmented by a "condition" column.
 #' @export
 lbind <- function(mylist) {
@@ -421,7 +421,7 @@ lbind <- function(mylist) {
 #' Alternative version of expand.grid
 #' @param seq1 Vector, numeric or character
 #' @param seq2 Vector, numeric or character
-#' @return Matrix ob combinations of elemens of \code{seq1} and \code{seq2}
+#' @return Matrix ob combinations of elemens of `seq1` and `seq2`
 expand.grid.alt <- function(seq1, seq2) {
   cbind(Var1=rep.int(seq1, length(seq2)), Var2=rep(seq2, each=length(seq1)))
 }
@@ -546,8 +546,8 @@ getLocalDLLs <- function() {
 #' Load shared object for a dMod object
 #' 
 #' Usually when restarting the R session, although all objects are saved in
-#' the workspace, the dynamic libraries are not linked any more. \code{loadDLL}
-#' is a wrapper for \code{dyn.load} that uses the "modelname" attribute of
+#' the workspace, the dynamic libraries are not linked any more. `loadDLL`
+#' is a wrapper for `dyn.load` that uses the "modelname" attribute of
 #' dMod objects like prediction functions, observation functions, etc. to
 #' load the corresponding shared object.
 #' 
@@ -706,7 +706,7 @@ attrs <- function(x, atr = NULL, keep = TRUE) {
 #'   TRUE
 #'   
 #' @details Before the \option{x} is printed by print.default, all its arguments
-#'   not in the default list of \code{\link{attrs}} are removed.
+#'   not in the default list of [attrs()] are removed.
 #'   
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
 #' @author Mirjam Fehling-Kaschek, 

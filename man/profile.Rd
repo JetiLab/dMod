@@ -31,7 +31,7 @@ profile(
 
 \item{alpha}{Numeric, the significance level based on the chisquare distribution with df=1}
 
-\item{limits}{Numeric vector of length 2, the lower and upper deviance from the original 
+\item{limits}{Numeric vector of length 2, the lower and upper deviance from the original
 value of \code{pars[whichPar]}}
 
 \item{method}{Character, either \code{"integrate"} or \code{"optimize"}. This is a short-cut for
@@ -71,7 +71,7 @@ Profile-likelihood (PL) computation
 Computation of the profile likelihood is based on the method of Lagrangian multipliers
 and Euler integration of the corresponding differential equation of the profile likelihood paths.
 
-\code{algoControl}: Since the Hessian which is needed for the differential equation is frequently misspecified, 
+\code{algoControl}: Since the Hessian which is needed for the differential equation is frequently misspecified,
 the error in integration needs to be compensated by a correction factor \code{gamma}. Instead of the
 Hessian, an identity matrix can be used. To guarantee that the profile likelihood path stays on
 the true path, each point proposed by the differential equation can be used as starting point for
@@ -89,8 +89,8 @@ bounds for \code{stepsize}. \code{limit} is the maximum number of steps that are
 \code{stop} is a character, usually "value" or "data", for which the significance level \code{alpha}
 is evaluated.
 
-\code{optControl}: Controls the reoptimization process. 
-Use \code{fits} to specify the number of fits per reoptimization (default: 1). 
+\code{optControl}: Controls the reoptimization process.
+Use \code{fits} to specify the number of fits per reoptimization (default: 1).
 If \code{fits} > 1, \code{mstrust} is used; otherwise, \code{trust} is applied.
 You can adjust the standard deviation of the normal sampling distribution with the \code{sd} argument (default: 0.1).
 The \code{start1stfromCenter} argument determines whether the first fit should start from the center (default: TRUE).

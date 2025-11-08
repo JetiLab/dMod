@@ -24,7 +24,7 @@ prediction value.}
 
 \item{sigma}{numeric, the uncertainty of the introduced test data point}
 
-\item{attr.name}{character. The constraint value is additionally returned in an 
+\item{attr.name}{character. The constraint value is additionally returned in an
 attributed with this name}
 
 \item{condition}{character, the condition for which the prediction is made.}

@@ -23,28 +23,28 @@ getDerivs2(x, full = FALSE, ...)
 Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.}
 
 \item{full}{Logical flag indicating whether to return all second-order derivatives.
-If `FALSE` (default), only the unique upper-triangular parameter pairs
-with `i <= j` are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
-If `TRUE`, all parameter pairs (i,j) are returned.
-This argument is only relevant for `prdframe` and `prdlist` objects;
-it is ignored for `parvec` and `objlist` inputs.}
+If \code{FALSE} (default), only the unique upper-triangular parameter pairs
+with \code{i <= j} are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
+If \code{TRUE}, all parameter pairs (i,j) are returned.
+This argument is only relevant for \code{prdframe} and \code{prdlist} objects;
+it is ignored for \code{parvec} and \code{objlist} inputs.}
 
 \item{...}{Additional arguments passed to specific methods (currently unused).}
 }
 \value{
 The structure of the returned object depends on the class of \code{x}:
 \itemize{
-  \item \code{parvec} – a 3D array representing the Hessian tensor.
-  \item \code{prdframe} – a data frame in wide format containing time and the second derivatives
-    of each model variable with respect to all (unique) parameter pairs.
-  \item \code{prdlist} – a \code{prdlist} whose elements are second-derivative \code{prdframe}s.
-  \item \code{list} – a list of Hessians or second-derivative objects, depending on the elements.
-  \item \code{objlist} – directly returns the stored Hessian matrix or tensor.
+\item \code{parvec} – a 3D array representing the Hessian tensor.
+\item \code{prdframe} – a data frame in wide format containing time and the second derivatives
+of each model variable with respect to all (unique) parameter pairs.
+\item \code{prdlist} – a \code{prdlist} whose elements are second-derivative \code{prdframe}s.
+\item \code{list} – a list of Hessians or second-derivative objects, depending on the elements.
+\item \code{objlist} – directly returns the stored Hessian matrix or tensor.
 }
 }
 \description{
 Generic function to extract second-order derivatives
-from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
+from various model-related objects such as \code{parvec}, \code{prdframe}, or lists thereof.
 }
 \details{
 The output format depends on the class of the input object.

@@ -5,48 +5,48 @@
 #'
 #' Creates and compiles model objects for systems of ordinary differential equations (ODEs)
 #' with optional first- and second-order sensitivities. Depending on the selected solver,
-#' the function interfaces either to \code{\link[cOde]{funC}} (for \code{solver = "deSolve"})
-#' or to \code{\link[CppODE]{CppODE}} (for \code{solver = "boost"}).
+#' the function interfaces either to [cOde::funC()] (for `solver = "deSolve"`)
+#' or to [CppODE::CppODE()] (for `solver = "boost"`).
 #'
-#' @param f Something that can be converted to \link{eqnvec}, e.g. a named character vector
+#' @param f Something that can be converted to [eqnvec], e.g. a named character vector
 #'   specifying the right-hand sides of the ODE system.
-#' @param deriv Logical. If \code{TRUE}, generate first-order sensitivities.
-#'   Defaults to \code{TRUE}.
-#' @param deriv2 Logical. If \code{TRUE}, generate second-order sensitivities.
-#'   Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.
+#' @param deriv Logical. If `TRUE`, generate first-order sensitivities.
+#'   Defaults to `TRUE`.
+#' @param deriv2 Logical. If `TRUE`, generate second-order sensitivities.
+#'   Only available with the `"boost"` solver and requires `deriv = TRUE`.
 #' @param forcings Character vector with the names of external forcings.
-#' @param events \code{data.frame} specifying discrete events during integration.
-#'   Must contain the columns \code{"var"} (character, name of the affected state),
-#'   \code{"time"} (character or numeric, time point),
-#'   \code{"value"} (character or numeric, value to apply), and
-#'   \code{"method"} (character, either \code{"replace"} or \code{"add"}).
+#' @param events `data.frame` specifying discrete events during integration.
+#'   Must contain the columns `"var"` (character, name of the affected state),
+#'   `"time"` (character or numeric, time point),
+#'   `"value"` (character or numeric, value to apply), and
+#'   `"method"` (character, either `"replace"` or `"add"`).
 #'   Events must be defined here if they depend on parameters (e.g., event time or value).
-#'   If both \code{time} and \code{value} are purely numeric, such events may alternatively
-#'   be specified in \code{\link{Xs}()}, but this is only supported for
-#'   \code{solver = "deSolve"}.
-#'   See \link[deSolve]{events} for details on the \code{deSolve} implementation, or
-#'   \code{\link[CppODE]{CppODE}} for information on event handling in the \code{boost} solver.
+#'   If both `time` and `value` are purely numeric, such events may alternatively
+#'   be specified in [Xs()], but this is only supported for
+#'   `solver = "deSolve"`.
+#'   See [events][deSolve::events] for details on the `deSolve` implementation, or
+#'   [CppODE::CppODE()] for information on event handling in the `boost` solver.
 #' @param outputs Named character vector for additional output variables.
 #' @param fixed Character vector with the names of parameters (initial values and dynamic)
 #'   for which no sensitivities are required (this speeds up integration).
 #' @param estimate Character vector specifying parameters (initial values and dynamic)
-#'   for which sensitivities are returned. If specified, \code{estimate} overwrites \code{fixed}.
+#'   for which sensitivities are returned. If specified, `estimate` overwrites `fixed`.
 #' @param modelname Character. The base name of the generated C/C++ file.
 #' @param solver Character string specifying the solver backend.
-#'   One of \code{"deSolve"}, \code{"Sundials"} (deprecated), or \code{"boost"}.
+#'   One of `"deSolve"`, `"Sundials"` (deprecated), or `"boost"`.
 #' @param gridpoints Integer specifying the minimum number of internal time points
 #'   where the ODE is evaluated.
-#' @param verbose Logical. If \code{TRUE}, print compiler output to the R console.
-#' @param ... Additional arguments passed to \code{\link[cOde]{funC}} or
-#'   \code{\link[CppODE]{CppODE}}.
+#' @param verbose Logical. If `TRUE`, print compiler output to the R console.
+#' @param ... Additional arguments passed to [cOde::funC()] or
+#'   [CppODE::CppODE()].
 #'
 #' @return A list containing the generated model objects.
-#'   For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
-#'   and optionally \code{extended} (ODE + sensitivities object).
-#'   For \code{solver = "boost"}, the list contains compiled C++ solvers:
-#'   \code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
+#'   For `solver = "deSolve"`, the list includes `func` (ODE object)
+#'   and optionally `extended` (ODE + sensitivities object).
+#'   For `solver = "boost"`, the list contains compiled C++ solvers:
+#'   `boostODE`, `boostODE_sens`, and (if requested) `boostODE_sens2`.
 #'
-#' @seealso \code{\link[cOde]{funC}}, \code{\link[CppODE]{CppODE}}
+#' @seealso [cOde::funC()], [CppODE::CppODE()]
 #'
 #' @example inst/examples/odemodel.R
 #' @export
@@ -198,9 +198,9 @@ match.fnargs <- function(arglist, choices) {
 #' as named character vectors.
 #' @param ... mathematical expressions as characters to be coerced,
 #' the right-hand sides of the equations
-#' @return object of class \code{eqnvec}, basically a named character.
+#' @return object of class `eqnvec`, basically a named character.
 #' @example inst/examples/eqnvec.R
-#' @seealso \link{eqnlist}
+#' @seealso [eqnlist]
 #' @export
 eqnvec <- function(...) {
 
@@ -233,10 +233,10 @@ eqnvec <- function(...) {
 #' @param states Character vector. Names of the states.
 #' @param rates Character vector. The rate expressions.
 #' @param volumes Named character, volume parameters for states. Names must be a subset of the states.
-#' Values can be either characters, e.g. "V1", or numeric values for the volume. If \code{volumes} is not
-#' \code{NULL}, missing entries are treated as 1.
+#' Values can be either characters, e.g. "V1", or numeric values for the volume. If `volumes` is not
+#' `NULL`, missing entries are treated as 1.
 #' @param description Character vector. Description of the single processes.
-#' @return An object of class \code{eqnlist}, basically a list.
+#' @return An object of class `eqnlist`, basically a list.
 #' @example inst/examples/eqnlist.R
 eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, volumes = NULL, description = NULL) {
 
@@ -277,23 +277,23 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 #' Generate functions that transform one parameter vector into another
 #' by means of a transformation, pushing forward the jacobian matrix
 #' of the original parameter.
-#' Usually, this function is called internally, e.g. by \link{P}.
+#' Usually, this function is called internally, e.g. by [P].
 #' However, you can use it to add your own specialized parameter
 #' transformations to the general framework.
 #'
-#' @param p2p Function of the form \code{p2p(pars, fixed, deriv, deriv2, env)}
+#' @param p2p Function of the form `p2p(pars, fixed, deriv, deriv2, env)`
 #'   that returns transformed parameters with attached derivative attributes.
-#' @param parameters Character vector of parameter names accepted by \code{p2p}.
+#' @param parameters Character vector of parameter names accepted by `p2p`.
 #' @param condition Character string identifying the experimental condition.
-#' @param env Optional environment used for evaluation (passed to \code{p2p}).
+#' @param env Optional environment used for evaluation (passed to `p2p`).
 #'
 #' @return
-#' A function of class \code{"parfn"}:
-#' \code{p(..., fixed, deriv, deriv2, conditions, env)} returning a [parvec]
+#' A function of class `"parfn"`:
+#' `p(..., fixed, deriv, deriv2, conditions, env)` returning a [parvec]
 #' with optional attributes:
 #' \itemize{
-#'   \item \code{attr(x, "deriv")} — Jacobian matrix
-#'   \item \code{attr(x, "deriv2")} — Hessian tensor
+#'   \item `attr(x, "deriv")` — Jacobian matrix
+#'   \item `attr(x, "deriv2")` — Hessian tensor
 #' }
 #'
 #' @seealso [Pexpl()], [Pimpl()], [sumfn()]
@@ -351,15 +351,15 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
 #' parameter specifications. The columns are divided into three parts. (1) the meta-information
 #' columns (e.g. index, value, constraint, etc.), (2) the attributes of an objective function
 #' (e.g. data contribution and prior contribution) and (3) the parameters.
-#' @seealso \link{profile}, \link{mstrust}
+#' @seealso [profile], [mstrust]
 #' @param x data.frame.
 #' @param parameters character vector, the names of the parameter columns.
 #' @param metanames character vector, the names of the meta-information columns.
 #' @param obj.attributes character vector, the names of the objective function attributes.
-#' @return An object of class \code{parframe}, i.e. a data.frame with attributes for the
+#' @return An object of class `parframe`, i.e. a data.frame with attributes for the
 #' different names. Inherits from data.frame.
-#' @details Parameter frames can be subsetted either by \code{[ , ]} or by \code{subset}. If
-#' \code{[ , index]} is used, the names of the removed columns will also be removed from
+#' @details Parameter frames can be subsetted either by `[ , ]` or by `subset`. If
+#' `[ , index]` is used, the names of the removed columns will also be removed from
 #' the corresponding attributes, i.e. metanames, obj.attributes and parameters.
 #' @example inst/examples/parlist.R
 #' @export
@@ -384,12 +384,12 @@ parframe <- function(x = NULL, parameters = colnames(x), metanames = NULL, obj.a
 #' Parameter list
 #'
 #' @description The special use of a parameter list is to save
-#' the outcome of multiple optimization runs provided by \link{mstrust},
+#' the outcome of multiple optimization runs provided by [mstrust],
 #' into one list.
 #' @param ... Objects to be coerced to parameter list.
 #' @export
 #' @example inst/examples/parlist.R
-#' @seealso \link{load.parlist}, \link{plot.parlist}
+#' @seealso [load.parlist], [plot.parlist]
 parlist <- function(...) {
 
   mylist <- list(...)
@@ -409,19 +409,19 @@ parlist <- function(...) {
 #' and, if available, the second derivative (Hessian) is stored in the `"deriv2"` attribute.
 #'
 #' @param ... Objects to be concatenated.
-#' @param deriv Matrix with row names corresponding to the names of \code{...}
+#' @param deriv Matrix with row names corresponding to the names of `...`
 #'   and column names corresponding to the parameters by which the vector
 #'   was generated (the Jacobian).
 #' @param deriv2 Optional 3D array representing second derivatives
 #'   (the Hessian tensor), with dimensions
-#'   \code{[n_par × n_par × n_input]} and names matching the parameter vector.
+#'   `[n_par × n_par × n_input]` and names matching the parameter vector.
 #'
 #' @return 
-#' An object of class \code{"parvec"}, i.e. a named numeric vector with
+#' An object of class `"parvec"`, i.e. a named numeric vector with
 #' attributes:
 #' \itemize{
-#'   \item \code{attr(x, "deriv")} — Jacobian matrix
-#'   \item \code{attr(x, "deriv2")} — Hessian tensor (if available)
+#'   \item `attr(x, "deriv")` — Jacobian matrix
+#'   \item `attr(x, "deriv2")` — Hessian tensor (if available)
 #' }
 #'
 #' @example inst/examples/parvec.R
@@ -449,7 +449,7 @@ parvec <- function(..., deriv = NULL, deriv2 = NULL) {
 #' Prediction function
 #'
 #' @description A prediction function is a function 
-#' \code{x(..., fixed, deriv, deriv2, conditions, env)}.
+#' `x(..., fixed, deriv, deriv2, conditions, env)`.
 #' Prediction functions are generated by [Xs()], [Xf()] or [Xd()].
 #'
 #' @param P2X Transformation function as produced by [Xs()], [Xf()] or [Xd()].
@@ -464,8 +464,8 @@ parvec <- function(..., deriv = NULL, deriv2 = NULL) {
 #' functions ([parfn()]) by the "*" operator, see [prodfn()].
 #'
 #' @return Object of class `"prdfn"`, i.e. a function
-#' \code{x(..., fixed, deriv, deriv2, conditions, env)} returning a [prdlist].
-#' The arguments \code{times} and \code{pars} should be passed via \code{...}, in this order.
+#' `x(..., fixed, deriv, deriv2, conditions, env)` returning a [prdlist].
+#' The arguments `times` and `pars` should be passed via `...`, in this order.
 #'
 #' @example inst/examples/prediction.R
 #' @export
@@ -530,19 +530,19 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
 #' Observation function
 #'
 #' @description An observation function is a function is that is concatenated
-#' with a prediction function via \link{prodfn} to yield a new prediction function,
-#' see \link{prdfn}. Observation functions are generated by \link{Y}. Handling
-#' of the conditions is then organized by the \code{obsfn} object.
-#' @param X2Y the low-level observation function generated e.g. by \link{Y}.
+#' with a prediction function via [prodfn] to yield a new prediction function,
+#' see [prdfn]. Observation functions are generated by [Y]. Handling
+#' of the conditions is then organized by the `obsfn` object.
+#' @param X2Y the low-level observation function generated e.g. by [Y].
 #' @param parameters character vector with parameter names
 #' @param condition character, the condition name
-#' @details Observation functions can be "added" by the "+" operator, see \link{sumfn}. Thereby,
+#' @details Observation functions can be "added" by the "+" operator, see [sumfn]. Thereby,
 #' observations for different conditions are merged or, overwritten. Observation functions can
-#' also be concatenated with other functions, e.g. observation functions (\link{obsfn}) or
-#' prediction functions (\link{prdfn}) by the "*" operator, see \link{prodfn}.
-#' @return Object of class \code{obsfn}, i.e. a function \code{x(..., fixed, deriv, conditions, env)}
-#' which returns a \link{prdlist}. The arguments \code{out} (prediction) and \code{pars} (parameter values)
-#' should be passed via the \code{...} argument.
+#' also be concatenated with other functions, e.g. observation functions ([obsfn]) or
+#' prediction functions ([prdfn]) by the "*" operator, see [prodfn].
+#' @return Object of class `obsfn`, i.e. a function `x(..., fixed, deriv, conditions, env)`
+#' which returns a [prdlist]. The arguments `out` (prediction) and `pars` (parameter values)
+#' should be passed via the `...` argument.
 #' @example inst/examples/prediction.R
 #' @export
 obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
@@ -611,24 +611,24 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
 #'
 #' @description
 #' A prediction frame stores model predictions in a matrix along with sensitivity information.
-#' The columns of the prediction matrix are typically \code{"time"} and one column per state variable.
+#' The columns of the prediction matrix are typically `"time"` and one column per state variable.
 #' The object carries several attributes containing sensitivities and parameter information:
 #' \itemize{
-#'   \item \code{"deriv"} – 3D array of first-order sensitivities with respect to outer parameters
-#'     (see \link{P}); dimensions: \code{(time, state, outer parameter)}
-#'   \item \code{"sensitivities"} – 3D array of first-order sensitivities with respect to inner parameters
+#'   \item `"deriv"` – 3D array of first-order sensitivities with respect to outer parameters
+#'     (see [P]); dimensions: `(time, state, outer parameter)`
+#'   \item `"sensitivities"` – 3D array of first-order sensitivities with respect to inner parameters
 #'     (the model parameters, i.e. the left-hand side of the parameter transformation);
-#'     dimensions: \code{(time, state, inner parameter)}
-#'   \item \code{"deriv2"} – 4D array of second-order sensitivities with respect to outer parameters;
-#'     dimensions: \code{(time, state, outer parameter, outer parameter)}
-#'   \item \code{"sensitivities2"} – 4D array of second-order sensitivities with respect to inner parameters;
-#'     dimensions: \code{(time, state, inner parameter, inner parameter)}
-#'   \item \code{"parameters"} – vector of the inner parameters used to generate the prediction
+#'     dimensions: `(time, state, inner parameter)`
+#'   \item `"deriv2"` – 4D array of second-order sensitivities with respect to outer parameters;
+#'     dimensions: `(time, state, outer parameter, outer parameter)`
+#'   \item `"sensitivities2"` – 4D array of second-order sensitivities with respect to inner parameters;
+#'     dimensions: `(time, state, inner parameter, inner parameter)`
+#'   \item `"parameters"` – vector of the inner parameters used to generate the prediction
 #' }
 #'
-#' Prediction frames are usually elements of prediction lists (\link{prdlist}), produced by
-#' \link{Xs}, \link{Xd}, or \link{Xf}. When defining custom prediction functions
-#' (see \code{P2X} in \link{prdfn}), the result should be returned as a prediction frame.
+#' Prediction frames are usually elements of prediction lists ([prdlist]), produced by
+#' [Xs], [Xd], or [Xf]. When defining custom prediction functions
+#' (see `P2X` in [prdfn]), the result should be returned as a prediction frame.
 #'
 #' @param prediction Numeric matrix of model predictions.
 #' @param deriv 3D numeric array of first-order sensitivities with respect to outer parameters.
@@ -638,7 +638,7 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
 #' @param parameters Named numeric vector of the inner parameters used for the prediction.
 #'
 #' @return
-#' An object of class \code{"prdframe"} (inheriting from \code{"matrix"}) with attached arrays of
+#' An object of class `"prdframe"` (inheriting from `"matrix"`) with attached arrays of
 #' sensitivities and the corresponding parameter vector as attributes.
 #'
 #' @export
@@ -666,8 +666,8 @@ prdframe <- function(prediction = NULL,
 #'
 #' @description A prediction list is used to store a list of model predictions
 #' from different prediction functions or the same prediction function with different
-#' parameter specifications. Each entry of the list is a \link{prdframe}.
-#' @param ... objects of class \link{prdframe}
+#' parameter specifications. Each entry of the list is a [prdframe].
+#' @param ... objects of class [prdframe]
 #' conditions.
 #' @export
 prdlist <- function(...) {
@@ -685,19 +685,19 @@ prdlist <- function(...) {
 #'
 #' @description The datalist object stores time-course data in a list of data.frames.
 #' The names of the list serve as identifiers, e.g. of an experimental condition, etc.
-#' @details Datalists can be plotted, see \link{plotData} and merged, see \link{sumdatalist}.
-#' They are the basic structure when combining model prediction and data via the \link{normL2}
+#' @details Datalists can be plotted, see [plotData] and merged, see [sumdatalist].
+#' They are the basic structure when combining model prediction and data via the [normL2]
 #' objective function.
 #' 
 #' The standard columns of the datalist data frames are "name" (observable name), 
 #' "time" (time points), "value" (data value), "sigma" (uncertainty, can be NA), and
-#' "lloq" (lower limit of quantification, \code{-Inf} by default).
+#' "lloq" (lower limit of quantification, `-Inf` by default).
 #'
-#' Datalists carry the attribute \code{condition.grid} which contains additional information about different
-#' conditions, such as dosing information for the experiment. It can be conveniently accessed by the \link{covariates}-function.
-#' Reassigning names to a datalist also renames the rows of the \code{condition.grid}.
+#' Datalists carry the attribute `condition.grid` which contains additional information about different
+#' conditions, such as dosing information for the experiment. It can be conveniently accessed by the [covariates]-function.
+#' Reassigning names to a datalist also renames the rows of the `condition.grid`.
 #' @param ... data.frame objects to be coerced into a list and additional arguments
-#' @return Object of class \code{datalist}.
+#' @return Object of class `datalist`.
 #' @export
 datalist <- function(...) {
   mylist <- list(...)
@@ -716,14 +716,14 @@ datalist <- function(...) {
 #'
 #' Objective lists can contain additional numeric attributes that are preserved or
 #' combined with the corresponding attributes of another objective list when
-#' both are added by the "+" operator, see \link{sumobjlist}.
+#' both are added by the "+" operator, see [sumobjlist].
 #'
 #' Objective lists are returned by objective functions as being generated
-#' by \link{normL2}, \link{constraintL2}, \link{priorL2} and \link{datapointL2}.
+#' by [normL2], [constraintL2], [priorL2] and [datapointL2].
 #' @param value numeric of length 1
 #' @param gradient named numeric
 #' @param hessian matrix with rownames and colnames according to gradient names
-#' @return Object of class \code{objlist}
+#' @return Object of class `objlist`
 #' @export
 #' 
 #' @examples 
@@ -740,10 +740,10 @@ objlist <- function(value, gradient, hessian) {
 #'
 #' @description An objective frame is supposed to store the residuals of a model prediction
 #' with respect to a data frame.
-#' @param mydata data.frame as being generated by \link{res}.
+#' @param mydata data.frame as being generated by [res].
 #' @param deriv matrix of the derivatives of the residuals with respect to parameters.
 #' @param deriv.err matrix of the derivatives of the error model.
-#' @return An object of class \code{objframe}, i.e. a data frame with attribute "deriv".
+#' @return An object of class `objframe`, i.e. a data frame with attribute "deriv".
 #' @export
 objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   
@@ -769,15 +769,15 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 
 #' Direct sum of objective functions
 #'
-#' @param x1 function of class \code{objfn}
-#' @param x2 function of class \code{objfn}
+#' @param x1 function of class `objfn`
+#' @param x2 function of class `objfn`
 #' @details The objective functions are evaluated and their results as added. Sometimes,
 #' the evaluation of an objective function depends on results that have been computed
 #' internally in a preceding objective function. Therefore, environments are forwarded
 #' and all evaluations take place in the same environment. The first objective function
 #' in a sum of functions generates a new environment.
-#' @return Object of class \code{objfn}.
-#' @seealso \link{normL2}, \link{constraintL2}, \link{priorL2}, \link{datapointL2}
+#' @return Object of class `objfn`.
+#' @seealso [normL2], [constraintL2], [priorL2], [datapointL2]
 #' @aliases sumobjfn
 #' @example inst/examples/objective.R
 #' @export
@@ -842,7 +842,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 
 #' Multiplication of objective functions with scalars
 #'
-#' @description The \code{\%.*\%} operator allows to multiply objects of class objlist or objfn with
+#' @description The `\%.*\%` operator allows to multiply objects of class objlist or objfn with
 #' a scalar.
 #'
 #' @param x1 object of class objfn or objlist.
@@ -907,14 +907,14 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 #'
 #' Used to add prediction function, parameter transformation functions or observation functions.
 #'
-#' @param x1 function of class \code{obsfn}, \code{prdfn} or \code{parfn}
-#' @param x2 function of class \code{obsfn}, \code{prdfn} or \code{parfn}
+#' @param x1 function of class `obsfn`, `prdfn` or `parfn`
+#' @param x2 function of class `obsfn`, `prdfn` or `parfn`
 #' @details Each prediction function is associated to a number of conditions. Adding functions
 #' means merging or overwriting the set of conditions.
-#' @return Object of the same class as \code{x1} and \code{x2} which returns results for the
+#' @return Object of the same class as `x1` and `x2` which returns results for the
 #' union of conditions.
 #' @aliases sumfn
-#' @seealso \link{P}, \link{Y}, \link{Xs}
+#' @seealso [P], [Y], [Xs]
 #' @example inst/examples/prediction.R
 #' @export
 "+.fn" <- function(x1, x2) {
@@ -1047,12 +1047,12 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 #'
 #' Used to merge datasets with overlapping conditions.
 #'
-#' @param data1 dataset of class \code{datalist}
-#' @param data2 dataset of class \code{datalist}
+#' @param data1 dataset of class `datalist`
+#' @param data2 dataset of class `datalist`
 #' @details Each data list contains data frames for a number of conditions.
 #' The direct sum of datalist is meant as merging the two data lists and
 #' returning the overarching datalist.
-#' @return Object of class \code{datalist} for the
+#' @return Object of class `datalist` for the
 #' union of conditions.
 #' @aliases sumdatalist
 #' @example inst/examples/sumdatalist.R
@@ -1103,9 +1103,9 @@ test_conditions <- function(c1, c2) {
 #'
 #' Used to concatenate observation functions, prediction functions and parameter transformation functions.
 #'
-#' @param p1 function of class \code{obsfn}, \code{prdfn}, \code{parfn} or \code{idfn}
-#' @param p2 function of class \code{obsfn}, \code{prdfn}, \code{parfn} or \code{idfn}
-#' @return Object of the same class as \code{x1} and \code{x2}.
+#' @param p1 function of class `obsfn`, `prdfn`, `parfn` or `idfn`
+#' @param p2 function of class `obsfn`, `prdfn`, `parfn` or `idfn`
+#' @return Object of the same class as `x1` and `x2`.
 #' @aliases prodfn
 #' @example inst/examples/prediction.R
 #' @export
@@ -1399,15 +1399,15 @@ test_conditions <- function(c1, c2) {
 
 #' List, get and set controls for different functions
 #'
-#' @description Applies to objects of class \code{objfn},
-#' \code{parfn}, \code{prdfn} and \code{obsfn}. Allows to manipulate
+#' @description Applies to objects of class `objfn`,
+#' `parfn`, `prdfn` and `obsfn`. Allows to manipulate
 #' different arguments that have been set when creating the
 #' objects.
-#' @details If called without further arguments, \code{controls(x)} lists the
-#' available controls within an object. Calling \code{controls()} with \code{name}
-#' and \code{condition} returns the control value. The value can be overwritten. If
+#' @details If called without further arguments, `controls(x)` lists the
+#' available controls within an object. Calling `controls()` with `name`
+#' and `condition` returns the control value. The value can be overwritten. If
 #' a list or data.frame ist returned, elements of those can be manipulated by the
-#' \code{$}- or \code{[]}-operator.
+#' `$`- or `[]`-operator.
 #'
 #' @param x function
 #' @param ... arguments going to the appropriate S3 methods
@@ -1508,22 +1508,22 @@ controls.fn <- function(x, condition = NULL, name = NULL, ...) {
 #' Extract the first derivatives of an object
 #'
 #' Generic function to extract first-order derivatives
-#' from various model-related objects such as \code{parvec}, \code{prdframe}, or lists thereof.
+#' from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
 #'
 #' The output format depends on the class of the input object.
 #'
 #' @param x Object from which the first derivatives should be extracted.
-#'   Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.
+#'   Supported classes are `parvec`, `prdframe`, `prdlist`, and `list`.
 #' @param ... Additional arguments passed to specific methods (currently unused).
 #'
-#' @return The structure of the returned object depends on the class of \code{x}:
+#' @return The structure of the returned object depends on the class of `x`:
 #' \itemize{
-#'   \item \code{parvec} – a matrix containing first-order parameter derivatives.
-#'   \item \code{prdframe} – a \code{prdframe} containing time and first-order sensitivities
+#'   \item `parvec` – a matrix containing first-order parameter derivatives.
+#'   \item `prdframe` – a `prdframe` containing time and first-order sensitivities
 #'     of each model variable with respect to all parameters.
-#'   \item \code{prdlist} – a \code{prdlist} whose elements are first-derivative \code{prdframe}s.
-#'   \item \code{list} – a list of derivative objects, depending on the elements.
-#'   \item \code{objlist} – directly returns the stored gradient (named numeric vector).
+#'   \item `prdlist` – a `prdlist` whose elements are first-derivative `prdframe`s.
+#'   \item `list` – a list of derivative objects, depending on the elements.
+#'   \item `objlist` – directly returns the stored gradient (named numeric vector).
 #' }
 #'
 #' @examples
@@ -1535,7 +1535,7 @@ controls.fn <- function(x, condition = NULL, name = NULL, ...) {
 #' getDerivs(myparvec)
 #' }
 #'
-#' @seealso \link{getDerivs2} for second-order derivatives.
+#' @seealso [getDerivs2] for second-order derivatives.
 #'
 #' @export
 getDerivs <- function(x, ...) {
@@ -1620,7 +1620,7 @@ getDerivs.objlist <- function(x, ...) {
 #' The output format depends on the class of the input object.
 #'
 #' @param x Object from which the second-order derivatives should be extracted.
-#'   Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.
+#'   Supported classes are `parvec`, `prdframe`, `prdlist`, and `list`.
 #' @param full Logical flag indicating whether to return all second-order derivatives.
 #'   If `FALSE` (default), only the unique upper-triangular parameter pairs
 #'   with `i <= j` are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
@@ -1629,14 +1629,14 @@ getDerivs.objlist <- function(x, ...) {
 #'   it is ignored for `parvec` and `objlist` inputs.
 #' @param ... Additional arguments passed to specific methods (currently unused).
 #'
-#' @return The structure of the returned object depends on the class of \code{x}:
+#' @return The structure of the returned object depends on the class of `x`:
 #' \itemize{
-#'   \item \code{parvec} – a 3D array representing the Hessian tensor.
-#'   \item \code{prdframe} – a data frame in wide format containing time and the second derivatives
+#'   \item `parvec` – a 3D array representing the Hessian tensor.
+#'   \item `prdframe` – a data frame in wide format containing time and the second derivatives
 #'     of each model variable with respect to all (unique) parameter pairs.
-#'   \item \code{prdlist} – a \code{prdlist} whose elements are second-derivative \code{prdframe}s.
-#'   \item \code{list} – a list of Hessians or second-derivative objects, depending on the elements.
-#'   \item \code{objlist} – directly returns the stored Hessian matrix or tensor.
+#'   \item `prdlist` – a `prdlist` whose elements are second-derivative `prdframe`s.
+#'   \item `list` – a list of Hessians or second-derivative objects, depending on the elements.
+#'   \item `objlist` – directly returns the stored Hessian matrix or tensor.
 #' }
 #'
 #' @examples
@@ -1651,7 +1651,7 @@ getDerivs.objlist <- function(x, ...) {
 #' getDerivs2(myparvec)
 #' }
 #'
-#' @seealso \link{getDerivs} for first-order derivatives.
+#' @seealso [getDerivs] for first-order derivatives.
 #'
 #' @export
 getDerivs2 <- function(x, full = FALSE, ...) {
@@ -1757,8 +1757,8 @@ getEquations <- function(x, ...) {
 #'
 #' @param ... objects from which the parameters should be extracted
 #' @param conditions character vector specifying the conditions to
-#' which \code{getParameters} is restricted
-#' @return The parameters in a format that depends on the class of \code{x}.
+#' which `getParameters` is restricted
+#' @return The parameters in a format that depends on the class of `x`.
 #' @export
 getParameters <- function(..., conditions = NULL) {
 
@@ -1848,7 +1848,7 @@ getParameters.eventlist <- function(x) {
 #'
 #' @param x object from which the conditions should be extracted
 #' @param ... additional arguments (not used right now)
-#' @return The conditions in a format that depends on the class of \code{x}.
+#' @return The conditions in a format that depends on the class of `x`.
 #' @export
 getConditions <- function(x, ...) {
   UseMethod("getConditions", x)
@@ -1878,7 +1878,7 @@ getConditions.fn <- function(x, ...) {
 #' a dMod function object like prediction-, parameter transformation- or
 #' objective functions.
 #'
-#' @param ... objects of type \code{prdfn}, \code{parfn}, \code{objfn}
+#' @param ... objects of type `prdfn`, `parfn`, `objfn`
 #' @param conditions character vector of conditions
 #' @return character vector of model names, corresponding to C files
 #' in the local directory.
@@ -1990,9 +1990,9 @@ mname.fn <- function(x, conditions = NULL) {
 #'
 #' @param x object from which the equations should be extracted
 #' @param conditions character or numeric vector specifying the conditions to
-#' which \code{getEquations} is restricted. If \code{conditions} has length one,
+#' which `getEquations` is restricted. If `conditions` has length one,
 #' the result is not returned as a list.
-#' @return The equations as list of \code{eqnvec} objects.
+#' @return The equations as list of `eqnvec` objects.
 #' @export
 getEquations <- function(x, conditions = NULL) {
 

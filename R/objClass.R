@@ -9,9 +9,9 @@
 #' Generate objective list from numeric vector
 #' 
 #' @param p Named numeric vector
-#' @return list with entries value (\code{0}), 
-#' gradient (\code{rep(0, length(p))}) and 
-#' hessian (\code{matrix(0, length(p), length(p))}) of class \code{obj}.
+#' @return list with entries value (`0`), 
+#' gradient (`rep(0, length(p))`) and 
+#' hessian (`matrix(0, length(p), length(p))`) of class `obj`.
 #' @examples
 #' p <- c(A = 1, B = 2)
 #' as.objlist(p)
@@ -34,7 +34,7 @@ as.objlist <- function(p) {
 #' @param fixed Named numeric with fixed parameter values (contribute to the prior value but not to gradient and Hessian)
 #' @return list with entries: value (numeric, the weighted residual sum of squares), 
 #' gradient (numeric, gradient) and 
-#' hessian (matrix of type numeric). Object of class \code{objlist}.
+#' hessian (matrix of type numeric). Object of class `objlist`.
 constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
   
   
@@ -95,16 +95,16 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' L2 norm between data and model prediction
 #' 
 #' @description For parameter estimation and optimization, an objective function
-#' is needed. \code{normL2} returns an objective function for the L2 norm of
+#' is needed. `normL2` returns an objective function for the L2 norm of
 #' data and model prediction. The resulting objective function can be used for
-#' optimization with the trust optimizer, see \link{mstrust}.
+#' optimization with the trust optimizer, see [mstrust].
 #' 
-#' @param data object of class \link{datalist}
-#' @param x object of class \link{prdfn}
-#' @param errmodel object of class \link{obsfn}. \code{errmodel} does not need to be defined for all conditions.
+#' @param data object of class [datalist]
+#' @param x object of class [prdfn]
+#' @param errmodel object of class [obsfn]. `errmodel` does not need to be defined for all conditions.
 #' @param times numeric vector, additional time points where the prediction function is 
 #' evaluated. If NULL, time points are extracted from the datalist solely. If the prediction
-#' function makes use of events, hand over event \code{times} here.
+#' function makes use of events, hand over event `times` here.
 #' @param attr.name character. The constraint value is additionally returned in an 
 #' attribute with this name
 #' @param use.bessel logical. If TRUE and an error model is present, applies Bessel correction
@@ -113,10 +113,10 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
 #' is provided, FALSE otherwise.
 #' 
-#' @return Object of class \code{objfn}, i.e. a function 
-#' \code{obj(..., fixed, deriv, conditions, env)} that returns an objective list,
-#' \link{objlist}.
-#' @details Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
+#' @return Object of class `objfn`, i.e. a function 
+#' `obj(..., fixed, deriv, conditions, env)` that returns an objective list,
+#' [objlist].
+#' @details Objective functions can be combined by the "+" operator, see [sumobjfn].
 #' 
 #' The Bessel correction addresses the downward bias in maximum likelihood estimates of 
 #' variance parameters. When use.bessel = TRUE, the correction is applied globally across 
@@ -213,9 +213,9 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
 #' @param attr.name character. The constraint value is additionally returned in an 
 #' attributed with this name
 #' @param condition character, the condition for which the constraint should apply. If
-#' \code{NULL}, applies to any condition.
-#' @return object of class \code{objfn}
-#' @seealso \link{wrss}
+#' `NULL`, applies to any condition.
+#' @return object of class `objfn`
+#' @seealso [wrss]
 #' @details If sigma is numeric, the function computes the constraint value 
 #' \deqn{\left(\frac{p-\mu}{\sigma}\right)^2}{(p-mu)^2/sigma^2}
 #' and its derivatives with respect to p. If sigma is a character, the 
@@ -223,7 +223,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
 #' \deqn{\left(\frac{p-\mu}{\sigma}\right)^2 + \log(\sigma^2)}{(p-mu)^2/sigma^2 + log(sigma^2)}
 #' and its derivatives with respect to p and sigma. Sigma parameters being
 #' passed to the function are ALWAYS assumed to be on a log scale, i.e. internally
-#' sigma parameters are converted by \code{exp()}.
+#' sigma parameters are converted by `exp()`.
 #' @examples
 #' mu <- c(A = 0, B = 0)
 #' sigma <- c(A = 0.1, B = 1)
@@ -389,8 +389,8 @@ constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
 #' @param attr.name character. The constraint value is additionally returned in an 
 #' attributed with this name
 #' @param condition character, the condition for which the prediction is made.
-#' @return List of class \code{objlist}, i.e. objective value, gradient and Hessian as list.
-#' @seealso \link{wrss}, \link{constraintL2}
+#' @return List of class `objlist`, i.e. objective value, gradient and Hessian as list.
+#' @seealso [wrss], [constraintL2]
 #' @details Computes the constraint value 
 #' \deqn{\left(\frac{x(t)-\mu}{\sigma}\right)^2}{(pred-p[names(mu)])^2/sigma^2}
 #' and its derivatives with respect to p.
@@ -504,13 +504,13 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
 #' the penalty parameter in addition to parameter derivatives.
 #' 
 #' @param mu Named numeric, the prior values
-#' @param lambda Character of length one. The name of the penalty paramter in \code{p}.
+#' @param lambda Character of length one. The name of the penalty paramter in `p`.
 #' @param attr.name character. The constraint value is additionally returned in an 
 #' attributed with this name
 #' @param condition character, the condition for which the constraint should apply. If
-#' \code{NULL}, applies to any condition.
-#' @return List of class \code{objlist}, i.e. objective value, gradient and Hessian as list.
-#' @seealso \link{wrss}
+#' `NULL`, applies to any condition.
+#' @return List of class `objlist`, i.e. objective value, gradient and Hessian as list.
+#' @seealso [wrss]
 #' @details Computes the constraint value 
 #' \deqn{e^{\lambda} \| p-\mu \|^2}{exp(lambda)*sum((p-mu)^2)}
 #' and its derivatives with respect to p and lambda.
@@ -972,8 +972,8 @@ nll_BLOQ <- function(nout.bloq,
 #' @param out1 List of numerics or matrices
 #' @param out2 List with the same structure as out1 (there will be no warning when mismatching)
 #' @details If out1 has names, out2 is assumed to share these names. Each element of the list out1
-#' is inspected. If it has a \code{names} attributed, it is used to do a matching between out1 and out2.
-#' The same holds for the attributed \code{dimnames}. In all other cases, the "+" operator is applied
+#' is inspected. If it has a `names` attributed, it is used to do a matching between out1 and out2.
+#' The same holds for the attributed `dimnames`. In all other cases, the "+" operator is applied
 #' the corresponding elements of out1 and out2 as they are.
 #' @return List of length of out1. 
 #' @aliases sumobjlist

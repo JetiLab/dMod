@@ -39,10 +39,10 @@ Must contain the columns \code{"var"} (character, name of the affected state),
 \code{"method"} (character, either \code{"replace"} or \code{"add"}).
 Events must be defined here if they depend on parameters (e.g., event time or value).
 If both \code{time} and \code{value} are purely numeric, such events may alternatively
-be specified in \code{\link{Xs}()}, but this is only supported for
+be specified in \code{\link[=Xs]{Xs()}}, but this is only supported for
 \code{solver = "deSolve"}.
-See \link[deSolve]{events} for details on the \code{deSolve} implementation, or
-\code{\link[CppODE]{CppODE}} for information on event handling in the \code{boost} solver.}
+See \link[deSolve:events]{events} for details on the \code{deSolve} implementation, or
+\code{\link[CppODE:CppODE]{CppODE::CppODE()}} for information on event handling in the \code{boost} solver.}
 
 \item{outputs}{Named character vector for additional output variables.}
 
@@ -62,21 +62,21 @@ where the ODE is evaluated.}
 
 \item{verbose}{Logical. If \code{TRUE}, print compiler output to the R console.}
 
-\item{...}{Additional arguments passed to \code{\link[cOde]{funC}} or
-\code{\link[CppODE]{CppODE}}.}
+\item{...}{Additional arguments passed to \code{\link[cOde:funC]{cOde::funC()}} or
+\code{\link[CppODE:CppODE]{CppODE::CppODE()}}.}
 }
 \value{
 A list containing the generated model objects.
-  For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
-  and optionally \code{extended} (ODE + sensitivities object).
-  For \code{solver = "boost"}, the list contains compiled C++ solvers:
-  \code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
+For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
+and optionally \code{extended} (ODE + sensitivities object).
+For \code{solver = "boost"}, the list contains compiled C++ solvers:
+\code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
 }
 \description{
 Creates and compiles model objects for systems of ordinary differential equations (ODEs)
 with optional first- and second-order sensitivities. Depending on the selected solver,
-the function interfaces either to \code{\link[cOde]{funC}} (for \code{solver = "deSolve"})
-or to \code{\link[CppODE]{CppODE}} (for \code{solver = "boost"}).
+the function interfaces either to \code{\link[cOde:funC]{cOde::funC()}} (for \code{solver = "deSolve"})
+or to \code{\link[CppODE:CppODE]{CppODE::CppODE()}} (for \code{solver = "boost"}).
 }
 \examples{
 
@@ -121,5 +121,5 @@ plot(pred)
 }
 }
 \seealso{
-\code{\link[cOde]{funC}}, \code{\link[CppODE]{CppODE}}
+\code{\link[cOde:funC]{cOde::funC()}}, \code{\link[CppODE:CppODE]{CppODE::CppODE()}}
 }

@@ -35,16 +35,16 @@ A prediction frame stores model predictions in a matrix along with sensitivity i
 The columns of the prediction matrix are typically \code{"time"} and one column per state variable.
 The object carries several attributes containing sensitivities and parameter information:
 \itemize{
-  \item \code{"deriv"} – 3D array of first-order sensitivities with respect to outer parameters
-    (see \link{P}); dimensions: \code{(time, state, outer parameter)}
-  \item \code{"sensitivities"} – 3D array of first-order sensitivities with respect to inner parameters
-    (the model parameters, i.e. the left-hand side of the parameter transformation);
-    dimensions: \code{(time, state, inner parameter)}
-  \item \code{"deriv2"} – 4D array of second-order sensitivities with respect to outer parameters;
-    dimensions: \code{(time, state, outer parameter, outer parameter)}
-  \item \code{"sensitivities2"} – 4D array of second-order sensitivities with respect to inner parameters;
-    dimensions: \code{(time, state, inner parameter, inner parameter)}
-  \item \code{"parameters"} – vector of the inner parameters used to generate the prediction
+\item \code{"deriv"} – 3D array of first-order sensitivities with respect to outer parameters
+(see \link{P}); dimensions: \verb{(time, state, outer parameter)}
+\item \code{"sensitivities"} – 3D array of first-order sensitivities with respect to inner parameters
+(the model parameters, i.e. the left-hand side of the parameter transformation);
+dimensions: \verb{(time, state, inner parameter)}
+\item \code{"deriv2"} – 4D array of second-order sensitivities with respect to outer parameters;
+dimensions: \verb{(time, state, outer parameter, outer parameter)}
+\item \code{"sensitivities2"} – 4D array of second-order sensitivities with respect to inner parameters;
+dimensions: \verb{(time, state, inner parameter, inner parameter)}
+\item \code{"parameters"} – vector of the inner parameters used to generate the prediction
 }
 
 Prediction frames are usually elements of prediction lists (\link{prdlist}), produced by

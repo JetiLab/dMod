@@ -11,30 +11,34 @@
 
 \item{names}{Optional character vector of parameter names.}
 
-\item{deriv}{Either a logical flag, a Jacobian matrix, or `NULL`.
-* If `FALSE`, no Jacobian is stored (attribute set to `NULL`).
-* If `NULL`, an identity matrix is assumed.
-* If a matrix, it is used as-is (no missing entries are filled).}
+\item{deriv}{Either a logical flag, a Jacobian matrix, or \code{NULL}.
+\itemize{
+\item If \code{FALSE}, no Jacobian is stored (attribute set to \code{NULL}).
+\item If \code{NULL}, an identity matrix is assumed.
+\item If a matrix, it is used as-is (no missing entries are filled).
+}}
 
-\item{deriv2}{Either a logical flag, a 3D array, or `NULL`.
-* If `FALSE`, no Hessian is stored (attribute set to `NULL`).
-* If `NULL`, a zero tensor is assumed.
-* If an array, it is used as-is (no missing entries are filled).}
+\item{deriv2}{Either a logical flag, a 3D array, or \code{NULL}.
+\itemize{
+\item If \code{FALSE}, no Hessian is stored (attribute set to \code{NULL}).
+\item If \code{NULL}, a zero tensor is assumed.
+\item If an array, it is used as-is (no missing entries are filled).
+}}
 }
 \value{
-An object of class `"parvec"`, i.e. a named numeric vector with attributes:
+An object of class \code{"parvec"}, i.e. a named numeric vector with attributes:
 \itemize{
-  \item \code{attr(x, "deriv")} — Jacobian matrix (or `NULL`)
-  \item \code{attr(x, "deriv2")} — Hessian tensor (or `NULL`)
+\item \code{attr(x, "deriv")} — Jacobian matrix (or \code{NULL})
+\item \code{attr(x, "deriv2")} — Hessian tensor (or \code{NULL})
 }
 }
 \description{
-Creates an object of class `parvec`, storing parameter values together with
-their first (`deriv`) and second (`deriv2`) derivatives.
+Creates an object of class \code{parvec}, storing parameter values together with
+their first (\code{deriv}) and second (\code{deriv2}) derivatives.
 }
 \details{
 The function does not attempt to reconcile or complete partially specified
 Jacobians or Hessians. If custom derivative objects are provided, they are
-attached exactly as given. Only when `deriv = NULL` or `deriv2 = NULL` are
+attached exactly as given. Only when \code{deriv = NULL} or \code{deriv2 = NULL} are
 default identity and zero structures created, respectively.
 }

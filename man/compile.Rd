@@ -7,31 +7,31 @@
 compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
-\item{...}{One or more objects of class `parfn`, `obsfn`, or `prdfn`.}
+\item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.}
 
 \item{output}{Optional character string. If provided, all compiled files
-will be linked into this shared object (e.g. `"myModel"` produces
-`"myModel.so"` or `"myModel.dll"`).}
+will be linked into this shared object (e.g. \code{"myModel"} produces
+\code{"myModel.so"} or \code{"myModel.dll"}).}
 
 \item{args}{Optional character string with additional arguments passed to
-the `R CMD SHLIB` call (e.g. `"-leinspline"`).}
+the \verb{R CMD SHLIB} call (e.g. \code{"-leinspline"}).}
 
 \item{cores}{Integer. Number of CPU cores used for parallel compilation when
 compiling multiple files (only on non-Windows systems).}
 
-\item{verbose}{Logical. If `TRUE`, compiler output is printed to the R console.}
+\item{verbose}{Logical. If \code{TRUE}, compiler output is printed to the R console.}
 }
 \value{
-Invisibly returns `TRUE` if compilation succeeds.
+Invisibly returns \code{TRUE} if compilation succeeds.
 }
 \description{
-Compiles one or more objects of class `parfn`, `obsfn`, or `prdfn` into a
-shared library (`.so` or `.dll`). If multiple objects are provided, their
+Compiles one or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn} into a
+shared library (\code{.so} or \code{.dll}). If multiple objects are provided, their
 corresponding C/C++ source files are compiled together into a single
 shared object.
 }
 \details{
 On non-Windows systems, parallel compilation is performed via
-`parallel::mclapply()` if multiple files are detected.  
+\code{parallel::mclapply()} if multiple files are detected.
 On Windows, compilation is always single-threaded.
 }

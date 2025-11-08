@@ -7,6 +7,7 @@ set.seed(5555)
 
 library(dMod)
 library(dplyr)
+library(ggplot2)
 
 reactions <- eqnvec() %>% 
   addReaction("", "A", "k_p") %>% 
@@ -90,22 +91,56 @@ trafo.expl <- eqnvec() %>%
 
 p.expl <- P(trafo.expl, condition = "cond1", deriv2 = T, compile = F)
 
+p.expl(pouter) %>% getDerivs()
+p.impl(pouter) %>% getDerivs()
+
 compile(x.ds, x.bt, p.impl, p.expl, output = "dMod2test", cores = 8)
 
-
-prd.impl <- x.bt*p.impl
+prd.impl.ds <- x.ds*p.impl
+prd.impl.bt <- x.bt*p.impl
 prd.expl.ds <- x.ds*p.expl
 prd.expl.bt <- x.bt*p.expl
 # debugonce(prd)
-out.impl <- prd.impl(times, pouter, deriv2 = F)
+out.impl.ds <- prd.impl.ds(times, pouter)
 out.expl.ds <- prd.expl.ds(times,pouter)
+out.impl.bt <- prd.impl.bt(times, pouter, deriv2 = T)
 out.expl.bt <- prd.expl.bt(times,pouter, deriv2 = T)
 plot(out.expl.ds)
 plot(out.expl.bt)
-getDerivs(out.expl.ds) %>% plot()
-getDerivs(out.expl.bt) %>% plot()
-getDerivs(out.impl) %>% plot()
 
-system.time({prd.impl(times,pouter, deriv2 = F)})
-system.time({(x.ds*p.expl)(times,pouter, deriv2 = F)})
-getDerivs2(out.expl.bt) %>% plot()
+
+
+derivs.bt.impl <- getDerivs(out.expl.bt) %>% as.data.frame() %>% mutate(parfun = "impl")
+derivs.bt.expl <- getDerivs(out.impl.bt) %>% as.data.frame() %>% mutate(parfun = "expl")
+
+derivs.bt <- rbind(derivs.bt.expl, derivs.bt.impl)
+
+derivs2.bt.impl <- getDerivs2(out.expl.bt, full = T) %>% as.data.frame() %>% 
+  mutate(parfun = "impl")
+derivs2.bt.expl <- getDerivs2(out.impl.bt, full = T) %>% as.data.frame() %>% 
+  mutate(parfun = "expl")
+
+derivs2.bt <- rbind(derivs2.bt.expl, derivs2.bt.impl)
+
+ggplot(derivs.bt, aes(x=time, y=value, linetype = parfun, color = parfun)) +
+  geom_line() + 
+  facet_wrap(~name, scales = "free") + 
+  theme_dMod() +
+  scale_color_dMod()
+
+ggplot(derivs2.bt, aes(x=time, y=value, linetype = parfun, color = parfun)) +
+  geom_line() + 
+  facet_wrap(~name, scales = "free") + 
+  theme_dMod() +
+  scale_color_dMod()
+
+system.time({prd.impl.bt(times, pouter, deriv2 = T)})
+system.time({prd.expl.bt(times, pouter, deriv2 = T)})
+
+
+reactions2 <- eqnvec() %>% 
+  addReaction("ERK", "ppERK", "k1 * ERK") %>% 
+  addReaction("ppERK", "ERK", "k2 * ppERK")
+
+reactions2
+p.impl2 <- Pimpl(reactions2, attach.input = T, deriv2 = T, condition = "cond1", compile = F)

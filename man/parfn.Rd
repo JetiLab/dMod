@@ -18,11 +18,11 @@ that returns transformed parameters with attached derivative attributes.}
 }
 \value{
 A function of class \code{"parfn"}:
-\code{p(..., fixed, deriv, deriv2, conditions, env)} returning a [parvec]
+\code{p(..., fixed, deriv, deriv2, conditions, env)} returning a \link{parvec}
 with optional attributes:
 \itemize{
-  \item \code{attr(x, "deriv")} — Jacobian matrix
-  \item \code{attr(x, "deriv2")} — Hessian tensor
+\item \code{attr(x, "deriv")} — Jacobian matrix
+\item \code{attr(x, "deriv2")} — Hessian tensor
 }
 }
 \description{
@@ -34,5 +34,5 @@ However, you can use it to add your own specialized parameter
 transformations to the general framework.
 }
 \seealso{
-[Pexpl()], [Pimpl()], [sumfn()]
+\code{\link[=Pexpl]{Pexpl()}}, \code{\link[=Pimpl]{Pimpl()}}, \code{\link[=sumfn]{sumfn()}}
 }

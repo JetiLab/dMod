@@ -5,7 +5,7 @@
 #' @description The function calls a python script via rPython. Usage problems might occur when different python versions are used. The script was written and tested for python 2.7.12, sympy 0.7.6.
 #' @description Recently, users went into problems with RJSONIO when rPython was used. Unless a sound solution is available, please try to reinstall RJSONIO in these cases.
 #' 
-#' @param f object containing the ODE for which \code{as.eqnvec()} is defined
+#' @param f object containing the ODE for which `as.eqnvec()` is defined
 #' @param obsvect vector of observation functions
 #' @param prediction vector containing prediction to be tested
 #' @param initial vector containing initial values
@@ -18,7 +18,7 @@
 #' @return NULL
 #' 
 #' @references [1]
-#' \url{https://journals.aps.org/pre/abstract/10.1103/PhysRevE.92.012920}
+#' <https://journals.aps.org/pre/abstract/10.1103/PhysRevE.92.012920>
 #' 
 #' @examples
 #' \dontrun{

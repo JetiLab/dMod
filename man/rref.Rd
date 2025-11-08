@@ -2,7 +2,7 @@
 % Please edit documentation in R/symbolics.R
 \name{rref}
 \alias{rref}
-\title{Transform matrix A into reduced row echelon form 
+\title{Transform matrix A into reduced row echelon form
 this function is written along the lines of the rref-matlab function.}
 \usage{
 rref(A, tol = sqrt(.Machine$double.eps), verbose = FALSE, fractions = FALSE)
@@ -17,10 +17,10 @@ rref(A, tol = sqrt(.Machine$double.eps), verbose = FALSE, fractions = FALSE)
 \item{fractions}{logical, not used right now.}
 }
 \value{
-a list of two entries is returned; ret[[1]] is the reduced row echelon form of A, ret[[2]] is the index of columns in which a pivot was found
+a list of two entries is returned; ret[\link{1}] is the reduced row echelon form of A, ret[\link{2}] is the index of columns in which a pivot was found
 }
 \description{
-Transform matrix A into reduced row echelon form 
+Transform matrix A into reduced row echelon form
 this function is written along the lines of the rref-matlab function.
 }
 \author{

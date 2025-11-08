@@ -11,10 +11,10 @@ plotResiduals(parframe, x, data, split = "condition", errmodel = NULL, ...)
 
 \item{x}{Prediction function returning named list of data.frames with names as \code{data}.}
 
-\item{data}{Named list of data.frames, i.e. with columns \code{name}, \code{time}, 
+\item{data}{Named list of data.frames, i.e. with columns \code{name}, \code{time},
 \code{value} and \code{sigma}.}
 
-\item{split}{List of characters specifying how to summarise the residuals by \code{sqrt(res_i^2)}, 
+\item{split}{List of characters specifying how to summarise the residuals by \code{sqrt(res_i^2)},
 \code{split[1]} used for x-axis, \code{split[2]} for grouping (color), and any additional for \code{facet_wrap()}}
 
 \item{errmodel}{object of type prdfn, the error model function.}

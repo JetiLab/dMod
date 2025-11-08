@@ -13,7 +13,7 @@ insert(trafo, expr, ..., conditionMatch = NULL)
 branch(trafo, table = NULL, conditions = rownames(table))
 }
 \arguments{
-\item{trafo}{named character vector of parametric expressions or object 
+\item{trafo}{named character vector of parametric expressions or object
 of class \code{eqnvec}}
 
 \item{expr}{character of the form \code{"lhs ~ rhs"} where both \code{lhs}

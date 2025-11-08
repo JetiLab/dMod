@@ -25,7 +25,7 @@ named character vector with the algebraic expressions}
 
 \item{compile}{Logical. Directly compile the file. If \code{FALSE} and modelname is available,
 the C file is written but not compiled. In this case, \link{compile} has to be called separately
-to compile one or more .c-files into one .so-file. 
+to compile one or more .c-files into one .so-file.
 If modelname is not available, an R function is generated and returned.}
 
 \item{modelname}{file name of the generated C file. See description of parameter \code{compile}.}
@@ -39,9 +39,9 @@ all variables/parameters as named arguments}
 automatically replaced by zero values.}
 }
 \value{
-Either a prediction function \code{f(..., attach.input = FALSE)} where the 
-variables/parameters are passed as named arguments or a prediction function 
-\code{f(M, p, attach.input = FALSE)} where \code{M} is the matrix of variable values 
+Either a prediction function \code{f(..., attach.input = FALSE)} where the
+variables/parameters are passed as named arguments or a prediction function
+\code{f(M, p, attach.input = FALSE)} where \code{M} is the matrix of variable values
 (colums with colnames correspond to different variables) and \code{p} is the vector of
 parameter values.
 The argument \code{attach.input} determines whether \code{M} is attached to the output.

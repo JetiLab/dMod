@@ -10,5 +10,5 @@ detectFreeCores(machine = NULL)
 \item{machine}{character, e.g. "user@localhost".}
 }
 \description{
-Read \code{/proc/loadavg} and subtract from the number of cores
+Read \verb{/proc/loadavg} and subtract from the number of cores
 }

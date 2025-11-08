@@ -2,11 +2,11 @@
 ## Class "datalist" and its constructor ------------------------------------------
 
 
-#' @param x object of class \code{data.frame} or \code{list}. Data frames are required to
+#' @param x object of class `data.frame` or `list`. Data frames are required to
 #' provide "name", "time" and "value" as columns. Columns "sigma" and "lloq" can be provided.
 #' If "sigma" and "lloq" are missing, they
-#' are imputed with \code{NA} and \code{-Inf}, respectively. 
-#' @return Object of class \link{datalist}
+#' are imputed with `NA` and `-Inf`, respectively. 
+#' @return Object of class [datalist]
 #' @export
 #' @example inst/examples/datalist.R
 #' @rdname datalist
@@ -52,7 +52,7 @@ as.datalist.data.frame <- function(x, split.by = NULL, keep.covariates = NULL, .
 }
 
 #' @export
-#' @param names optional names vector, otherwise names are taken from \code{mylist}
+#' @param names optional names vector, otherwise names are taken from `mylist`
 #' @param condition.grid Optionally, to manually specify a condition.grid
 #' @rdname datalist
 as.datalist.list <- function(x, names = NULL, ..., condition.grid = attr(x, "condition.grid")) {
@@ -149,17 +149,17 @@ subset.datalist <- function(x, ...){
 
 #' Plot a list data points
 #'
-#' @param x Named list of data.frames as being used in \link{res}, i.e. with columns \code{name}, \code{time},
-#' \code{value} and \code{sigma}.
-#' @param ... Further arguments going to \code{dplyr::filter}.
-#' @param scales The scales argument of \code{facet_wrap} or \code{facet_grid}, i.e. \code{"free"}, \code{"fixed"},
-#' \code{"free_x"} or \code{"free_y"}
-#' @param facet Either \code{"wrap"} or \code{"grid"}
-#' @details The data.frame being plotted has columns \code{time}, \code{value}, \code{sigma},
-#' \code{name} and \code{condition}.
+#' @param x Named list of data.frames as being used in [res], i.e. with columns `name`, `time`,
+#' `value` and `sigma`.
+#' @param ... Further arguments going to `dplyr::filter`.
+#' @param scales The scales argument of `facet_wrap` or `facet_grid`, i.e. `"free"`, `"fixed"`,
+#' `"free_x"` or `"free_y"`
+#' @param facet Either `"wrap"` or `"grid"`
+#' @details The data.frame being plotted has columns `time`, `value`, `sigma`,
+#' `name` and `condition`.
 #'
 #'
-#' @return A plot object of class \code{ggplot}.
+#' @return A plot object of class `ggplot`.
 #' @export
 plot.datalist <- function(x, ..., scales = "free", facet = "wrap") {
 
@@ -236,10 +236,10 @@ as.data.frame.datalist <- function(x, ...) {
 
 #' Access the covariates in the data
 #'
-#' @param x Either a \link{datalist} or a \code{data.frame} with mandatory 
-#' columns \code{c("name", "time", "value", "sigma", "lloq")}.
+#' @param x Either a [datalist] or a `data.frame` with mandatory 
+#' columns `c("name", "time", "value", "sigma", "lloq")`.
 #'
-#' @return The \code{condition.grid} of the data
+#' @return The `condition.grid` of the data
 #' @export
 covariates <- function(x) {
   UseMethod("covariates", x)

@@ -9,7 +9,7 @@ print0(x, list_attributes = TRUE)
 \arguments{
 \item{x}{Object to be printed}
 
-\item{list_attributes}{Prints the names of all attribute of x, defaults to 
+\item{list_attributes}{Prints the names of all attribute of x, defaults to
 TRUE}
 }
 \description{
@@ -17,11 +17,11 @@ Print object and its "default" attributes only.
 }
 \details{
 Before the \option{x} is printed by print.default, all its arguments
-  not in the default list of \code{\link{attrs}} are removed.
+not in the default list of \code{\link[=attrs]{attrs()}} are removed.
 }
 \author{
 Wolfgang Mader, \email{Wolfgang.Mader@fdm.uni-freiburg.de}
 
-Mirjam Fehling-Kaschek, 
-  \email{mirjam.fehling@physik.uni-freiburg.de}
+Mirjam Fehling-Kaschek,
+\email{mirjam.fehling@physik.uni-freiburg.de}
 }

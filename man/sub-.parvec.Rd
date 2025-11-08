@@ -7,24 +7,24 @@
 \method{[}{parvec}(x, ..., drop = FALSE)
 }
 \arguments{
-\item{x}{A `parvec` object.}
+\item{x}{A \code{parvec} object.}
 
 \item{...}{Parameter indices or names to subset.}
 
-\item{drop}{Logical; if `TRUE`, drop zero Jacobian columns and matching
+\item{drop}{Logical; if \code{TRUE}, drop zero Jacobian columns and matching
 Hessian dimensions.}
 }
 \value{
-A `parvec` object with updated numeric values and derivative
-  attributes.
+A \code{parvec} object with updated numeric values and derivative
+attributes.
 }
 \description{
-Efficiently subsets a `parvec` while keeping its numeric values, Jacobian
-(`deriv`), and Hessian (`deriv2`) consistent. Assumes that parameter and
+Efficiently subsets a \code{parvec} while keeping its numeric values, Jacobian
+(\code{deriv}), and Hessian (\code{deriv2}) consistent. Assumes that parameter and
 derivative dimensions are aligned and consistent.
 }
 \details{
 Only the parameter dimension (rows) is subset; derivative basis dimensions
-remain unchanged. When `drop = TRUE`, zero columns in the Jacobian and the
+remain unchanged. When \code{drop = TRUE}, zero columns in the Jacobian and the
 corresponding Hessian dimensions are removed.
 }

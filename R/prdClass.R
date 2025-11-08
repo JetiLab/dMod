@@ -374,11 +374,11 @@ summary.obsfn <- function(object, ...) {
 #' @param object prediction function
 #' @param ... Further arguments goint to the prediction function
 #' @param times numeric vector of time points
-#' @param pars parameter frame, e.g. output from \link{mstrust} or 
-#' \link{profile}
+#' @param pars parameter frame, e.g. output from [mstrust] or 
+#' [profile]
 #' @param data data list object. If data is passed, its condition.grid
 #' attribute is used to augment the output dataframe by additional 
-#' columns. \code{"data"} itself is returned as an attribute.
+#' columns. `"data"` itself is returned as an attribute.
 #' @return A data frame
 #' @export
 predict.prdfn <- function(object, ..., times, pars, data = NULL) {

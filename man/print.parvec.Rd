@@ -11,5 +11,5 @@
 }
 \description{
 Prints a parameter vector along with information about
-its attached derivative matrices (`deriv`, `deriv2`).
+its attached derivative matrices (\code{deriv}, \code{deriv2}).
 }

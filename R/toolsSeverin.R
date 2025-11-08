@@ -6,65 +6,65 @@
 #' The function handles workspace export, job submission, and result retrieval.
 #'
 #' @details
-#' \code{distributed_computing()} generates R and bash scripts designed to run
+#' `distributed_computing()` generates R and bash scripts designed to run
 #' on an HPC system managed by SLURM. The current R workspace together with the
 #' scripts are exported and transferred to the remote system via SSH.  
 #' If ssh-key authentication is not possible, the SSH password can be provided and
-#' is used by \code{sshpass} (which must be installed locally).
+#' is used by `sshpass` (which must be installed locally).
 #'
-#' The code to be executed remotely is passed to the \code{...} argument; its final
-#' output is stored in \code{cluster_result}, which can be loaded in the local
-#' workspace via the \code{get()} function.
+#' The code to be executed remotely is passed to the `...` argument; its final
+#' output is stored in `cluster_result`, which can be loaded in the local
+#' workspace via the `get()` function.
 #'
-#' It is possible to run multiple repetitions of the same program (via \code{no_rep})
-#' or to pass a list of parameter arrays through \code{var_values}. Parameters that
-#' vary between runs must be named \code{var_i}, where \emph{i} matches the index
-#' of the corresponding array in \code{var_values}.
+#' It is possible to run multiple repetitions of the same program (via `no_rep`)
+#' or to pass a list of parameter arrays through `var_values`. Parameters that
+#' vary between runs must be named `var_i`, where *i* matches the index
+#' of the corresponding array in `var_values`.
 #'
 #' @param ... R code to be remotely executed. Parameters to be changed for each run
-#' must be named \code{var_i} (see "Details").
+#' must be named `var_i` (see "Details").
 #' @param jobname Unique name (character) for the run. Existing runs with the same
 #' name will be overwritten. Must not contain the string "Minus".
-#' @param partition SLURM partition name to use. Default is \code{"single"}.
+#' @param partition SLURM partition name to use. Default is `"single"`.
 #' @param cores Number of cores per node. Values above 16 may limit available nodes.
 #' @param nodes Number of nodes per task. Default is 1; typically should not be changed.
 #' @param mem_per_core Memory per CPU core in GB. Default is 2 GB.
-#' @param walltime Maximum runtime in format \code{"hh:mm:ss"}. Default is 1 hour.
-#' @param ssh_passwd Password string for SSH authentication via \code{sshpass}.
+#' @param walltime Maximum runtime in format `"hh:mm:ss"`. Default is 1 hour.
+#' @param ssh_passwd Password string for SSH authentication via `sshpass`.
 #' Optional, and only used if key-based authentication is unavailable.
-#' @param machine SSH address of the remote HPC system, e.g. \code{"user@@cluster"}.
+#' @param machine SSH address of the remote HPC system, e.g. `"user@@cluster"`.
 #' @param var_values List of parameter arrays. Each array corresponds to one variable
-#' \code{var_i}. The length of each array determines the number of SLURM array jobs.
-#' Mutually exclusive with \code{no_rep}.
-#' @param no_rep Integer number of repetitions (mutually exclusive with \code{var_values}).
-#' @param recover Logical; if \code{TRUE}, no computation is performed. Instead,
-#' the returned list of functions \code{check()}, \code{get()}, and \code{purge()}
+#' `var_i`. The length of each array determines the number of SLURM array jobs.
+#' Mutually exclusive with `no_rep`.
+#' @param no_rep Integer number of repetitions (mutually exclusive with `var_values`).
+#' @param recover Logical; if `TRUE`, no computation is performed. Instead,
+#' the returned list of functions `check()`, `get()`, and `purge()`
 #' can be used to interact with previously submitted jobs.
-#' @param purge_local Logical; if \code{TRUE}, the \code{purge()} function also
+#' @param purge_local Logical; if `TRUE`, the `purge()` function also
 #' deletes local result files.
-#' @param compile Logical; if \code{TRUE}, all C/C++ source files (\code{*.c}, \code{*.cpp})
-#' are transferred to the cluster and fully recompiled into shared objects (\code{.so}).
-#' If set to \code{TRUE}, this overrides \code{link = TRUE}.
-#' @param link Logical; if \code{TRUE}, only existing object files (\code{*.o}) are
-#' transferred to the cluster and linked into shared objects (\code{.so}),
-#' skipping compilation. If no \code{.o} files are found, an error is raised.
-#' This option is ignored if \code{compile = TRUE}.
-#' @param custom_folders Named vector with exactly three elements: \code{"compiled"},
-#' \code{"output"}, and \code{"tmp"}. Each value is a relative path specifying where
+#' @param compile Logical; if `TRUE`, all C/C++ source files (`*.c`, `*.cpp`)
+#' are transferred to the cluster and fully recompiled into shared objects (`.so`).
+#' If set to `TRUE`, this overrides `link = TRUE`.
+#' @param link Logical; if `TRUE`, only existing object files (`*.o`) are
+#' transferred to the cluster and linked into shared objects (`.so`),
+#' skipping compilation. If no `.o` files are found, an error is raised.
+#' This option is ignored if `compile = TRUE`.
+#' @param custom_folders Named vector with exactly three elements: `"compiled"`,
+#' `"output"`, and `"tmp"`. Each value is a relative path specifying where
 #' compiled files, temporary data, and output results should be stored.
-#' If \code{NULL}, all operations occur in the current working directory.
-#' @param resetSeeds Logical; if \code{TRUE} (default), removes \code{.Random.seed}
+#' If `NULL`, all operations occur in the current working directory.
+#' @param resetSeeds Logical; if `TRUE` (default), removes `.Random.seed`
 #' from the transferred workspace to ensure each node has independent random seeds.
-#' @param returnAll Logical; if \code{TRUE} (default), retrieves all remote files.
-#' If \code{FALSE}, only result files (\code{*result.RData}) are fetched.
+#' @param returnAll Logical; if `TRUE` (default), retrieves all remote files.
+#' If `FALSE`, only result files (`*result.RData`) are fetched.
 #'
 #' @return
 #' A list containing three functions:
 #' \itemize{
-#'   \item \code{check()} – Checks whether all remote results are complete.
-#'   \item \code{get()} – Downloads results and loads them into
-#'         \code{cluster_result} in the local workspace.
-#'   \item \code{purge()} – Deletes temporary remote files; optionally removes local ones.
+#'   \item `check()` – Checks whether all remote results are complete.
+#'   \item `get()` – Downloads results and loads them into
+#'         `cluster_result` in the local workspace.
+#'   \item `purge()` – Deletes temporary remote files; optionally removes local ones.
 #' }
 #'
 #' @examples
@@ -569,7 +569,7 @@ distributed_computing <- function(
 
 #' Generate parameter list for distributed profile calculation
 #' 
-#' @description Generates list of \code{WhichPar} entries to facillitate distribute
+#' @description Generates list of `WhichPar` entries to facillitate distribute
 #' profile calculation.
 #' @details Lists to split the parameters for which the profiles are calculated
 #' on the different nodes.
@@ -578,8 +578,8 @@ distributed_computing <- function(
 #' @param fits_per_node numerical, number of parameters that will be send to each node.
 #' @param side determine if both sides are calculated (default) or if the profiles are split in 'left' and 'right' for calculation
 #' 
-#' @return List with two arrays: \code{from} contains the number of the starting
-#' parameter, while \code{to} stores the respective upper end of the parameter list
+#' @return List with two arrays: `from` contains the number of the starting
+#' parameter, while `to` stores the respective upper end of the parameter list
 #' per node.
 #' @examples
 #' \dontrun{
@@ -639,9 +639,9 @@ profile_pars_per_node <- function(parameters, fits_per_node, side = c("both", "s
 #' @description Installs Julia and the necessary julia packages
 #' 
 #' 
-#' @param installJulia boolean, default \code{false}. If set to true, juliaup and via this then Julia is installed. 
-#' @param installJuliaPackages boolean, default \code{true}. If set to true, the necessary packages are installed.
-#' @param JuliaProjectPath string, default \code{NULL}. Allows for installing the required packages to a separate project environment instead of the global package environment. Also need to specify same JuliaProjectPath to steadyStateToolJulia().
+#' @param installJulia boolean, default `false`. If set to true, juliaup and via this then Julia is installed. 
+#' @param installJuliaPackages boolean, default `true`. If set to true, the necessary packages are installed.
+#' @param JuliaProjectPath string, default `NULL`. Allows for installing the required packages to a separate project environment instead of the global package environment. Also need to specify same JuliaProjectPath to steadyStateToolJulia().
 #' 
 #' @return nothing
 #' 
@@ -683,13 +683,13 @@ installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackag
 #' @description Uses julia to calculate the steady state transformations
 #' 
 #' @param el the equation list
-#' @param forcings vector of strings, default \code{c("","")}. The names of the forcings which will be set to zero before solving for the steady state equations.
-#' @param neglect vector of strings, default \code{c("","")}. The names of the variables which will be neglected as fluxParameters and therefore will not be solved for.
-#' @param verboseLevel integer, default \code{1}. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implemented.
-#' @param testSteadyState boolean, default \code{true}
-#' @param JuliaPath string, default \code{NULL}. If specified, uses julia executable from given path.
-#' @param FileExportPath string, default \code{getwd()}. Directory to which .csv files for transfer of equations between R and Julia are saved.
-#' @param JuliaProjectPath string, default \code{NULL}. If specified, uses julia local project environment from given path, otherwise uses global package environment for code execution.
+#' @param forcings vector of strings, default `c("","")`. The names of the forcings which will be set to zero before solving for the steady state equations.
+#' @param neglect vector of strings, default `c("","")`. The names of the variables which will be neglected as fluxParameters and therefore will not be solved for.
+#' @param verboseLevel integer, default `1`. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implemented.
+#' @param testSteadyState boolean, default `true`
+#' @param JuliaPath string, default `NULL`. If specified, uses julia executable from given path.
+#' @param FileExportPath string, default `getwd()`. Directory to which .csv files for transfer of equations between R and Julia are saved.
+#' @param JuliaProjectPath string, default `NULL`. If specified, uses julia local project environment from given path, otherwise uses global package environment for code execution.
 #' 
 #' @return named vector with the steady state transformations. The names are the inner, the values are the outer parameters
 #' 
@@ -778,10 +778,10 @@ steadyStateToolJulia <- function(
 #' 
 #' 
 #' @param profs parframe with the profiles, as returned from the \link{dMod::profile} function
-#' @param trafo parameter transformation for the steady states, as returned by \code{P(steadystateTrafo)}. Currently no ther formulation is supported.
-#' @param rescale character, default \code{"lin"} (no rescaling). The rescaling of the transformed parameters to the model scale, can be \code{"lin"}, \code{"log"}, \code{"log10"} or \code{"log2"}.
+#' @param trafo parameter transformation for the steady states, as returned by `P(steadystateTrafo)`. Currently no ther formulation is supported.
+#' @param rescale character, default `"lin"` (no rescaling). The rescaling of the transformed parameters to the model scale, can be `"lin"`, `"log"`, `"log10"` or `"log2"`.
 #' 
-#' @return \code{parframe} of the input \code{profs} with the added columns of \code{trafo} applied to the parameters.
+#' @return `parframe` of the input `profs` with the added columns of `trafo` applied to the parameters.
 #' 
 #' @export
 addTrafoForPaths <- function(

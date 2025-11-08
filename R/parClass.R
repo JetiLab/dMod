@@ -2,7 +2,7 @@
 
 #' Parameter list
 #' 
-#' @param x list of lists, as returned by \code{trust}
+#' @param x list of lists, as returned by `trust`
 #' @rdname parlist
 #' @export
 as.parlist <- function(x = NULL) {
@@ -73,7 +73,7 @@ stat.parlist <- function(x) {
 #' @param x fitlist obtained from mstrust
 #' @param ... additional arguments
 #' @param path print path of parameters from initials to convergence. For this
-#'   option to be TRUE \code{\link{mstrust}} must have had the option
+#'   option to be TRUE [mstrust()] must have had the option
 #'   \option{blather}.
 #' 
 #' @details If path=TRUE:        
@@ -118,7 +118,7 @@ plot.parlist <- function(x, path = FALSE, ...) {
 #' @importFrom data.table as.data.table rbindlist
 #' @rdname as.parframe
 #' @param sort.by character indicating by which colum the returned parameter frame
-#' should be sorted. Defaults to \code{"value"}.
+#' should be sorted. Defaults to `"value"`.
 as.parframe.parlist <- function(x, sort.by = "value", ...) {
   m_stat <- stat.parlist(x)
   m_metanames <- c("index", "value", "converged", "iterations")
@@ -172,7 +172,7 @@ c.parlist <- function(...) {
 #' 
 #' @param x object to be coerced
 #' @param ... other arguments
-#' @return object of class \link{parframe}.
+#' @return object of class [parframe].
 #' @example inst/examples/parlist.R
 #' @export
 as.parframe <- function(x, ...) {
@@ -185,8 +185,8 @@ as.parframe <- function(x, ...) {
 #' @description Obtain a parameter vector from a parameter frame.
 #' 
 #' @param x A parameter frame, e.g., the output of
-#'   \code{\link{as.parframe}}.
-#' @param index Integer, the parameter vector with the \code{index}-th lowest
+#'   [as.parframe()].
+#' @param index Integer, the parameter vector with the `index`-th lowest
 #'   objective value.
 #' @param ... not used right now
 #'   
@@ -543,9 +543,9 @@ subset.parframe <- function(x, ...) {
 #' Extract those lines of a parameter frame with unique elements in the value column
 #' @param x parameter frame
 #' @param incomparables not used. Argument exists for compatibility with S3 generic.
-#' @param tol tolerance to decide when values are assumed to be equal, see \code{\link{plotValues}()}.
-#' @param ... additional arguments being passed to \code{\link{plotValues}()}, e.g. for subsetting.
-#' @return A subset of the parameter frame \code{x}.
+#' @param tol tolerance to decide when values are assumed to be equal, see [plotValues()].
+#' @param ... additional arguments being passed to [plotValues()], e.g. for subsetting.
+#' @return A subset of the parameter frame `x`.
 #' @export
 unique.parframe <- function(x, incomparables = FALSE, tol = 1, ...) {
   
@@ -587,8 +587,8 @@ as.parvec <- function(x, ...) {
 #'
 #' @return An object of class `"parvec"`, i.e. a named numeric vector with attributes:
 #' \itemize{
-#'   \item \code{attr(x, "deriv")} — Jacobian matrix (or `NULL`)
-#'   \item \code{attr(x, "deriv2")} — Hessian tensor (or `NULL`)
+#'   \item `attr(x, "deriv")` — Jacobian matrix (or `NULL`)
+#'   \item `attr(x, "deriv2")` — Hessian tensor (or `NULL`)
 #' }
 #'
 #' @details

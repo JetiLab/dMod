@@ -7,12 +7,12 @@
 \method{c}{parvec}(...)
 }
 \arguments{
-\item{...}{`parvec` objects to concatenate.}
+\item{...}{\code{parvec} objects to concatenate.}
 }
 \value{
-A combined `parvec` object.
+A combined \code{parvec} object.
 }
 \description{
-Combines multiple `parvec` objects into one, preserving first (`deriv`)
-and second (`deriv2`) derivatives when available.
+Combines multiple \code{parvec} objects into one, preserving first (\code{deriv})
+and second (\code{deriv2}) derivatives when available.
 }

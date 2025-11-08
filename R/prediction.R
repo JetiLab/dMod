@@ -2,24 +2,24 @@
 
 #' Model prediction function for ODE models. 
 #' @description Interface to combine an ODE and its sensitivity equations
-#' into one model function \code{x(times, pars, deriv = TRUE)} returning ODE output and sensitivities.
-#' @param odemodel object of class 'odemodel' or 'odemodel++', see \link{odemodel}
+#' into one model function `x(times, pars, deriv = TRUE)` returning ODE output and sensitivities.
+#' @param odemodel object of class 'odemodel' or 'odemodel++', see [odemodel]
 #' @param forcings data.frame with columns name (factor), time (numeric) and value (numeric).
 #' The ODE forcings. Not (yet) implemented for boost::odeint::rosenbrock4
 #' @param events data.frame of events with columns "var" (character, the name of the state to be
 #' affected), "time" (numeric, time point), "value" (numeric, value), "method" (character, either
-#' "replace", "add" or "multiply"). See \link[deSolve]{events}.
+#' "replace", "add" or "multiply"). See [events][deSolve::events].
 #' ATTENTION: Sensitivities for event states will only be correctly computed if defined within
-#' \code{\link{odemodel}()}. Specify events within \code{Xs()} only for forward simulation.
+#' [odemodel()]. Specify events within `Xs()` only for forward simulation.
 #' @param names character vector with the states to be returned. If NULL, all states are returned.
 #' @param condition either NULL (generic prediction for any condition) or a character, denoting
 #' the condition for which the function makes a prediction.
 #' @param optionsOde list with arguments to be passed to odeC() for the ODE integration.
 #' @param optionsSens list with arguments to be passed to odeC() for integration of the extended system
 #' @param fcontrol list with additional fine-tuning arguments for the forcing interpolation. 
-#' See \link[stats]{approxfun} for possible arguments.
-#' @return Object of class \link{prdfn}. If the function is called with parameters that
-#' result from a parameter transformation (see \link{P}), the Jacobian of the parameter transformation
+#' See [approxfun][stats::approxfun] for possible arguments.
+#' @return Object of class [prdfn]. If the function is called with parameters that
+#' result from a parameter transformation (see [P]), the Jacobian of the parameter transformation
 #' and the sensitivities of the ODE are multiplied according to the chain rule for
 #' differentiation. The result is saved in the attributed "deriv", 
 #' i.e. in this case the attibutes "deriv" and "sensitivities" do not coincide. 
@@ -434,20 +434,20 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
 
 #' Model prediction function for ODE models without sensitivities. 
 #' @description Interface to get an ODE 
-#' into a model function \code{x(times, pars, forcings, events)} returning ODE output.
-#' It is a reduced version of \link{Xs}, missing the sensitivities. 
-#' @param odemodel Object of class \link{odemodel}.
-#' @param forcings, see \link{Xs}
-#' @param events, see \link{Xs}
+#' into a model function `x(times, pars, forcings, events)` returning ODE output.
+#' It is a reduced version of [Xs], missing the sensitivities. 
+#' @param odemodel Object of class [odemodel].
+#' @param forcings, see [Xs]
+#' @param events, see [Xs]
 #' @param condition either NULL (generic prediction for any condition) or a character, denoting
 #' the condition for which the function makes a prediction.
 #' @param optionsOde list with arguments to be passed to odeC() for the ODE integration.
 #' @param fcontrol list with additional fine-tuning arguments for the forcing interpolation. 
-#' See \link[stats]{approxfun} for possible arguments.
-#' @details Can be used to integrate additional quantities, e.g. fluxes, by adding them to \code{f}. 
+#' See [approxfun][stats::approxfun] for possible arguments.
+#' @details Can be used to integrate additional quantities, e.g. fluxes, by adding them to `f`. 
 #' All quantities that are not initialised by pars 
-#' in \code{x(..., forcings, events)} are initialized with 0. For more details and
-#' the return value see \link{Xs}.
+#' in `x(..., forcings, events)` are initialized with 0. For more details and
+#' the return value see [Xs].
 #' @export
 Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optionsOde=list(method = "lsoda"), fcontrol = NULL) {
   
@@ -519,11 +519,11 @@ Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optio
 #' to initialize the parameters.
 #' @param condition either NULL (generic prediction for any condition) or a character, denoting
 #' the condition for which the function makes a prediction.
-#' @return Object of class \link{prdfn}, i.e. 
-#' a function \code{x(times pars, deriv = TRUE, conditions = NULL)}, 
-#' see also \link{Xs}. Attributes are "parameters", the parameter names (row names of
+#' @return Object of class [prdfn], i.e. 
+#' a function `x(times pars, deriv = TRUE, conditions = NULL)`, 
+#' see also [Xs]. Attributes are "parameters", the parameter names (row names of
 #' the data frame), and possibly "pouter", a named numeric vector which is generated
-#' from \code{data$value}.
+#' from `data$value`.
 #' @examples
 #' # Generate a data.frame and corresponding prediction function
 #' timesD <- seq(0, 2*pi, 0.5)
@@ -637,38 +637,38 @@ Xd <- function(data, condition = NULL) {
 
 #' Observation functions. 
 #' 
-#' @description Creates an object of type \link{obsfn} that evaluates an observation function
-#' and its derivatives based on the output of a model prediction function, see \link{prdfn}, 
-#' as e.g. produced by \link{Xs}.
+#' @description Creates an object of type [obsfn] that evaluates an observation function
+#' and its derivatives based on the output of a model prediction function, see [prdfn], 
+#' as e.g. produced by [Xs].
 #' @param g Named character vector or equation vector defining the observation function
 #' @param f Named character of equations or object that can be converted to eqnvec or object of class fn.
 #' If f is provided, states and parameters are guessed from f.
-#' @param states character vector, alternative definition of "states", usually the names of \code{f}. If both,
+#' @param states character vector, alternative definition of "states", usually the names of `f`. If both,
 #' f and states are provided, the states argument overwrites the states derived from f.
 #' @param parameters character vector, alternative definition of the "parameters",
-#' usually the symbols contained in "g" and "f" except for \code{states} and the code word \code{time}. If both,
+#' usually the symbols contained in "g" and "f" except for `states` and the code word `time`. If both,
 #' f and parameters are provided, the parameters argument overwrites the parameters derived from f and g.
 #' @param condition either NULL (generic prediction for any condition) or a character, denoting
 #' the condition for which the function makes a prediction.
 #' @param attach.input logical, indiating whether the original input should be
 #' returned with the output.
 #' @param deriv logical, generate function to evaluate derivatives of observables. Necessary for parameter estimation.
-#' @param compile Logical, compile the function (see \link{funC0})
-#' @param modelname Character, used if \code{compile = TRUE}, sets a fixed filename for the
+#' @param compile Logical, compile the function (see [funC0])
+#' @param modelname Character, used if `compile = TRUE`, sets a fixed filename for the
 #' C file.
 #' @param verbose Print compiler output to R command line.
-#' @return Object of class \link{obsfn}, i.e.
-#' a function \code{y(..., deriv = TRUE, conditions = NULL)} representing the evaluation of the 
-#' observation function. Arguments \code{out} (model prediction) and \code{pars} (parameter values)
-#' shoudl be passed by the \code{...} argument.
-#' If \code{out} has the attribute  "sensitivities", the result of
-#' \code{y(out, pars)}, will have an attributed "deriv" which reflecs the sensitivities of 
+#' @return Object of class [obsfn], i.e.
+#' a function `y(..., deriv = TRUE, conditions = NULL)` representing the evaluation of the 
+#' observation function. Arguments `out` (model prediction) and `pars` (parameter values)
+#' shoudl be passed by the `...` argument.
+#' If `out` has the attribute  "sensitivities", the result of
+#' `y(out, pars)`, will have an attributed "deriv" which reflecs the sensitivities of 
 #' the observation with respect to the parameters.
-#' If \code{pars} is the result of a parameter transformation \code{p(pars)} (see \link{P}), 
+#' If `pars` is the result of a parameter transformation `p(pars)` (see [P]), 
 #' the Jacobian 
 #' of the parameter transformation and the sensitivities of the observation function
 #' are multiplied according to the chain rule for differentiation.
-#' @details For \link{odemodel}s with forcings, it is best, to pass the prediction function \code{x} to the "f"-argument 
+#' @details For [odemodel]s with forcings, it is best, to pass the prediction function `x` to the "f"-argument 
 #' instead of the equations themselves. If an eqnvec is passed to "f" in this case, the forcings and states
 #' have to be specified manually via the "states"-argument.
 #' @example inst/examples/prediction.R
@@ -878,7 +878,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL, a
 #' 
 #' @param condition  either NULL (generic prediction for any condition) or a character, denoting
 #' the condition for which the function makes a prediction.
-#' @return Object of class \link{prdfn}.
+#' @return Object of class [prdfn].
 #' @examples 
 #' x <- Xt()
 #' g <- Y(c(y = "a*time^2+b"), f = NULL, parameters = c("a", "b"))

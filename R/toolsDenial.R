@@ -73,7 +73,7 @@ saveShiny_dMod.frame <- function(dMod.frame, hypothesis = 1,
 #' @return indices of the largest steps
 #' @export
 #' 
-#' @seealso \link{parframe}
+#' @seealso [parframe]
 #' 
 #' @importFrom stats setNames
 #' 
@@ -95,7 +95,7 @@ getStepIndices <- function(myparframe, nsteps = 5, tol = 1) {
 #' @return parframe subsetted to the n largest steps
 #' @export
 #' 
-#' @seealso \link{parframe}
+#' @seealso [parframe]
 #' 
 #' @example inst/examples/getSteps.R
 getSteps <- function(myparframe, nsteps = 5, tol = 1) {

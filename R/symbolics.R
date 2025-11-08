@@ -2,7 +2,7 @@
 #' 
 #' @param type Which function to be returned
 #' @param parameters Named vector, character or numeric. Replace parameters by the corresponding valus
-#' in \code{parameters}.
+#' in `parameters`.
 #' @return String with the function
 #' @export
 forcingsSymb <- function(type =c("Gauss", "Fermi", "1-Fermi", "MM", "Signal", "Dose"), parameters = NULL) {
@@ -74,7 +74,7 @@ getCoefficients <- function(char, symbol) {
 #' @param variables named character vector
 #' @details If the names of top vector elements occur in the bottom of the vector, 
 #' they are replaced by the character of the top entry. Useful for steady state conditions.
-#' @return named character vector of the same length as \code{variables}
+#' @return named character vector of the same length as `variables`
 #' @examples resolveRecurrence(c(A = "k1*B/k2", C = "A*k3+k4", D="A*C*k5"))
 #' @export
 resolveRecurrence <- function (variables) {

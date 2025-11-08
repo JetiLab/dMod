@@ -7,12 +7,12 @@
 sumDuplicatedParsInDeriv(der)
 }
 \arguments{
-\item{der}{deriv of a single condition, as used in [renameDerivPars]}
+\item{der}{deriv of a single condition, as used in \link{renameDerivPars}}
 }
 \value{
 der with redundant columns summed and duplicates removed
 }
 \description{
-Remove redundancies (happens when a parameter is duplicated and mapped to the same outer parameter). 
+Remove redundancies (happens when a parameter is duplicated and mapped to the same outer parameter).
 For example in est.grid = data.table(ID = 1, init_A = "Atot", Atot= "Atot", ...)
 }

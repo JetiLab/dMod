@@ -12,6 +12,7 @@ Pimpl(
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  optionsRootSolve = list(),
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -20,63 +21,167 @@ Pimpl(
 )
 }
 \arguments{
-\item{trafo}{Residual system as \code{eqnvec}/named character vector
-(names are states), or an \code{eqnlist} from which the residuals are derived.}
+\item{trafo}{Residual system as an \code{eqnvec} defining
+\eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0},
+or an \code{eqnlist} specifying an ODE model in stoichiometric form.}
 
-\item{parameters}{Character vector of outer parameter names (optional).
-For \code{eqnlist} input, if omitted, this is inferred as
-\{model/rate parameters\} ∪ \{totals\}. If provided, it is validated.
-If \code{parameters} contains some of the state names, those states are treated
-as independent (not solved).}
+\item{parameters}{Character vector of outer parameter names
+\eqn{p_{\text{dyn}}}. If omitted, inferred automatically.}
 
-\item{deriv}{Logical; if \code{TRUE}, attach the Jacobian as attribute \code{"deriv"}.}
+\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian via
+the implicit function theorem.}
 
-\item{deriv2}{Logical; if \code{TRUE}, also attach the Hessian as attribute \code{"deriv2"}.
+\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian.
 Implies \code{deriv = TRUE}.}
 
-\item{fixed}{Character vector of parameter names to be treated as fixed
-(no derivatives returned w.r.t. them).}
+\item{fixed}{Character vector of parameter names treated as fixed
+(excluded from derivatives).}
 
-\item{keep.root}{Logical; reuse the last root as starting guess.}
+\item{keep.root}{Logical. Reuse the previous root as starting guess
+to accelerate convergence.}
 
-\item{positive}{Logical; enforce positivity of solved dependent states by solving
-in log-space internally. Derivatives are still taken in \eqn{x}-space.}
+\item{positive}{Logical. If \code{TRUE}, solve in log-space
+(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states.}
 
-\item{attach.input}{Logical; attach incoming parameters to the output if they are
-not overwritten by the implicit transformation (identity mapping).}
+\item{optionsRootSolve}{List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
+Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
 
-\item{condition}{Character; condition label (optional).}
+\item{attach.input}{Logical. Include unchanged input parameters in the output.}
 
-\item{compile}{Logical; compile generated functions via \link[CppODE]{funCpp}.}
+\item{condition}{Character. Condition label for which the transformation is generated.}
 
-\item{modelname}{Character; base name for compiled code files when \code{compile=TRUE}.}
+\item{compile}{Logical. Compile generated residual functions via \link[CppODE:funCpp]{CppODE::funCpp}.}
 
-\item{verbose}{Logical; print compiler output and diagnostics.}
+\item{modelname}{Character. Base name for compiled code if \code{compile = TRUE}.}
+
+\item{verbose}{Logical. If TRUE, print diagnostic and convergence information.}
 }
 \value{
-A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} returning the inner
-parameter vector with attached attributes \code{"deriv"} and optionally \code{"deriv2"}.
-The set of expected outer parameters is stored in \code{attr(p2p, "parameters")}.
+A function
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+that returns the steady-state parameter vector with attached attributes
+\code{"deriv"} (Jacobian) and \code{"deriv2"} (Hessian, if requested).
 }
 \description{
-This function computes steady-state mappings using a root solver and attaches
-first- and optionally second-order derivatives via the implicit function theorem.
-If \code{positive = TRUE}, dependent states are solved in log-space (\eqn{x=\exp(z)})
-to enforce positivity, but derivatives are returned in \eqn{x}-space (no extra
-\eqn{\mathrm{diag}(x)} factors are applied).
+#' Constructs an \strong{implicit parameter transformation} that defines a subset of
+inner parameters \eqn{p_{\text{ini}}} as steady-state solutions of a nonlinear,
+\strong{autonomous} system
 
-The input \code{trafo} may be an \code{eqnvec} (named character vector) specifying
-residuals \eqn{f(x,p)=0} directly, or an \code{eqnlist} (stoichiometric representation).
-For \code{eqnlist}, residuals are built via \code{as.eqnvec()}, conserved quantities
-are detected via \code{conservedQuantities()}, and each conservation law is turned
-into an algebraic constraint using an automatically introduced "total" parameter.
-This removes rank deficiency without requiring users to choose independent states.
+\deqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0,}
+
+where \eqn{f} typically represents the right-hand side (RHS) of an ODE model
+\eqn{\dot{x} = f(x, p)}. The system must be \emph{autonomous}, i.e. it should not \strong{explicitly}
+depend on time. Time-dependent (non-autonomous) systems have no stationary solutions and
+are therefore incompatible with \code{Pimpl()}.
+
+The remaining parameters \eqn{p_{\text{dyn}}} are passed through unchanged,
+yielding an overall \strong{partially implicit mapping}
+
+\deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}}).}
+
+The steady-state is obtained numerically using \link[rootSolve:multiroot]{rootSolve::multiroot}.
+If \code{positive = TRUE}, the system is solved in log-space,
+\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}, to ensure positivity of steady states.
+\subsection{Derivatives}{
+
+Sensitivities of the implicit mapping are derived analytically via the
+\strong{implicit function theorem} applied to \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0}.
+
+\strong{First-order derivative}
+
+The Jacobian of the mapping \eqn{p_{\text{ini},i}(p_{\text{dyn}})} satisfies
+
+\deqn{
+\frac{\partial f_i}{\partial p_{\text{ini},a}}
+\frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
++
+\frac{\partial f_i}{\partial p_{\text{dyn},j}}
+= 0,
 }
-\details{
-Constructs an implicit parameter transformation that solves a system of
-steady-state equations \eqn{f(x, p) = 0}. The solution \eqn{x(p)} defines
-the mapping from outer parameters \eqn{p} to inner steady-state parameters \eqn{x}.
+
+which implies
+
+\deqn{
+\frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
+=
+-\!
+\left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
+\frac{\partial f_i}{\partial p_{\text{dyn},j}}.
+}
+
+\strong{Second-order derivative (Hessian tensor)}
+
+A second differentiation with respect to \eqn{p_{\text{dyn},k}} yields
+
+\deqn{
+\frac{\partial^2 p_{\text{ini},a}}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+=
+-\!
+\left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
+\!\!
+\left[
+  \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{ini},c}}
+    \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
+    \frac{\partial p_{\text{ini},c}}{\partial p_{\text{dyn},k}}
+  +
+  \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{dyn},k}}
+    \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
+  +
+  \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{ini},b}}
+    \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},k}}
+  +
+  \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+\right]\!,
+}
+
+where repeated indices imply summation (Einstein convention), and
+all quantities are evaluated at the steady state satisfying
+\eqn{f_i(p_{\text{ini}}, p_{\text{dyn}}) = 0}.
+The Hessian tensor \eqn{\partial^2 p_{\text{ini},a} / (\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k})}
+is symmetric in indices \eqn{(j,k)} for sufficiently smooth \eqn{f_i}.
+}
+
+\subsection{Conservation relations}{
+
+When the input \code{trafo} is an \code{eqnlist} (ODE model), any algebraic conservation
+laws in the stoichiometric matrix are automatically detected via
+\code{\link[=conservedQuantities]{conservedQuantities()}} and converted into total quantities such as
+\code{totAKT = AKT + pAKT}.
+
+Each total represents a \strong{new outer parameter} (added to \eqn{p_{\text{dyn}}})
+that defines the conserved amount of a species pool. The corresponding
+conservation relations are incorporated into the system as additional
+algebraic equations of the form
+
+\deqn{(\text{sum of species}) - \text{tot} = 0,}
+
+ensuring that the steady-state computation enforces the conservation laws
+exactly.
+
+All detected conservation relations and their associated total parameters
+are printed to the console when \code{Pimpl()} is called.
+}
+
+\subsection{Root solver options}{
+
+The nonlinear system is solved with \link[rootSolve:multiroot]{rootSolve::multiroot}. Solver settings can
+be customized through the named list \code{optionsRootSolve}. Recognized entries include:
+\itemize{
+\item \code{atol}: absolute tolerance (default \code{1e-8})
+\item \code{rtol}: relative tolerance (default \code{1e-6})
+\item \code{maxiter}: maximum number of iterations (default \code{1000})
+}
+}
+
+\subsection{Composition}{
+
+The resulting mapping composes naturally with other parameter transformations
+created by \link{Pexpl} or \link{Pimpl}. Derivatives (\code{"deriv"}, \code{"deriv2"}) are automatically
+propagated when chained via \link{parfn}.
+}
 }
 \seealso{
-\link{Pexpl}, \link[rootSolve]{multiroot}, \link{as.eqnvec}, \link{conservedQuantities}
+\link{Pexpl} for explicit transformations,
+\link[rootSolve:multiroot]{rootSolve::multiroot} for numerical steady-state solving,
+\link{P} for the unified high-level interface.
 }

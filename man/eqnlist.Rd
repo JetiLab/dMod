@@ -54,8 +54,8 @@ rate expressions, state names and compartment volumes.
 Translates a reaction network, e.g. defined by a data.frame, into an equation list object.
 }
 \details{
-If \code{data} is a \code{data.frame}, it must contain columns "Description" (character), 
-"Rate" (character), and one column per ODE state with the state names. 
+If \code{data} is a \code{data.frame}, it must contain columns "Description" (character),
+"Rate" (character), and one column per ODE state with the state names.
 The state columns correspond to the stoichiometric matrix.
 }
 \examples{

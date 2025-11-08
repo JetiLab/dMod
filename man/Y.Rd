@@ -47,24 +47,24 @@ C file.}
 }
 \value{
 Object of class \link{obsfn}, i.e.
-a function \code{y(..., deriv = TRUE, conditions = NULL)} representing the evaluation of the 
+a function \code{y(..., deriv = TRUE, conditions = NULL)} representing the evaluation of the
 observation function. Arguments \code{out} (model prediction) and \code{pars} (parameter values)
 shoudl be passed by the \code{...} argument.
 If \code{out} has the attribute  "sensitivities", the result of
-\code{y(out, pars)}, will have an attributed "deriv" which reflecs the sensitivities of 
+\code{y(out, pars)}, will have an attributed "deriv" which reflecs the sensitivities of
 the observation with respect to the parameters.
-If \code{pars} is the result of a parameter transformation \code{p(pars)} (see \link{P}), 
-the Jacobian 
+If \code{pars} is the result of a parameter transformation \code{p(pars)} (see \link{P}),
+the Jacobian
 of the parameter transformation and the sensitivities of the observation function
 are multiplied according to the chain rule for differentiation.
 }
 \description{
 Creates an object of type \link{obsfn} that evaluates an observation function
-and its derivatives based on the output of a model prediction function, see \link{prdfn}, 
+and its derivatives based on the output of a model prediction function, see \link{prdfn},
 as e.g. produced by \link{Xs}.
 }
 \details{
-For \link{odemodel}s with forcings, it is best, to pass the prediction function \code{x} to the "f"-argument 
+For \link{odemodel}s with forcings, it is best, to pass the prediction function \code{x} to the "f"-argument
 instead of the equations themselves. If an eqnvec is passed to "f" in this case, the forcings and states
 have to be specified manually via the "states"-argument.
 }

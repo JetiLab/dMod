@@ -9,7 +9,7 @@
 \arguments{
 \item{object}{object of class \code{parframe}, returned from \link{profile} function.}
 
-\item{parm}{a specification of which parameters are to be given confidence intervals, 
+\item{parm}{a specification of which parameters are to be given confidence intervals,
 either a vector of numbers or a vector of names. If missing, all parameters are considered.}
 
 \item{level}{the confidence level required.}

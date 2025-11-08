@@ -20,11 +20,11 @@
 #' @return Character vector of steady-state equations.
 #'   
 #' @references [1]
-#' \url{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863410/}
+#' <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863410/>
 #' @references [2]
-#' \url{https://github.com/marcusrosenblatt/AlyssaPetit}
+#' <https://github.com/marcusrosenblatt/AlyssaPetit>
 #' @references [3]
-#' \url{https://github.com/Data2Dynamics/d2d}
+#' <https://github.com/Data2Dynamics/d2d>
 #' 
 #' @author Marcus Rosenblatt, \email{marcus.rosenblatt@@fdm.uni-freiburg.de}
 #'   

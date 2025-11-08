@@ -36,19 +36,19 @@ the result and loads it as \code{.runbgOutput} directly into the workspace. If \
 \code{runbg()} starts in the background and the result is only loaded into the workspace
 when the \code{get()} function is called, see Value section.}
 
-\item{recover}{Logical. This option is useful to recover the three functions check(), get() and purge(), 
+\item{recover}{Logical. This option is useful to recover the three functions check(), get() and purge(),
 e.g. when a session has crashed. Then, the three functions are recreated without restarting the job.
-They can then be used to get the results of a job wihtout having to do it manually. 
-Requires the correct filename, so if the previous runbg was run with filename = NULL, you have to 
+They can then be used to get the results of a job wihtout having to do it manually.
+Requires the correct filename, so if the previous runbg was run with filename = NULL, you have to
 specify the tmp_filename manually.}
 
 \item{walltime}{Optional. Maximum runtime in the format "HH:MM:SS". If exceeded, the job will be terminated.}
 }
 \value{
-List of functions \code{check()}, \code{get()}, \code{purge()} and \code{terminate()}. 
+List of functions \code{check()}, \code{get()}, \code{purge()} and \code{terminate()}.
 \code{check()} checks if the result is ready.
 \code{get()} copies the result file
-to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+to the working directory and loads it into the workspace as an object called \code{.runbgOutput}.
 This object is a list named according to the machines that contains the results returned by each
 machine.
 \code{purge()} deletes the temporary folder
@@ -62,8 +62,8 @@ to any machine (ssh-key needed). Then collect the results.
 \details{
 \code{runbg()} generates a workspace from the \code{input} argument
 and copies the workspace and all C files or .so files to the remote machines via
-\code{scp}. This will only work if *an ssh-key had been generated and added
-to the authorized keys on the remote machine*. The
+\code{scp}. This will only work if \emph{an ssh-key had been generated and added
+to the authorized keys on the remote machine}. The
 code snippet, i.e. the \code{...} argument, can include several intermediate results
 but only the last call which is not redirected into a variable is returned via the
 variable \code{.runbgOutput}, see example below.

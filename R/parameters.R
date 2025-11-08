@@ -2,65 +2,72 @@
 
 
 #' Generate a parameter transformation function
-#'
-#' Constructs a parameter transformation from symbolic expressions, either
-#' **explicitly** (\eqn{x = g(p)}) or **implicitly** (\eqn{f(x, p) = 0}).
-#' This function serves as a high-level wrapper for \link{Pexpl} and \link{Pimpl},
-#' allowing for easy generation of condition-specific parameter mappings.
-#'
+#' 
 #' @description
-#' The function \code{P()} generates a parameter transformation function that maps
-#' **outer parameters** to **inner parameters** used in a model.  
-#' It can operate in two modes:
+#' This function provides a unified interface for generating condition-specific
+#' parameter transformations, as commonly required in ODE-based modeling workflows.
+#' 
+#' `P()` can operate in two modes:
+#' 
+#' - **Explicit mode** (`method = "explicit"`, see [Pexpl]):  
+#'   Inner parameters are directly computed from symbolic expressions,  
+#'   for example
+#'   \deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}})}  
+#'   A common application of the explicit mode is the log-transformation  
+#'   \deqn{p_{\text{outer}} \mapsto \exp(p_{\text{outer}})}  
+#'   which ensures positive parameters.
 #'
-#' - **Explicit mode** (`method = "explicit"`, see \link{Pexpl}):  
-#'   Inner parameters are directly computed from symbolic expressions.
+#' - **Implicit mode** (`method = "implicit"`, see [Pimpl]):  
+#'   Typically used to infer initial values \eqn{p_{\text{ini}}} satisfying the
+#'   steady-state condition  
+#'   \eqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0}.  
+#'   This yields an overall **partially implicit mapping**  
+#'   \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}})}  
+#'   where \eqn{f} usually represents the right-hand side (RHS) of an ODE model.
+#' 
+#' Both transformation types can be combined with other mappings via arithmetic
+#' operators (`+` and `*`) thanks to the [parfn] interface.
 #'
-#' - **Implicit mode** (`method = "implicit"`, see \link{Pimpl}):  
-#'   Inner parameters are defined as steady states satisfying \eqn{f(x, p) = 0}.
-#'
-#' Both types can be combined with other transformations via arithmetic operators
-#' (`+`, `*`, etc.) thanks to the \link{parfn} interface.
-#'
-#' @param trafo Object of class \code{eqnvec} or a named character vector,
-#' or a list thereof. If a list is provided, \code{P()} is called on each
+#' @param trafo Object of class `eqnvec` or a named character vector,
+#' or a list thereof. If a list is provided, `P()` is called on each
 #' element and conditions are taken from the list names.
-#' @param method Character, either \code{"explicit"} or \code{"implicit"}.
-#' Determines whether to use \link{Pexpl} or \link{Pimpl}.
+#' @param method Character, either `"explicit"` or `"implicit"`.
+#' Determines whether to use [Pexpl] or [Pimpl].
 #' @param parameters Character vector of outer parameters.
-#' @param deriv Logical. If \code{TRUE}, compute and attach the Jacobian of the
-#' transformation as attribute \code{"deriv"}.
-#' @param deriv2 Logical. If \code{TRUE}, compute and attach the Hessian as
-#' attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.
+#' @param deriv Logical. If `TRUE`, compute and attach the Jacobian of the
+#' transformation as attribute `"deriv"`.
+#' @param deriv2 Logical. If `TRUE`, compute and attach the Hessian as
+#' attribute `"deriv2"`. Implies `deriv = TRUE`.
 #' @param fixed Character vector of parameter names treated as fixed (no
 #' derivatives returned with respect to them).
-#' @param keep.root Logical. Applies to \code{method = "implicit"} only.
-#' If \code{TRUE}, reuse the root from the previous call as a warm-start guess
+#' @param keep.root Logical. Applies to `method = "implicit"` only.
+#' If `TRUE`, reuse the root from the previous call as a warm-start guess
 #' for faster convergence.
-#' @param positive Logical. Applies to \code{method = "implicit"} only.
-#' If \code{TRUE}, the steady-state solver is performed in log-space
-#' (\eqn{x = exp(z)}) to enforce positive solutions.
+#' @param positive Logical. Applies to `method = "implicit"` only.
+#' If `TRUE`, the steady-state solver is performed in log-space
+#' (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.
+#' @param optionsRootSolve List. Applies to `method = "implicit"` only. List of options passed to [rootSolve::multiroot].
+#' Merged with internal defaults via [modifyList()].
 #' @param attach.input Logical. Attach input parameters to the output if they
 #' are not overwritten by the transformation (identity mapping).
 #' @param condition Character. Condition label for which the transformation is
-#' generated. If \code{trafo} is a list, this is inferred from list names.
-#' @param compile Logical. If \code{TRUE}, compile the transformation via
-#' \link{funCpp} for improved performance.
-#' @param modelname Character. Used when \code{compile = TRUE} to define the
+#' generated. If `trafo` is a list, this is inferred from list names.
+#' @param compile Logical. If `TRUE`, compile the transformation via
+#' [funCpp] for improved performance.
+#' @param modelname Character. Used when `compile = TRUE` to define the
 #' base name of the generated C code file.
 #' @param verbose Logical. Print compiler output and diagnostic messages to the
 #' R console.
 #'
 #' @return
-#' An object of class \link{parfn}, representing the parameter transformation.
-#' The returned function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+#' An object of class [parfn], representing the parameter transformation.
+#' The returned function  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
 #' computes inner parameters and attaches derivatives as attributes
-#' \code{"deriv"} and \code{"deriv2"} when requested.
+#' `"deriv"` and `"deriv2"` when requested.
 #'
 #' @seealso
-#' \link{Pexpl} for explicit parameter transformations,
-#' \link{Pimpl} for implicit (steady-state) transformations,
-#' and \link{parfn} for details on combining transformations.
+#' [Pexpl], [Pimpl], [parfn]
 #'
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
@@ -72,7 +79,8 @@ P <- function(trafo = NULL,
               deriv2 = FALSE,
               fixed = NULL,
               keep.root = TRUE, 
-              positive = TRUE, 
+              positive = TRUE,
+              optionsRootSolve = list(),
               attach.input = FALSE,
               condition = NULL, 
               compile = FALSE, 
@@ -119,46 +127,75 @@ P <- function(trafo = NULL,
   
 }
 
+
 #' Parameter transformation (explicit)
 #'
-#' Constructs a parameter transformation function that maps outer parameters
-#' to inner parameters according to symbolic expressions. 
-#' 
-#' @param trafo eqnvec or named character vector. Names correspond to the parameters being fed into
-#' the model (the inner parameters). The elements of \code{trafo} are equations that express 
-#' the inner parameters in terms of other parameters (the outer parameters).
-#' @param parameters Character vector. Optional. If given, the generated parameter
-#' transformation returns values for each element in \code{parameters}. If elements of
-#' \code{parameters} are not in \code{names(trafo)} the identity transformation is assumed.
-#' @param deriv Logical, if \code{TRUE} the Jacobian of the transformation is precomputed 
-#' symbolically and returned as attribute \code{"deriv"}.
-#' @param deriv2 Logical, if \code{TRUE} the Hessian of the transformation is also precomputed 
-#' symbolically and returned as attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.
-#' @param fixed Character vector of parameter names treated as fixed (no derivatives returned 
-#' with respect to them).
-#' @param attach.input Attach those incoming parameters to the output which are not overwritten by
-#' the parameter transformation. 
-#' @param compile Logical, compile the function (see \link{funCpp}).
-#' @param condition Character, the condition for which the transformation is generated.
-#' @param modelname Character, used if \code{compile = TRUE}, sets a fixed filename for the
-#' C file.
-#' @param verbose Print compiler output to the R console.
-#' 
-#' @return A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} representing the 
-#' parameter transformation. Here, \code{p} is a named numeric vector with the values of the 
-#' outer parameters, \code{fixed} is a named numeric vector with values of the outer parameters 
-#' being considered as fixed (no derivatives returned), and \code{deriv}/\code{deriv2} determine 
-#' whether the Jacobian and Hessian of the transformation are attached as attributes 
-#' \code{"deriv"} and \code{"deriv2"}.
-#' 
-#' @seealso \link{Pimpl} for implicit parameter transformations.
-#' @export
+#' Constructs a parameter transformation function that maps **outer parameters**
+#' \eqn{p_{\text{outer}}} to **inner parameters** \eqn{p_{\text{inner}}}
+#' according to symbolic expressions.
+#'
+#' @description
+#' The explicit parameter transformation defines a direct, algebraic mapping
+#'
+#' \deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}}),}
+#'
+#' where \eqn{\mathrm{parfn}} is a vector-valued function composed from symbolic
+#' expressions. Each element of `trafo` defines one component of
+#' \eqn{p_{\text{inner}}}.
+#'
+#' Derivatives are obtained by **symbolic differentiation**:
+#'
+#' - The **Jacobian**
+#'   \deqn{J_{ij} = \frac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
+#'   is computed from the transformation expressions.
+#'
+#' - If `deriv2 = TRUE`, the **Hessian tensor**
+#'   \deqn{H_{ijk} = \frac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
+#'   is also precomputed symbolically.
+#'
+#' These derivatives are attached as attributes `"deriv"` and `"deriv2"`
+#' to the resulting function output and automatically composed when
+#' transformations are combined via the [parfn] interface.
+#'
+#' @param trafo `eqnvec` or named character vector.  
+#' Names correspond to **inner parameters**; each element defines how it depends
+#' on **outer parameters**.
+#' @param parameters Character vector of outer parameter names. If omitted,
+#' all symbols in `trafo` are used.
+#' @param deriv Logical. If `TRUE`, compute and attach the Jacobian of the transformation.
+#' @param deriv2 Logical. If `TRUE`, compute and attach the Hessian as well.
+#' Implies `deriv = TRUE`.
+#' @param fixed Character vector of parameter names to be treated as fixed
+#' (no derivatives returned w.r.t. them).
+#' @param attach.input Logical. If `TRUE`, include unchanged input parameters
+#' in the output vector (identity mapping).
+#' @param compile Logical. If `TRUE`, compile the transformation via [funCpp]
+#' for faster evaluation.
+#' @param condition Character label for which the transformation is generated.
+#' @param modelname Base name for generated C++ code if `compile = TRUE`.
+#' @param verbose Logical. Print compiler messages.
+#'
+#' @return
+#' A function  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
+#' that evaluates the parameter transformation.  
+#' The result is an object of class [parvec], which contains
+#'
+#' - the transformed parameters (`numeric` vector)  
+#' - attribute `"deriv"`: the Jacobian matrix  
+#' - attribute `"deriv2"`: the Hessian tensor (if requested)
+#'
+#' @seealso
+#' [Pimpl] for implicit (steady-state) parameter transformations,  
+#' [P] for automatic mode selection.
+#'
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
+#' @export
 Pexpl <- function(trafo,
                   parameters = NULL,
                   deriv = TRUE,
-                  deriv2 = FALSE,
+                  deriv2 = TRUE,
                   fixed = NULL,
                   attach.input = FALSE,
                   condition = NULL,
@@ -331,52 +368,153 @@ Pexpl <- function(trafo,
 
 #' Parameter transformation (implicit)
 #'
-#' Constructs an implicit parameter transformation that solves a system of
-#' steady-state equations \eqn{f(x, p) = 0}. The solution \eqn{x(p)} defines
-#' the mapping from outer parameters \eqn{p} to inner steady-state parameters \eqn{x}.
-#'
 #' @description
-#' This function computes steady-state mappings using a root solver and attaches
-#' first- and optionally second-order derivatives via the implicit function theorem.
-#' If \code{positive = TRUE}, dependent states are solved in log-space (\eqn{x=\exp(z)})
-#' to enforce positivity, but derivatives are returned in \eqn{x}-space (no extra
-#' \eqn{\mathrm{diag}(x)} factors are applied).
+#' #' Constructs an **implicit parameter transformation** that defines a subset of
+#' inner parameters \eqn{p_{\text{ini}}} as steady-state solutions of a nonlinear,
+#' **autonomous** system
 #'
-#' The input \code{trafo} may be an \code{eqnvec} (named character vector) specifying
-#' residuals \eqn{f(x,p)=0} directly, or an \code{eqnlist} (stoichiometric representation).
-#' For \code{eqnlist}, residuals are built via \code{as.eqnvec()}, conserved quantities
-#' are detected via \code{conservedQuantities()}, and each conservation law is turned
-#' into an algebraic constraint using an automatically introduced "total" parameter.
-#' This removes rank deficiency without requiring users to choose independent states.
+#' \deqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0,}
 #'
-#' @param trafo Residual system as \code{eqnvec}/named character vector
-#'   (names are states), or an \code{eqnlist} from which the residuals are derived.
-#' @param parameters Character vector of outer parameter names (optional).
-#'   For \code{eqnlist} input, if omitted, this is inferred as
-#'   \{model/rate parameters\} ∪ \{totals\}. If provided, it is validated.
-#'   If \code{parameters} contains some of the state names, those states are treated
-#'   as independent (not solved).
-#' @param deriv Logical; if \code{TRUE}, attach the Jacobian as attribute \code{"deriv"}.
-#' @param deriv2 Logical; if \code{TRUE}, also attach the Hessian as attribute \code{"deriv2"}.
-#'   Implies \code{deriv = TRUE}.
-#' @param fixed Character vector of parameter names to be treated as fixed
-#'   (no derivatives returned w.r.t. them).
-#' @param keep.root Logical; reuse the last root as starting guess.
-#' @param positive Logical; enforce positivity of solved dependent states by solving
-#'   in log-space internally. Derivatives are still taken in \eqn{x}-space.
-#' @param attach.input Logical; attach incoming parameters to the output if they are
-#'   not overwritten by the implicit transformation (identity mapping).
-#' @param condition Character; condition label (optional).
-#' @param compile Logical; compile generated functions via \link[CppODE]{funCpp}.
-#' @param modelname Character; base name for compiled code files when \code{compile=TRUE}.
-#' @param verbose Logical; print compiler output and diagnostics.
+#' where \eqn{f} typically represents the right-hand side (RHS) of an ODE model
+#' \eqn{\dot{x} = f(x, p)}. The system must be *autonomous*, i.e. it should not **explicitly** 
+#' depend on time. Time-dependent (non-autonomous) systems have no stationary solutions and
+#' are therefore incompatible with `Pimpl()`.
+#'
+#' The remaining parameters \eqn{p_{\text{dyn}}} are passed through unchanged,
+#' yielding an overall **partially implicit mapping**
+#'
+#' \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}}).}
+#'
+#' The steady-state is obtained numerically using [rootSolve::multiroot].
+#' If `positive = TRUE`, the system is solved in log-space,
+#' \eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}, to ensure positivity of steady states.
+#'
+#' ## Derivatives
+#'
+#' Sensitivities of the implicit mapping are derived analytically via the
+#' **implicit function theorem** applied to \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0}.
+#'
+#' **First-order derivative**
+#'
+#' The Jacobian of the mapping \eqn{p_{\text{ini},i}(p_{\text{dyn}})} satisfies
+#'
+#' \deqn{
+#' \frac{\partial f_i}{\partial p_{\text{ini},a}}
+#' \frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
+#' +
+#' \frac{\partial f_i}{\partial p_{\text{dyn},j}}
+#' = 0,
+#' }
+#'
+#' which implies
+#'
+#' \deqn{
+#' \frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
+#' =
+#' -\!
+#' \left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
+#' \frac{\partial f_i}{\partial p_{\text{dyn},j}}.
+#' }
+#'
+#' **Second-order derivative (Hessian tensor)**
+#'
+#' A second differentiation with respect to \eqn{p_{\text{dyn},k}} yields
+#'
+#' \deqn{
+#' \frac{\partial^2 p_{\text{ini},a}}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+#' =
+#' -\!
+#' \left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
+#' \!\!
+#' \left[
+#'   \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{ini},c}}
+#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
+#'     \frac{\partial p_{\text{ini},c}}{\partial p_{\text{dyn},k}}
+#'   +
+#'   \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{dyn},k}}
+#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
+#'   +
+#'   \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{ini},b}}
+#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},k}}
+#'   +
+#'   \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+#' \right]\!,
+#' }
+#'
+#' where repeated indices imply summation (Einstein convention), and
+#' all quantities are evaluated at the steady state satisfying
+#' \eqn{f_i(p_{\text{ini}}, p_{\text{dyn}}) = 0}.
+#' The Hessian tensor \eqn{\partial^2 p_{\text{ini},a} / (\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k})}
+#' is symmetric in indices \eqn{(j,k)} for sufficiently smooth \eqn{f_i}.
+#' 
+#' ## Conservation relations
+#'
+#' When the input `trafo` is an `eqnlist` (ODE model), any algebraic conservation
+#' laws in the stoichiometric matrix are automatically detected via
+#' [conservedQuantities()] and converted into total quantities such as
+#' `totAKT = AKT + pAKT`.  
+#'
+#' Each total represents a **new outer parameter** (added to \eqn{p_{\text{dyn}}})
+#' that defines the conserved amount of a species pool. The corresponding
+#' conservation relations are incorporated into the system as additional
+#' algebraic equations of the form
+#'
+#' \deqn{(\text{sum of species}) - \text{tot} = 0,}
+#'
+#' ensuring that the steady-state computation enforces the conservation laws
+#' exactly.  
+#'
+#' All detected conservation relations and their associated total parameters
+#' are printed to the console when `Pimpl()` is called.
+#'
+#' ## Root solver options
+#'
+#' The nonlinear system is solved with [rootSolve::multiroot]. Solver settings can
+#' be customized through the named list `optionsRootSolve`. Recognized entries include:
+#' 
+#' - `atol`: absolute tolerance (default `1e-8`)  
+#' - `rtol`: relative tolerance (default `1e-6`)  
+#' - `maxiter`: maximum number of iterations (default `1000`)  
+#'
+#' ## Composition
+#'
+#' The resulting mapping composes naturally with other parameter transformations
+#' created by [Pexpl] or [Pimpl]. Derivatives (`"deriv"`, `"deriv2"`) are automatically
+#' propagated when chained via [parfn].
+#'
+#' @param trafo Residual system as an `eqnvec` defining
+#'   \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0},
+#'   or an `eqnlist` specifying an ODE model in stoichiometric form.
+#' @param parameters Character vector of outer parameter names
+#'   \eqn{p_{\text{dyn}}}. If omitted, inferred automatically.
+#' @param deriv Logical. If `TRUE`, compute and attach the Jacobian via
+#'   the implicit function theorem.
+#' @param deriv2 Logical. If `TRUE`, compute and attach the Hessian.
+#'   Implies `deriv = TRUE`.
+#' @param fixed Character vector of parameter names treated as fixed
+#'   (excluded from derivatives).
+#' @param keep.root Logical. Reuse the previous root as starting guess
+#'   to accelerate convergence.
+#' @param positive Logical. If `TRUE`, solve in log-space
+#'   (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states.
+#' @param optionsRootSolve List of options passed to [rootSolve::multiroot].
+#'   Merged with internal defaults via [modifyList()].
+#' @param attach.input Logical. Include unchanged input parameters in the output.
+#' @param condition Character. Condition label for which the transformation is generated.
+#' @param compile Logical. Compile generated residual functions via [funCpp].
+#' @param modelname Character. Base name for compiled code if `compile = TRUE`.
+#' @param verbose Logical. If TRUE, print diagnostic and convergence information.
 #'
 #' @return
-#' A function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)} returning the inner
-#' parameter vector with attached attributes \code{"deriv"} and optionally \code{"deriv2"}.
-#' The set of expected outer parameters is stored in \code{attr(p2p, "parameters")}.
+#' A function  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
+#' that returns the steady-state parameter vector with attached attributes  
+#' `"deriv"` (Jacobian) and `"deriv2"` (Hessian, if requested).
 #'
-#' @seealso \link{Pexpl}, \link[rootSolve]{multiroot}, \link{as.eqnvec}, \link{conservedQuantities}
+#' @seealso
+#' [Pexpl] for explicit transformations,  
+#' [rootSolve::multiroot] for numerical steady-state solving,  
+#' [P] for the unified high-level interface.
 #'
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
@@ -390,6 +528,7 @@ Pimpl <- function(trafo,
                   fixed        = NULL,
                   keep.root    = TRUE,
                   positive     = TRUE,
+                  optionsRootSolve = list(),
                   attach.input = FALSE,
                   condition    = NULL,
                   compile      = FALSE,
@@ -412,20 +551,72 @@ Pimpl <- function(trafo,
     if (n_cq > 0L) {
       if (!is.null(parameters)) {
         cand_totals <- setdiff(parameters, nonstates_auto)
-        totals <- if (length(cand_totals) == n_cq) cand_totals else paste0("total", seq_len(n_cq))
+        totals <- if (length(cand_totals) == n_cq) cand_totals else character(0)
       } else {
-        totals <- paste0("total", seq_len(n_cq))
+        totals <- character(0)
       }
-      # Replace some state residuals by conservation constraints "(sum) - total_i = 0"
+      
+      # Heuristic for descriptive total names (e.g. ERK + ppERK → totERK)
+      totals_created <- character(n_cq)
+      for (i in seq_len(n_cq)) {
+        cons_expr <- cq_df[i, 1]
+        symbols_i <- getSymbols(as.character(cons_expr))
+        
+        if (length(symbols_i) >= 2) {
+          # Determine common prefix among species names
+          prefix <- Reduce(function(a, b) {
+            n <- nchar(a)
+            while (n > 0 && substr(b, 1, n) != substr(a, 1, n)) n <- n - 1
+            substr(a, 1, n)
+          }, symbols_i)
+          
+          # If no prefix found, fall back to longest common substring
+          if (nchar(prefix) == 0) {
+            common_sub <- function(a, b) {
+              max_sub <- ""
+              for (ii in seq_len(nchar(a))) {
+                for (jj in ii:nchar(a)) {
+                  sub <- substr(a, ii, jj)
+                  if (grepl(sub, b) && nchar(sub) > nchar(max_sub)) max_sub <- sub
+                }
+              }
+              max_sub
+            }
+            prefix <- Reduce(common_sub, symbols_i)
+          }
+          
+          prefix <- gsub("_+$", "", prefix)
+          prefix <- gsub("^[^A-Za-z0-9]+", "", prefix)
+          prefix <- if (nchar(prefix) == 0) paste(symbols_i, collapse = "_") else prefix
+          
+          totals_created[i] <- paste0("tot", prefix)
+        } else {
+          totals_created[i] <- paste0("total", i)
+        }
+      }
+      
+      # Use user-provided totals if matching count
+      if (!is.null(parameters)) {
+        cand_totals <- setdiff(parameters, nonstates_auto)
+        if (length(cand_totals) == n_cq) totals_created <- cand_totals
+      }
+      totals <- totals_created
+      
+      # Replace residuals by conservation constraints "(sum) - total_i = 0"
       repl_states <- tail(states_detected, n_cq)
       for (i in seq_len(n_cq)) {
         cons_expr <- cq_df[i, 1]
         trafo[repl_states[i]] <- paste0("(", cons_expr, ") - ", totals[i])
       }
-      # Recompute symbol sets and ensure totals are not counted as nonstates
+      
+      # Recompute symbol sets and exclude totals from nonstates
       states_detected <- names(trafo)
       symbols_all     <- getSymbols(trafo)
       nonstates_auto  <- setdiff(symbols_all, c(states_detected, totals))
+      
+      # Report detected conservation relations
+      msg <- paste(sprintf("  • %s = %s", totals, cq_df[[1]]), collapse = "\n")
+      message("Detected conservation relations:\n", msg)
     }
     
     required_outer <- unique(c(nonstates_auto, totals))
@@ -473,6 +664,14 @@ Pimpl <- function(trafo,
     deriv      = isTRUE(deriv) || isTRUE(deriv2),     # need Jacobian if either requested
     deriv2     = isTRUE(deriv2)                       # Hessian only if requested
   )
+  
+  # RootSolve default options (merged with user list)
+  defaultsRootSolve <- list(
+    maxiter  = 1000,
+    atol     = 1e-8,
+    rtol     = 1e-6
+  )
+  optsRS <- modifyList(defaultsRootSolve, optionsRootSolve)
   
   # Warm-start state
   guess_env <- new.env(parent = emptyenv())
@@ -531,15 +730,27 @@ Pimpl <- function(trafo,
               attach.input = FALSE, deriv = FALSE, deriv2 = FALSE)$out[1, ]
       }
       z0         <- log(pmax(x_dep0, 1e-8))
-      root       <- rootSolve::multiroot(f_z, start = z0, parms = NULL, positive = FALSE)
+      root       <- do.call(rootSolve::multiroot, c(list(f = f_z, start = z0), optsRS))
       x_dep_star <- exp(root$root)
+      if (verbose) {
+        cat(sprintf(
+          "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
+          root$iter, root$estim.precis
+        ))
+      }
     } else {
       f_x <- function(x_dep, .) {
         FEval(NULL, p = pack_full(x_dep),
               attach.input = FALSE, deriv = FALSE, deriv2 = FALSE)$out[1, ]
       }
-      root       <- rootSolve::multiroot(f_x, start = x_dep0, parms = NULL, positive = FALSE)
+      root       <- do.call(rootSolve::multiroot, c(list(f = f_x, start = x_dep0), optsRS))
       x_dep_star <- root$root
+      if (verbose) {
+        cat(sprintf(
+          "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
+          root$iter, root$estim.precis
+        ))
+      }
     }
     
     if (keep.root) guess_env$guess <- setNames(x_dep_star, dep_st)
@@ -722,21 +933,18 @@ Pimpl <- function(trafo,
 
 
 
-
-
-
 ## Functions to simplify the creation of parameter transformations ----
 
-#' Define parameter transformations by \code{define()}, \code{branch()} and \code{insert()}
+#' Define parameter transformations by `define()`, `branch()` and `insert()`
 #' 
 #' @param trafo named character vector of parametric expressions or object 
-#' of class \code{eqnvec}
-#' @param expr character of the form \code{"lhs ~ rhs"} where both \code{lhs}
-#' and \code{rhs} can contain a number of symbols for which vaues are passed
-#' by the \code{...} argument
+#' of class `eqnvec`
+#' @param expr character of the form `"lhs ~ rhs"` where both `lhs`
+#' and `rhs` can contain a number of symbols for which vaues are passed
+#' by the `...` argument
 #' @param  conditionMatch optional character, Use as regular expression to apply the reparameterization only to conditions containing conditionMatch
 #' @param ... used to pass values for symbols as named arguments
-#' @return object of the same class as trafo or list thereof, if \code{branch()} has been
+#' @return object of the same class as trafo or list thereof, if `branch()` has been
 #' used.
 #' @export
 #' @example inst/examples/define.R
@@ -894,18 +1102,18 @@ branch <- function(trafo, table = NULL, conditions = rownames(table)) {
 
 #' Reparameterization
 #' 
-#' @param expr character of the form \code{"lhs ~ rhs"} where \code{rhs}
-#' reparameterizes \code{lhs}. Both \code{lhs} and \code{rhs}
-#' can contain a number of symbols whose values need to be passed by the \code{...} argument.
+#' @param expr character of the form `"lhs ~ rhs"` where `rhs`
+#' reparameterizes `lhs`. Both `lhs` and `rhs`
+#' can contain a number of symbols whose values need to be passed by the `...` argument.
 #' @param trafo character or equation vector or list thereof. The object where the replacement takes place in
 #' @param ... pass symbols as named arguments
 #' @param reset logical. If true, the trafo element corresponding to lhs is reset according to rhs. 
 #' If false, lhs wherever it occurs in the rhs of trafo is replaced by rhs of the formula.
 #' @return an equation vector with the reparameterization.
-#' @details Left and right-hand side of \code{expr} are searched for symbols. If separated by
-#' "_", symbols are recognized as such, e.g. in \code{Delta_x} where the symbols are 
+#' @details Left and right-hand side of `expr` are searched for symbols. If separated by
+#' "_", symbols are recognized as such, e.g. in `Delta_x` where the symbols are 
 #' "Delta" and "x". Each symbol for which values (character or numbers) are passed by the
-#' \code{...} argument is replaced.
+#' `...` argument is replaced.
 #' @export
 #' @importFrom stats as.formula
 #' @examples

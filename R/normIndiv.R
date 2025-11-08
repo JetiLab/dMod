@@ -12,7 +12,6 @@ unclass_parvec <- function(x) {setNames(unclass(x)[1:length(x)], names(x))}
 #' @param fix.grid 
 #' @param ID 
 #'
-#' @return
 #' @export
 #'
 #' @examples

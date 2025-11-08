@@ -13,6 +13,7 @@ P(
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  optionsRootSolve = list(),
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -45,7 +46,10 @@ for faster convergence.}
 
 \item{positive}{Logical. Applies to \code{method = "implicit"} only.
 If \code{TRUE}, the steady-state solver is performed in log-space
-(\eqn{x = exp(z)}) to enforce positive solutions.}
+(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.}
+
+\item{optionsRootSolve}{List. Applies to \code{method = "implicit"} only. List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
+Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
 
 \item{attach.input}{Logical. Attach input parameters to the output if they
 are not overwritten by the transformation (identity mapping).}
@@ -54,7 +58,7 @@ are not overwritten by the transformation (identity mapping).}
 generated. If \code{trafo} is a list, this is inferred from list names.}
 
 \item{compile}{Logical. If \code{TRUE}, compile the transformation via
-\link{funCpp} for improved performance.}
+\link[CppODE:funCpp]{CppODE::funCpp} for improved performance.}
 
 \item{modelname}{Character. Used when \code{compile = TRUE} to define the
 base name of the generated C code file.}
@@ -64,32 +68,36 @@ R console.}
 }
 \value{
 An object of class \link{parfn}, representing the parameter transformation.
-The returned function \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+The returned function
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
 computes inner parameters and attaches derivatives as attributes
 \code{"deriv"} and \code{"deriv2"} when requested.
 }
 \description{
-The function \code{P()} generates a parameter transformation function that maps
-**outer parameters** to **inner parameters** used in a model.  
-It can operate in two modes:
+This function provides a unified interface for generating condition-specific
+parameter transformations, as commonly required in ODE-based modeling workflows.
 
-- **Explicit mode** (`method = "explicit"`, see \link{Pexpl}):  
-  Inner parameters are directly computed from symbolic expressions.
-
-- **Implicit mode** (`method = "implicit"`, see \link{Pimpl}):  
-  Inner parameters are defined as steady states satisfying \eqn{f(x, p) = 0}.
-
-Both types can be combined with other transformations via arithmetic operators
-(`+`, `*`, etc.) thanks to the \link{parfn} interface.
+\code{P()} can operate in two modes:
+\itemize{
+\item \strong{Explicit mode} (\code{method = "explicit"}, see \link{Pexpl}):
+Inner parameters are directly computed from symbolic expressions,
+for example
+\deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}})}
+A common application of the explicit mode is the log-transformation
+\deqn{p_{\text{outer}} \mapsto \exp(p_{\text{outer}})}
+which ensures positive parameters.
+\item \strong{Implicit mode} (\code{method = "implicit"}, see \link{Pimpl}):
+Typically used to infer initial values \eqn{p_{\text{ini}}} satisfying the
+steady-state condition
+\eqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0}.
+This yields an overall \strong{partially implicit mapping}
+\deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}})}
+where \eqn{f} usually represents the right-hand side (RHS) of an ODE model.
 }
-\details{
-Constructs a parameter transformation from symbolic expressions, either
-**explicitly** (\eqn{x = g(p)}) or **implicitly** (\eqn{f(x, p) = 0}).
-This function serves as a high-level wrapper for \link{Pexpl} and \link{Pimpl},
-allowing for easy generation of condition-specific parameter mappings.
+
+Both transformation types can be combined with other mappings via arithmetic
+operators (\code{+} and \code{*}) thanks to the \link{parfn} interface.
 }
 \seealso{
-\link{Pexpl} for explicit parameter transformations,
-\link{Pimpl} for implicit (steady-state) transformations,
-and \link{parfn} for details on combining transformations.
+\link{Pexpl}, \link{Pimpl}, \link{parfn}
 }
