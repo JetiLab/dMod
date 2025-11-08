@@ -15,9 +15,9 @@ reactions <- eqnvec() %>%
   addReaction("B", "", "k_d * B")
 
 
-# events <- eventlist() %>%
-#   addEvent(var = "A", time = 0, value = "dose", method = "add")
-events <- NULL
+events <- eventlist() %>%
+  addEvent(var = "A", time = 0, value = "dose", method = "add")
+
 
 optionsOde = list(atol = 1e-4, rtol = 1e-4)
 optionsSens = list(atol = 1e-4, rtol = 1e-4)
@@ -106,5 +106,6 @@ getDerivs(out.expl.ds) %>% plot()
 getDerivs(out.expl.bt) %>% plot()
 getDerivs(out.impl) %>% plot()
 
-system.time({prd.impl(times,pouter, deriv2 = T)})
+system.time({prd.impl(times,pouter, deriv2 = F)})
+system.time({(x.ds*p.expl)(times,pouter, deriv2 = F)})
 getDerivs2(out.expl.bt) %>% plot()

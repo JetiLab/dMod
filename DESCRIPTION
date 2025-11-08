@@ -30,7 +30,10 @@ Imports:
     rlang,
     data.table,
     purrr,
-    CppODE
+    CppODE,
+    abind,
+    einsum,
+    optimx
 Suggests:
     MASS,
     rPython,
