@@ -31,7 +31,6 @@ Xs <- function(odemodel, ...) {
 #' @export
 #' @import deSolve einsum
 Xs.deSolve <- function(odemodel, 
-                       deriv = TRUE, 
                        forcings=NULL, 
                        events=NULL, 
                        names = NULL, 
@@ -161,9 +160,7 @@ Xs.deSolve <- function(odemodel,
       
     }
     
-    #prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = unique(sensGrid[,2]))
-    prdframe(out, deriv = dX, sensitivities = mysensitivities, parameters = pars)
-    
+    return(prdframe(out, deriv = dX, sensitivities = mysensitivities, parameters = pars))
   }
   
   attr(P2X, "parameters") <- c(variables, parameters)
@@ -221,11 +218,9 @@ reshapeSens <- function(sensMatrix, variables, parameters) {
 }
 
 #' @export
-#' @import einsum
+#' @importFrom einsum einsum
 Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
-                     optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1),
-                     optionsSens = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1),
-                     optionsSens2 = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)) {
+                     optionsOde = list(), optionsSens = list(), optionsSens2 = list()) {
   
   if (!is.null(forcings)) {
     stop("Forcings are not yet supported for boost solver")
@@ -235,34 +230,32 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     stop("Events should be passed to odemodel()")
   }
   
-  defaultsOde  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
-  defaultsSens <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
-  defaultsSens2 <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-6, maxroot = 1)
+  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 500, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
   
-  if (!is.list(optionsOde))  optionsOde  <- as.list(optionsOde)
-  if (!is.list(optionsSens)) optionsSens <- as.list(optionsSens)
-  if (!is.list(optionsSens2)) optionsSens2 <- as.list(optionsSens2)
+  ## --- Warn about unknown options
+  warn_unknown <- function(user, defaults, label) {
+    bad <- setdiff(names(user), names(defaults))
+    if (length(bad) > 0)
+      warning(sprintf("%s: Ignoring unknown option(s): %s", label, paste(bad, collapse=", ")))
+  }
+  warn_unknown(optionsOde,  optionsDefault, "optionsOde")
+  warn_unknown(optionsSens, optionsDefault, "optionsSens")
+  warn_unknown(optionsSens2, optionsDefault, "optionsSens2")
   
-  badOde  <- setdiff(names(optionsOde),  names(defaultsOde))
-  badSens <- setdiff(names(optionsSens), names(defaultsSens))
-  badSens2 <- setdiff(names(optionsSens2), names(defaultsSens2))
-  if (length(badOde)  > 0) warning("optionsOde: Ignoring unknown option(s): ",  paste(badOde,  collapse=", "))
-  if (length(badSens) > 0) warning("optionsSens: Ignoring unknown option(s): ", paste(badSens, collapse=", "))
-  if (length(badSens2) > 0) warning("optionsSens2: Ignoring unknown option(s): ", paste(badSens, collapse=", "))
+  ## --- Merge user-supplied options with defaults
+  optionsOde   <- modifyList(optionsDefault, optionsOde)
+  optionsSens  <- modifyList(optionsDefault, optionsSens)
+  optionsSens2 <- modifyList(optionsDefault, optionsSens2)
   
-  optionsOde  <- modifyList(defaultsOde,  optionsOde[names(optionsOde)  %in% names(defaultsOde)])
-  optionsSens <- modifyList(defaultsSens, optionsSens[names(optionsSens) %in% names(defaultsSens)])
-  optionsSens2 <- modifyList(defaultsSens2, optionsSens2[names(optionsSens2) %in% names(defaultsSens2)])
+  func <- odemodel$func
+  extended <- odemodel$extended
+  extended2 <- odemodel$extended2
   
-  boostODE <- odemodel$boostODE
-  boostODE_sens <- odemodel$boostODE_sens
-  boostODE_sens2 <- odemodel$boostODE_sens2
-  
-  if (is.null(boostODE_sens) || is.null(boostODE_sens2)) {
+  if (is.null(extended) || is.null(extended2)) {
     warning(
       sprintf(
         "ODE model does not contain %s-order sensitivities.",
-        paste(c("first", "second")[c(is.null(boostODE_sens), is.null(boostODE_sens2))],
+        paste(c("first", "second")[c(is.null(extended), is.null(extended2))],
               collapse = " and ")
       ),
       call. = FALSE
@@ -270,11 +263,11 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   }
   
   # Variable and parameter names
-  variables <- attr(boostODE, "variables")
-  parameters <- attr(boostODE, "parameters")
+  variables <- attr(func, "variables")
+  parameters <- attr(func, "parameters")
   
-  dimnames <- attr(boostODE, "dim_names")
-  dimnames_sens <- attr(boostODE_sens, "dim_names")
+  dimnames <- attr(func, "dim_names")
+  dimnames_sens <- attr(extended, "dim_names")
   
   # Only a subset of all variables is returned
   if (is.null(names)) names <- variables
@@ -289,7 +282,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     dimnames_sens = dimnames_sens
   )
   
-  P2X <- function(times, pars, deriv=TRUE, deriv2=FALSE) {
+  P2X <- function(times, pars, deriv=TRUE, deriv2=FALSE, env = parent.frame()) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
@@ -317,7 +310,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       
       # Evaluate model without sensitivities
       out <- suppressWarnings(
-        .Call(paste0("solve_", as.character(boostODE)),
+        .Call(paste0("solve_", as.character(func)),
               as.numeric(times),
               as.numeric(mypars),
               as.numeric(optionsOde$atol),
@@ -336,7 +329,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     } else if (deriv & !deriv2) {
       
       outSens <- suppressWarnings(
-        .Call(paste0("solve_", as.character(boostODE_sens)),
+        .Call(paste0("solve_", as.character(extended)),
               as.numeric(times),
               as.numeric(mypars),
               as.numeric(optionsSens$atol),
@@ -369,7 +362,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     } else {
       
       outSens2 <- suppressWarnings(
-        .Call(paste0("solve_", as.character(boostODE_sens2)),
+        .Call(paste0("solve_", as.character(extended2)),
               as.numeric(times),
               as.numeric(mypars),
               as.numeric(optionsSens2$atol),
@@ -403,12 +396,13 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
         dPsub  <- dP [controls$dimnames_sens$sens, , drop = FALSE]
         dP2sub <- dP2[controls$dimnames_sens$sens, , , drop = FALSE]
         
-        # --- First-order chain rule: dX/dp = dX/dθ * dθ/dp
+        # --- First-order chain rule: dX/dθ = dX/dP * dP/dθ
         dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
         
         # --- Second-order chain rule:
-        # term1: d²X/dθ² * dθ/dp * dθ/dp
-        # term2: dX/dθ * d²θ/dp²
+        # d²X/dθ² = d²X/dP² * dP/dθ * dP/dθ + dX/dθ * dP²/d²θ
+        # term1: d²X/dP² * dP/dθ * dP/dθ
+        # term2: dX/dP * dP²/d²θ
         term1 <- einsum::einsum("aikl,kj,lm->aijm", mysensitivities2, dPsub, dPsub)
         term2 <- einsum::einsum("aik,kmj->aijm",  mysensitivities,  dP2sub)
         dX2 <- term1 + term2
@@ -428,10 +422,10 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   }
   
   attr(P2X, "parameters") <- c(variables, parameters)
-  attr(P2X, "equations") <- as.eqnvec(attr(boostODE, "equations"))
+  attr(P2X, "equations") <- as.eqnvec(attr(func, "equations"))
   attr(P2X, "forcings") <- NULL
   attr(P2X, "events") <- events
-  attr(P2X, "modelname") <- boostODE[1]
+  attr(P2X, "modelname") <- func[1]
   
   
   prdfn(P2X, c(variables, parameters), condition) 

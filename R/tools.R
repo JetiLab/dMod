@@ -427,49 +427,66 @@ expand.grid.alt <- function(seq1, seq2) {
 }
 
 
-
-#' Compile one or more prdfn, obsfn or parfn objects
-#' 
-#' @param ... Objects of class parfn, obsfn or prdfn
-#' @param output Optional character of the file to be produced. If several objects were
-#' passed, the different C files are all compiled into one shared object file.
-#' @param args Additional arguments for the R CMD SHLIB call, e.g. \code{-leinspline}.
-#' @param verbose Print compiler output to R command line.
-#' @param cores Number of cores used for compilation when several files are compiled.
-#' 
+#' Compile one or more model-related functions
+#'
+#' @description
+#' Compiles one or more objects of class `parfn`, `obsfn`, or `prdfn` into a
+#' shared library (`.so` or `.dll`). If multiple objects are provided, their
+#' corresponding C/C++ source files are compiled together into a single
+#' shared object.
+#'
+#' @param ... One or more objects of class `parfn`, `obsfn`, or `prdfn`.
+#' @param output Optional character string. If provided, all compiled files
+#'   will be linked into this shared object (e.g. `"myModel"` produces
+#'   `"myModel.so"` or `"myModel.dll"`).
+#' @param args Optional character string with additional arguments passed to
+#'   the `R CMD SHLIB` call (e.g. `"-leinspline"`).
+#' @param verbose Logical. If `TRUE`, compiler output is printed to the R console.
+#' @param cores Integer. Number of CPU cores used for parallel compilation when
+#'   compiling multiple files (only on non-Windows systems).
+#'
+#' @details
+#' On non-Windows systems, parallel compilation is performed via
+#' `parallel::mclapply()` if multiple files are detected.  
+#' On Windows, compilation is always single-threaded.
+#'
+#' @return
+#' Invisibly returns `TRUE` if compilation succeeds.
+#'
 #' @export
 compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE) {
-  
-  objects <- list(...)
+  objects   <- list(...)
   obj.names <- as.character(substitute(list(...)))[-1]
+  
   files <- NULL
-  for (i in 1:length(objects)) {
+  for (i in seq_along(objects)) {
     if (inherits(objects[[i]], c("obsfn", "parfn", "prdfn"))) {
-      filename <- modelname(objects[[i]])
-      filename <- outer(filename, c("", "_deriv", "_s", "_s2", "_sdcv", "_dfdx", "_dfdp"), paste0)
+      filename  <- modelname(objects[[i]])
+      filename  <- outer(filename, c("", "_deriv", "_s", "_s2", "_sdcv", "_dfdx", "_dfdp"), paste0)
       files.obj <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
       files.obj <- files.obj[file.exists(files.obj)]
-      files <- union(files, files.obj)
+      files     <- union(files, files.obj)
     }
   }
   
-  roots <- sapply(files, function(f) {
+  if (length(files) == 0) {
+    stop("Keine zu kompilierenden Dateien gefunden (weder .c noch .cpp).")
+  }
+  
+  roots <- vapply(files, function(f) {
     l <- strsplit(f, split = ".", fixed = TRUE)[[1]]
-    paste(l[1:(length(l)-1)], collapse = ".")
-  })
+    paste(l[1:(length(l) - 1)], collapse = ".")
+  }, FUN.VALUE = character(1))
   
   .so <- .Platform$dynlib.ext
   
-  if (Sys.info()[['sysname']] == "Windows") cores <- 1
+  if (Sys.info()[["sysname"]] == "Windows") cores <- 1
   
-  include_flags <- c(
-    paste0("-I", shQuote(system.file("include", package = "CppODE")))
-  )
+  include_flags <- c(paste0("-I", shQuote(system.file("include", package = "CppODE"))))
   
-  cxxflags <- if (Sys.info()[['sysname']] == "Windows") {
+  cxxflags <- if (Sys.info()[["sysname"]] == "Windows") {
     "-std=c++23 -O2 -DNDEBUG"
   } else {
-    # wichtig: -fno-var-tracking-assignments dazu
     "-std=c++23 -O2 -DNDEBUG -fPIC"
   }
   
@@ -479,24 +496,38 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   )
   
   if (is.null(output)) {
-    compilation_out <- mclapply(1:length(files), function(i) {
+    parallel::mclapply(seq_along(files), function(i) {
       try(dyn.unload(paste0(roots[i], .so)), silent = TRUE)
-      system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", files[i], " ", args), intern = !verbose)
+      cmd <- paste(
+        shQuote(file.path(R.home(component = "bin"), "R")),
+        "CMD SHLIB",
+        paste(shQuote(files[i]), collapse = " "),
+        if (length(args)) paste(args, collapse = " ") else ""
+      )
+      system(cmd, intern = !verbose)
     }, mc.cores = cores, mc.silent = FALSE)
     for (r in roots) dyn.load(paste0(r, .so))
   } else {
-    for (i in 1:length(objects)) {
+    # modelname für alle beteiligten Objekte setzen
+    for (i in seq_along(objects)) {
       eval(parse(text = paste0("modelname(", obj.names[i], ") <<- '", output, "'")))
     }
     for (r in roots) try(dyn.unload(paste0(r, .so)), silent = TRUE)
-    try(dyn.unload(output), silent = TRUE)
-    system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", paste(files, collapse = " "),
-                  " -o ", output, .so, " ", args), intern = !verbose)
+    try(dyn.unload(paste0(output, .so)), silent = TRUE)
+    
+    cmd <- paste(
+      shQuote(file.path(R.home(component = "bin"), "R")),
+      "CMD SHLIB",
+      paste(shQuote(files), collapse = " "),
+      "-o", shQuote(paste0(output, .so)),
+      if (length(args)) paste(args, collapse = " ") else ""
+    )
+    system(cmd, intern = !verbose)
     dyn.load(paste0(output, .so))
   }
+  
+  invisible(TRUE)
 }
-
-
 
 
 #' Determine loaded DLLs available in working directory

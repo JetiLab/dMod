@@ -15,12 +15,13 @@ reactions <- eqnvec() %>%
   addReaction("B", "", "k_d * B")
 
 
-events <- eventlist() %>%
-  addEvent(var = "A", time = 0, value = "dose", method = "add")
-
+# events <- eventlist() %>%
+#   addEvent(var = "A", time = 0, value = "dose", method = "add")
+events <- NULL
 
 optionsOde = list(atol = 1e-4, rtol = 1e-4)
 optionsSens = list(atol = 1e-4, rtol = 1e-4)
+optionsSens2 = list(atol = 1e-4, rtol = 1e-4)
 
 x.ds <- odemodel(reactions, events = events, compile = F, deriv2 = F, solver = "deSolve", modelname = "AB_deSolve") %>% 
   Xs(condition = "cond1", 
@@ -30,18 +31,24 @@ x.ds <- odemodel(reactions, events = events, compile = F, deriv2 = F, solver = "
 x.bt <- odemodel(reactions, events = events, compile = F, deriv2 = T, solver = "boost", modelname = "AB_boost") %>% 
   Xs(condition = "cond1",
      optionsOde = optionsOde,
-     optionsSens = optionsSens)
+     optionsSens = optionsSens,
+     optionsSens2 = optionsSens2)
 
-compile(x.ds, x.bt, cores = 8)
+
+
 times <- seq(-10, 100, len = 300)
 # debugonce(x)
-out.ds <- x.ds(times, c(A=4.5, B=0.75, k_p = 0.3, k_d = 0.4, k1=0.1, k2=0.2, dose = 1))
-out.bt <- x.bt(times, c(A=4.5, B=0.75, k_p = 0.3, k_d = 0.4, k1=0.1, k2=0.2, dose = 1), deriv2 = T)
-
-plot(out.ds)
-plot(out.bt)
-getDerivs(out.ds) %>% plot()
-getDerivs(out.bt) %>% plot()
+pars <- c(A=4.5, B=0.75, k_p = 0.3, k_d = 0.4, k1=0.1, k2=0.2, dose = 1)
+# out.ds <- x.ds(times, pars)
+# out.bt <- x.bt(times, pars, deriv2 = F)
+# 
+# outdsframe <- out.ds %>% as.data.frame()
+# outbtframe <- out.bt %>% as.data.frame()
+# 
+# plot(out.ds)
+# plot(out.bt)
+# getDerivs(out.ds) %>% plot()
+# getDerivs(out.bt) %>% plot()
 # getDerivs2(out) %>% plot()
 
 # innerpars <- getParameters(x)
@@ -83,6 +90,8 @@ trafo.expl <- eqnvec() %>%
 
 p.expl <- P(trafo.expl, condition = "cond1", deriv2 = T, compile = F)
 
+compile(x.ds, x.bt, p.impl, p.expl, output = "dMod2test", cores = 8)
+
 
 prd.impl <- x.bt*p.impl
 prd.expl.ds <- x.ds*p.expl
@@ -97,6 +106,5 @@ getDerivs(out.expl.ds) %>% plot()
 getDerivs(out.expl.bt) %>% plot()
 getDerivs(out.impl) %>% plot()
 
-compile(p.impl, p.expl)
-
 system.time({prd.impl(times,pouter, deriv2 = T)})
+getDerivs2(out.expl.bt) %>% plot()

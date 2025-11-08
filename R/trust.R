@@ -100,8 +100,8 @@ norm <- function(x) sqrt(crossprod(x))
 #' @export
 #' @importFrom stats uniroot
 trust <- function(objfun, parinit, rinit, rmax, parscale, iterlim = 100, 
-                  fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), 
-                  minimize = TRUE, blather = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, traceFile = NULL, ...) 
+                  fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, 
+                  parupper = Inf, parlower = -Inf, printIter = FALSE, traceFile = NULL, ...) 
 {
   
   

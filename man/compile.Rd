@@ -2,22 +2,36 @@
 % Please edit documentation in R/tools.R
 \name{compile}
 \alias{compile}
-\title{Compile one or more prdfn, obsfn or parfn objects}
+\title{Compile one or more model-related functions}
 \usage{
 compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
-\item{...}{Objects of class parfn, obsfn or prdfn}
+\item{...}{One or more objects of class `parfn`, `obsfn`, or `prdfn`.}
 
-\item{output}{Optional character of the file to be produced. If several objects were
-passed, the different C files are all compiled into one shared object file.}
+\item{output}{Optional character string. If provided, all compiled files
+will be linked into this shared object (e.g. `"myModel"` produces
+`"myModel.so"` or `"myModel.dll"`).}
 
-\item{args}{Additional arguments for the R CMD SHLIB call, e.g. \code{-leinspline}.}
+\item{args}{Optional character string with additional arguments passed to
+the `R CMD SHLIB` call (e.g. `"-leinspline"`).}
 
-\item{cores}{Number of cores used for compilation when several files are compiled.}
+\item{cores}{Integer. Number of CPU cores used for parallel compilation when
+compiling multiple files (only on non-Windows systems).}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{verbose}{Logical. If `TRUE`, compiler output is printed to the R console.}
+}
+\value{
+Invisibly returns `TRUE` if compilation succeeds.
 }
 \description{
-Compile one or more prdfn, obsfn or parfn objects
+Compiles one or more objects of class `parfn`, `obsfn`, or `prdfn` into a
+shared library (`.so` or `.dll`). If multiple objects are provided, their
+corresponding C/C++ source files are compiled together into a single
+shared object.
+}
+\details{
+On non-Windows systems, parallel compilation is performed via
+`parallel::mclapply()` if multiple files are detected.  
+On Windows, compilation is always single-threaded.
 }
