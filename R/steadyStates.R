@@ -1,6 +1,6 @@
 #' Calculate analytical steady states. 
 #' 
-#' @description This function follows the method published in [1]. Find the latest version of the tool and some examples under [2]. The determined steady-state solution is tailored to parameter estimation. Please note that kinetic parameters might be fixed for solution of steady-state equations. Note that additional parameters might be introduced to ensure positivity of the solution.
+#' @description This function follows the method published in \[1\]. Find the latest version of the tool and some examples under \[2\]. The determined steady-state solution is tailored to parameter estimation. Please note that kinetic parameters might be fixed for solution of steady-state equations. Note that additional parameters might be introduced to ensure positivity of the solution.
 #' @description The function calls a python script via the reticulate package. Use python3.x
 #' 
 #' 
@@ -12,18 +12,18 @@
 #' @param neglect Character vector with names of states and parameters that must not be used for solving the steady-state equations
 #' @param sparsifyLevel numeric, Upper bound for length of linear combinations used for simplifying the stoichiometric matrix
 #' @param outputFormat Define the output format. By default "R" generating dMod 
-#'   compatible output. To obtain an output appropriate for d2d [2] "M" must be 
+#'   compatible output. To obtain an output appropriate for d2d \[2\] "M" must be 
 #'   selected.
 #' @param testSteady Boolean, if "T" the correctness of the obtained steady states is numerically checked (this can be very time intensive). If "F" this is skipped. 
 #' @param resolve Boolean. If TRUE, recursive dependencies are resolved, meaning that independent equations are substituted into each expression and then simplified.
 #'   
 #' @return Character vector of steady-state equations.
 #'   
-#' @references [1]
+#' @references \[1\]
 #' <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863410/>
-#' @references [2]
+#' @references \[2\]
 #' <https://github.com/marcusrosenblatt/AlyssaPetit>
-#' @references [3]
+#' @references \[3\]
 #' <https://github.com/Data2Dynamics/d2d>
 #' 
 #' @author Marcus Rosenblatt, \email{marcus.rosenblatt@@fdm.uni-freiburg.de}

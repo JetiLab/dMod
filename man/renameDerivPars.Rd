@@ -7,7 +7,7 @@
 renameDerivPars(pred0, pars, est.grid, cn)
 }
 \arguments{
-\item{pred0}{prd0(times,pars)[\link{1}]}
+\item{pred0}{prd0(times,pars)[[1]]}
 
 \item{pars}{pars}
 

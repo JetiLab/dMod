@@ -57,5 +57,5 @@ myfn(pars = pars)
 
 }
 \seealso{
-\link{wrss}
+\link{normL2}
 }

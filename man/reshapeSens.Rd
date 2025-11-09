@@ -2,7 +2,7 @@
 % Please edit documentation in R/prediction.R
 \name{reshapeSens}
 \alias{reshapeSens}
-\title{Reshape ODE sensitivities from wide matrix (var.par) to 3D array \link{time, variable, parameter}}
+\title{Reshape ODE sensitivities from wide matrix (var.par) to 3D array}
 \usage{
 reshapeSens(sensMatrix, variables, parameters)
 }
@@ -15,13 +15,12 @@ formatted as "variable.parameter". Rows correspond to time points.}
 \item{parameters}{Character vector of parameter names.}
 }
 \value{
-A numeric 3D array with dimensions \link{time, variable, parameter},
+A numeric 3D array with dimensions: time, variable, parameter,
 and proper \code{dimnames} for variables and parameters.
 }
 \description{
 Converts a flat sensitivity matrix (as produced by deSolve-based ODE integrations)
-with column names of the form "variable.parameter" into a structured 3D array
-with dimensions \link{n_time, n_variables, n_parameters}.
+with column names of the form "variable.parameter" into a structured 3D array.
 }
 \examples{
 # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"

@@ -269,16 +269,30 @@ blockdiagSymb <- function(M, N) {
 
 
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
+#' Translate wide output format (e.g., from ODE solver) into long format
+#'
+#' Converts simulation output in wide format into a tidy long format suitable for
+#' plotting or further analysis (e.g., with \pkg{ggplot2}). The function assumes
+#' that the first column of \code{out} represents a time-like variable and the
+#' remaining columns contain values.
+#'
+#' @param out A \code{data.frame}, \code{matrix}, or a \code{list} of matrices in wide format.
+#' @param keep Integer vector specifying the column indices to keep (default is \code{1}).
+#' @param na.rm Logical. If \code{TRUE}, missing values are removed in the long-format output.
+#'
+#' @details
+#' If \code{out} is a list, the list names are added as an additional column named
+#' \code{"condition"}. This is particularly useful for plotting results from multiple
+#' simulation conditions with \pkg{ggplot2}.
+#'
+#' @return A \code{data.frame} in long format with the following columns:
+#' \itemize{
+#'   \item \code{"time"} — values from \code{out[, 1]}.
+#'   \item \code{"name"} — column names from \code{out[, -1]}.
+#'   \item \code{"value"} — corresponding numeric values.
+#'   \item \code{"condition"} — if \code{out} was a list, contains the list names.
+#' }
+#'
 #' @export
 wide2long <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -287,17 +301,7 @@ wide2long <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.data.frame
+#' @rdname wide2long
 #' @export
 wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -305,17 +309,7 @@ wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.matrix
+#' @rdname wide2long
 #' @export
 wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -336,17 +330,7 @@ wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if `TRUE`, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.list
+#' @rdname wide2long
 #' @export
 wide2long.list <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -470,7 +454,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   }
   
   if (length(files) == 0) {
-    stop("Keine zu kompilierenden Dateien gefunden (weder .c noch .cpp).")
+    stop("No source files found for compilation (no .c or .cpp files).")
   }
   
   roots <- vapply(files, function(f) {
@@ -485,9 +469,9 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   include_flags <- c(paste0("-I", shQuote(system.file("include", package = "CppODE"))))
   
   cxxflags <- if (Sys.info()[["sysname"]] == "Windows") {
-    "-std=c++23 -O2 -DNDEBUG"
+    "-std=c++20 -O2 -DNDEBUG"
   } else {
-    "-std=c++23 -O2 -DNDEBUG -fPIC"
+    "-std=c++20 -O2 -DNDEBUG -fPIC"
   }
   
   Sys.setenv(

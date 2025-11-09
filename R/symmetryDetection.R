@@ -1,7 +1,7 @@
 
 #' Search for symmetries in the loaded model
 #' 
-#' @description This function follows the method published in [1].
+#' @description This function follows the method published in \[1\].
 #' @description The function calls a python script via rPython. Usage problems might occur when different python versions are used. The script was written and tested for python 2.7.12, sympy 0.7.6.
 #' @description Recently, users went into problems with RJSONIO when rPython was used. Unless a sound solution is available, please try to reinstall RJSONIO in these cases.
 #' 
@@ -17,7 +17,7 @@
 #' @param allTrafos do not remove transformations with a common parameter factor
 #' @return NULL
 #' 
-#' @references [1]
+#' @references \[1\]
 #' <https://journals.aps.org/pre/abstract/10.1103/PhysRevE.92.012920>
 #' 
 #' @examples

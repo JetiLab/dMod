@@ -106,9 +106,9 @@ out.expl.ds <- prd.expl.ds(times,pouter)
 out.impl.bt <- prd.impl.bt(times, pouter, deriv2 = T)
 out.expl.bt <- prd.expl.bt(times,pouter, deriv2 = T)
 plot(out.expl.ds)
-plot(out.expl.bt)
 
 
+plot(out.impl.bt)
 
 derivs.bt.impl <- getDerivs(out.expl.bt) %>% as.data.frame() %>% mutate(parfun = "impl")
 derivs.bt.expl <- getDerivs(out.impl.bt) %>% as.data.frame() %>% mutate(parfun = "expl")

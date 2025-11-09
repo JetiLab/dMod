@@ -146,11 +146,11 @@ P <- function(trafo = NULL,
 #' Derivatives are obtained by **symbolic differentiation**:
 #'
 #' - The **Jacobian**
-#'   \deqn{J_{ij} = \frac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
+#'   \deqn{J_{ij} = \dfrac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
 #'   is computed from the transformation expressions.
 #'
 #' - If `deriv2 = TRUE`, the **Hessian tensor**
-#'   \deqn{H_{ijk} = \frac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
+#'   \deqn{H_{ijk} = \dfrac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
 #'   is also precomputed symbolically.
 #'
 #' These derivatives are attached as attributes `"deriv"` and `"deriv2"`
@@ -394,50 +394,50 @@ Pexpl <- function(trafo,
 #' Sensitivities of the implicit mapping are derived analytically via the
 #' **implicit function theorem** applied to \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0}.
 #'
-#' **First-order derivative**
+#' **First-order derivative (Jacobian)**
 #'
 #' The Jacobian of the mapping \eqn{p_{\text{ini},i}(p_{\text{dyn}})} satisfies
 #'
 #' \deqn{
-#' \frac{\partial f_i}{\partial p_{\text{ini},a}}
-#' \frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
+#' \dfrac{\partial f_i}{\partial p_{\text{ini},k}}
+#' \dfrac{\partial p_{\text{ini},k}}{\partial p_{\text{dyn},j}}
 #' +
-#' \frac{\partial f_i}{\partial p_{\text{dyn},j}}
+#' \dfrac{\partial f_i}{\partial p_{\text{dyn},j}}
 #' = 0,
 #' }
 #'
 #' which implies
 #'
 #' \deqn{
-#' \frac{\partial p_{\text{ini},a}}{\partial p_{\text{dyn},j}}
+#' \dfrac{\partial p_{\text{ini},i}}{\partial p_{\text{dyn},j}}
 #' =
 #' -\!
-#' \left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
-#' \frac{\partial f_i}{\partial p_{\text{dyn},j}}.
+#' \left(\dfrac{\partial f_k}{\partial p_{\text{ini},i}}\right)^{-1}
+#' \dfrac{\partial f_k}{\partial p_{\text{dyn},j}}.
 #' }
 #'
-#' **Second-order derivative (Hessian tensor)**
+#' **Second-order derivative (Hessian)**
 #'
 #' A second differentiation with respect to \eqn{p_{\text{dyn},k}} yields
 #'
 #' \deqn{
-#' \frac{\partial^2 p_{\text{ini},a}}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+#' \dfrac{\partial^2 p_{\text{ini},i}}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
 #' =
 #' -\!
-#' \left(\frac{\partial f_i}{\partial p_{\text{ini},a}}\right)^{-1}
+#' \left(\dfrac{\partial f_l}{\partial p_{\text{ini},i}}\right)^{-1}
 #' \!\!
 #' \left[
-#'   \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{ini},c}}
-#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
-#'     \frac{\partial p_{\text{ini},c}}{\partial p_{\text{dyn},k}}
+#'   \dfrac{\partial^2 f_l}{\partial p_{\text{ini},m}\,\partial p_{\text{ini},n}}
+#'     \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},j}}
+#'     \dfrac{\partial p_{\text{ini},n}}{\partial p_{\text{dyn},k}}
 #'   +
-#'   \frac{\partial^2 f_i}{\partial p_{\text{ini},b}\,\partial p_{\text{dyn},k}}
-#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},j}}
+#'   \dfrac{\partial^2 f_l}{\partial p_{\text{ini},m}\,\partial p_{\text{dyn},k}}
+#'     \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},j}}
 #'   +
-#'   \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{ini},b}}
-#'     \frac{\partial p_{\text{ini},b}}{\partial p_{\text{dyn},k}}
+#'   \dfrac{\partial^2 f_l}{\partial p_{\text{dyn},j}\,\partial p_{\text{ini},m}}
+#'     \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},k}}
 #'   +
-#'   \frac{\partial^2 f_i}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+#'   \dfrac{\partial^2 f_l}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
 #' \right]\!,
 #' }
 #'

@@ -173,19 +173,18 @@ Xs.deSolve <- function(odemodel,
   prdfn(P2X, c(variables, parameters), condition) 
 }
 
-#' Reshape ODE sensitivities from wide matrix (var.par) to 3D array [time, variable, parameter]
+#' Reshape ODE sensitivities from wide matrix (var.par) to 3D array
 #'
 #' @description
 #' Converts a flat sensitivity matrix (as produced by deSolve-based ODE integrations)
-#' with column names of the form "variable.parameter" into a structured 3D array
-#' with dimensions [n_time, n_variables, n_parameters].
+#' with column names of the form "variable.parameter" into a structured 3D array.
 #'
 #' @param sensMatrix A numeric matrix of sensitivities with column names
 #'   formatted as "variable.parameter". Rows correspond to time points.
 #' @param variables Character vector of state variable names.
 #' @param parameters Character vector of parameter names.
 #'
-#' @return A numeric 3D array with dimensions [time, variable, parameter],
+#' @return A numeric 3D array with dimensions: time, variable, parameter,
 #'   and proper `dimnames` for variables and parameters.
 #'
 #' @examples

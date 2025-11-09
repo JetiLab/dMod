@@ -39,7 +39,7 @@ symmetryDetection(
 \item{allTrafos}{do not remove transformations with a common parameter factor}
 }
 \description{
-This function follows the method published in \link{1}.
+This function follows the method published in [1].
 
 The function calls a python script via rPython. Usage problems might occur when different python versions are used. The script was written and tested for python 2.7.12, sympy 0.7.6.
 
@@ -58,6 +58,6 @@ symmetryDetection(eq, observables)
 }
 }
 \references{
-\link{1}
+[1]
 \url{https://journals.aps.org/pre/abstract/10.1103/PhysRevE.92.012920}
 }

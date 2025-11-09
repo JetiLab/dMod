@@ -174,7 +174,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
     
     prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, conditions = conditions)
     
-    # Apply res() and wrss() to compute residuals and the weighted residual sum of squares
+    # Apply res() and nll() to compute residuals and the weighted residual sum of squares
     out.data <- lapply(conditions, function(cn) {
       err <- NULL
       if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
@@ -215,7 +215,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
 #' @param condition character, the condition for which the constraint should apply. If
 #' `NULL`, applies to any condition.
 #' @return object of class `objfn`
-#' @seealso [wrss]
+#' @seealso [normL2]
 #' @details If sigma is numeric, the function computes the constraint value 
 #' \deqn{\left(\frac{p-\mu}{\sigma}\right)^2}{(p-mu)^2/sigma^2}
 #' and its derivatives with respect to p. If sigma is a character, the 
@@ -390,7 +390,7 @@ constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
 #' attributed with this name
 #' @param condition character, the condition for which the prediction is made.
 #' @return List of class `objlist`, i.e. objective value, gradient and Hessian as list.
-#' @seealso [wrss], [constraintL2]
+#' @seealso [normL2], [constraintL2]
 #' @details Computes the constraint value 
 #' \deqn{\left(\frac{x(t)-\mu}{\sigma}\right)^2}{(pred-p[names(mu)])^2/sigma^2}
 #' and its derivatives with respect to p.
@@ -510,7 +510,7 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
 #' @param condition character, the condition for which the constraint should apply. If
 #' `NULL`, applies to any condition.
 #' @return List of class `objlist`, i.e. objective value, gradient and Hessian as list.
-#' @seealso [wrss]
+#' @seealso [constraintL2]
 #' @details Computes the constraint value 
 #' \deqn{e^{\lambda} \| p-\mu \|^2}{exp(lambda)*sum((p-mu)^2)}
 #' and its derivatives with respect to p and lambda.
@@ -618,7 +618,7 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
 #' @param pars Named vector of outer parameters to construct the objlist
 #' @param deriv Logical. If TRUE, compute gradient and hessian
 #' @param opt.BLOQ Character denoting the method to deal with BLOQ data. 
-#' One of "M1", "M3", "M4NM", or "M4BEAL". See [normIndiv] for details.
+#' One of "M1", "M3", "M4NM", or "M4BEAL". See [normL2_indiv] for details.
 #' @param opt.hessian Named logical vector to include or exclude various 
 #' summands of the hessian matrix. Controls which parts contribute to the 
 #' Hessian calculation for both ALOQ and BLOQ data.

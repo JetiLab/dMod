@@ -75,7 +75,7 @@ make_pars <- function(pars, fixed = NULL, est.grid, fix.grid, ID){
 #' Update attr(prediction, "deriv") to correct par.grid.outer names
 #' 
 #'
-#' @param pred0 prd0(times,pars)[[1]]
+#' @param pred0 prd0(times,pars)\[\[1\]\]
 #' @param pars pars
 #' @param est.grid est.grid
 #' @param cn name of condition
@@ -363,7 +363,6 @@ gridlist <- function(est.grid, fix.grid) {
 #' @param est.grid 
 #' @param fix.grid 
 #'
-#' @return
 #' @export
 #' @author Daniel Lill (daniel.lill@physik.uni-freiburg.de)
 #' @md
@@ -436,7 +435,6 @@ PRD_indiv <- function(prd0, est.grid, fix.grid) {
 #' @param est.grid 
 #' @param fix.grid 
 #'
-#' @return
 #' @export
 #' @author Daniel Lill (daniel.lill@physik.uni-freiburg.de)
 #' @md
@@ -596,7 +594,6 @@ normL2_indiv <- function (data, prd0, errmodel = NULL, est.grid, fix.grid, times
 #' @inheritParams datapointL2
 #' @param prd_indiv a prediction function
 #'
-#' @return
 #' @export
 #' @author Daniel Lill (daniel.lill@physik.uni-freiburg.de)
 #' @md
@@ -688,7 +685,6 @@ datapointL2_indiv <- function (name, time, value, sigma = 1, attr.name = "valida
 #' @param condition 
 #' @param prd_indiv 
 #'
-#' @return
 #' @export
 #' @author Daniel Lill (daniel.lill@physik.uni-freiburg.de)
 #' @md
@@ -790,7 +786,6 @@ getParametersToEstimate <- function(est.grid, trafo, reactions) {
 #' @param x 
 #' @param ... 
 #'
-#' @return
 #' @author Daniel Lill (daniel.lill@physik.uni-freiburg.de)
 #' @export
 #' @md
@@ -876,7 +871,6 @@ check_and_sanitize_prediction <- function(prediction, data, cn, FLAGNaNInfwarnin
 #' @param mycondition.grid condition.grid with condition names as rownames e.g. as output from attr(datalist, "condition.grid")
 #' @param SS_pars parameters determined by the steady state
 #'
-#' @return
 #' @export
 #' @author Svenja Kemmer
 #'

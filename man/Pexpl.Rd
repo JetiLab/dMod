@@ -68,10 +68,10 @@ expressions. Each element of \code{trafo} defines one component of
 Derivatives are obtained by \strong{symbolic differentiation}:
 \itemize{
 \item The \strong{Jacobian}
-\deqn{J_{ij} = \frac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
+\deqn{J_{ij} = \dfrac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
 is computed from the transformation expressions.
 \item If \code{deriv2 = TRUE}, the \strong{Hessian tensor}
-\deqn{H_{ijk} = \frac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
+\deqn{H_{ijk} = \dfrac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
 is also precomputed symbolically.
 }
 

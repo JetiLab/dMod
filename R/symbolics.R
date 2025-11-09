@@ -130,16 +130,24 @@ nullZ <- function(A, tol=sqrt(.Machine$double.eps)) {
 
 
 
-#' Transform matrix A into reduced row echelon form 
-#' this function is written along the lines of the rref-matlab function.
-#' @param A matrix for which the reduced row echelon form is searched
-#' @param tol tolerance to find pivots
-#' @param verbose logical, print verbose information
-#' @param fractions logical, not used right now. 
-#' @return a list of two entries is returned; ret[[1]] is the reduced row echelon form of A, ret[[2]] is the index of columns in which a pivot was found
-#' 
+#' Transform a matrix into reduced row echelon form
+#'
+#' This function computes the reduced row echelon form (RREF) of a numeric matrix.
+#' It is written along the lines of the MATLAB function \code{rref}.
+#'
+#' @param A Numeric matrix for which the reduced row echelon form is computed.
+#' @param tol Numeric tolerance used to identify pivot elements. Defaults to \code{sqrt(.Machine$double.eps)}.
+#' @param verbose Logical. If \code{TRUE}, prints detailed information during computation.
+#' @param fractions Logical. Currently not used.
+#'
+#' @return A list with two elements:
+#' \itemize{
+#'   \item \code{[[1]]}: The reduced row echelon form of \code{A}.
+#'   \item \code{[[2]]}: The indices of the columns in which pivots were found.
+#' }
+#'
 #' @author Malenka Mader, \email{Malenka.Mader@@fdm.uni-freiburg.de}
-#'   
+#'
 #' @export
 rref <- function(A, tol=sqrt(.Machine$double.eps), verbose=FALSE, fractions=FALSE){
   ## Written by John Fox
