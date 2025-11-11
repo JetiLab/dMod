@@ -28,7 +28,7 @@
 #' Both transformation types can be combined with other mappings via arithmetic
 #' operators (`+` and `*`) thanks to the [parfn] interface.
 #'
-#' @param trafo Object of class `eqnvec` or a named character vector,
+#' @param x Either an `eqnlist` or an object of class `eqnvec` or a named character vector,
 #' or a list thereof. If a list is provided, `P()` is called on each
 #' element and conditions are taken from the list names.
 #' @param method Character, either `"explicit"` or `"implicit"`.
@@ -72,7 +72,7 @@
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
 #' @export
-P <- function(trafo = NULL,
+P <- function(x = NULL,
               method = c("explicit", "implicit"), 
               parameters=NULL, 
               deriv = TRUE,
@@ -87,44 +87,53 @@ P <- function(trafo = NULL,
               modelname = NULL, 
               verbose = FALSE) {
   
-  if (is.null(trafo)) return()
-  if (!is.list(trafo)) {
-    trafo <- list(trafo)
-    names(trafo) <- condition
-  }
-  
   method <- match.arg(method)
-  
-  Reduce("+", lapply(1:length(trafo), function(i) {
-  
+  if (is.null(x)) return()
+  if (inherits(x, "eqnlist")) {
+    method <- "implicit"
+    fnout <- Pimpl(x, 
+                   parameters = parameters,
+                   deriv = deriv,
+                   deriv2 = deriv2,
+                   fixed = fixed,
+                   keep.root = keep.root,
+                   positive = positive,
+                   attach.input = attach.input,
+                   condition = condition,
+                   compile = compile, 
+                   modelname = modelname, 
+                   verbose = verbose)
+  } else if (!is.list(x)) {
+    x <- list(x)
+    names(x) <- condition
+    
+    fnout <- Reduce("+", lapply(1:length(x), function(i) {
       switch(method, 
-           explicit = Pexpl(trafo = as.eqnvec(trafo[[i]]), 
-                            parameters = parameters,
-                            deriv = deriv,
-                            deriv2 = deriv2,
-                            fixed = fixed,
-                            attach.input = attach.input,
-                            condition = names(trafo[i]),
-                            compile = compile,
-                            modelname = modelname, 
-                            verbose = verbose),
-           implicit = Pimpl(trafo = as.eqnvec(trafo[[i]]), 
-                            parameters = parameters,
-                            deriv = deriv,
-                            deriv2 = deriv2,
-                            fixed = fixed,
-                            keep.root = keep.root,
-                            positive = positive,
-                            attach.input = attach.input,
-                            condition = names(trafo[i]), 
-                            compile = compile, 
-                            modelname = modelname, 
-                            verbose = verbose))
-    
-    
-  }))
-  
-  
+             explicit = Pexpl(trafo = as.eqnvec(x[[i]]), 
+                              parameters = parameters,
+                              deriv = deriv,
+                              deriv2 = deriv2,
+                              fixed = fixed,
+                              attach.input = attach.input,
+                              condition = names(x[i]),
+                              compile = compile,
+                              modelname = modelname, 
+                              verbose = verbose),
+             implicit = Pimpl(trafo = as.eqnvec(x[[i]]), 
+                              parameters = parameters,
+                              deriv = deriv,
+                              deriv2 = deriv2,
+                              fixed = fixed,
+                              keep.root = keep.root,
+                              positive = positive,
+                              attach.input = attach.input,
+                              condition = names(x[i]), 
+                              compile = compile, 
+                              modelname = modelname, 
+                              verbose = verbose))
+    }))
+  }
+  return(fnout)
 }
 
 
@@ -177,7 +186,7 @@ P <- function(trafo = NULL,
 #'
 #' @return
 #' A function  
-#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`  
 #' that evaluates the parameter transformation.  
 #' The result is an object of class [parvec], which contains
 #'
@@ -240,7 +249,7 @@ Pexpl <- function(trafo,
   # ---------------------------------------------------------------------------
   # Define returned parameter transformation function
   # ---------------------------------------------------------------------------
-  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, env = parent.frame()) {
+  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE, env = parent.frame()) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
@@ -248,7 +257,7 @@ Pexpl <- function(trafo,
     }
     
     # Evaluate inner parameters
-    outPEval <- PEval(NULL, pars, attach.input = attach.input, deriv = deriv, deriv2 = deriv2)
+    outPEval <- PEval(NULL, pars, attach.input = attach.input, deriv = deriv, deriv2 = deriv2, verbose = verbose)
     
     pinner <- setNames(as.numeric(outPEval$out), colnames(outPEval$out))
     # Sanity check
@@ -482,7 +491,7 @@ Pexpl <- function(trafo,
 #' created by [Pexpl] or [Pimpl]. Derivatives (`"deriv"`, `"deriv2"`) are automatically
 #' propagated when chained via [parfn].
 #'
-#' @param trafo Residual system as an `eqnvec` defining
+#' @param x An `eqnvec` defining
 #'   \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0},
 #'   or an `eqnlist` specifying an ODE model in stoichiometric form.
 #' @param parameters Character vector of outer parameter names
@@ -507,7 +516,7 @@ Pexpl <- function(trafo,
 #'
 #' @return
 #' A function  
-#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`  
 #' that returns the steady-state parameter vector with attached attributes  
 #' `"deriv"` (Jacobian) and `"deriv2"` (Hessian, if requested).
 #'
@@ -521,7 +530,7 @@ Pexpl <- function(trafo,
 #' @importFrom rootSolve multiroot
 #' @importFrom abind abind
 #' @export
-Pimpl <- function(trafo,
+Pimpl <- function(x,
                   parameters   = NULL,
                   deriv        = TRUE,
                   deriv2       = FALSE,
@@ -537,8 +546,8 @@ Pimpl <- function(trafo,
   
   # Normalize input: accept eqnlist; insert conservation totals if needed
   totals <- character(0)
-  if (inherits(trafo, "eqnlist")) {
-    eq    <- trafo
+  if (inherits(x, "eqnlist")) {
+    eq    <- x
     trafo <- as.eqnvec(eq)
     
     cq_df <- conservedQuantities(eq$smatrix)
@@ -634,6 +643,8 @@ Pimpl <- function(trafo,
     } else {
       parameters <- required_outer
     }
+  } else {
+    trafo <- as.eqnvec(x)
   }
   
   # Partition symbols: states vs outer parameters
@@ -678,7 +689,7 @@ Pimpl <- function(trafo,
   guess_env$guess <- NULL
   
   # Returned transformation closure
-  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, env = parent.frame()) {
+  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE, env = parent.frame()) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
@@ -727,7 +738,7 @@ Pimpl <- function(trafo,
       f_z <- function(z, .) {
         x_dep <- exp(z)
         FEval(NULL, p = pack_full(x_dep),
-              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE)$out[1, ]
+              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
       }
       z0         <- log(pmax(x_dep0, 1e-8))
       root       <- do.call(rootSolve::multiroot, c(list(f = f_z, start = z0), optsRS))
@@ -741,7 +752,7 @@ Pimpl <- function(trafo,
     } else {
       f_x <- function(x_dep, .) {
         FEval(NULL, p = pack_full(x_dep),
-              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE)$out[1, ]
+              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
       }
       root       <- do.call(rootSolve::multiroot, c(list(f = f_x, start = x_dep0), optsRS))
       x_dep_star <- root$root
@@ -756,9 +767,8 @@ Pimpl <- function(trafo,
     if (keep.root) guess_env$guess <- setNames(x_dep_star, dep_st)
     
     # Evaluate Jacobian/Hessian of the dependent residuals at the solution
-    need_hess <- isTRUE(deriv2)
     E <- FEval(NULL, p = pack_full(x_dep_star),
-               attach.input = FALSE, deriv = TRUE, deriv2 = need_hess)
+               attach.input = FALSE, deriv = TRUE, deriv2 = deriv2, verbose = verbose)
     
     # FEval Jacobian is w.r.t. c(states, nonstates)
     J <- E$jacobian[,,1, drop = TRUE]
@@ -912,6 +922,20 @@ Pimpl <- function(trafo,
       } else {
         myderiv2 <- H_outer
       }
+    }
+    
+    
+    # --- dimension names for derivatives ---
+    if (deriv && !is.null(myderiv)) {
+      rownames(myderiv) <- names(out_vec)
+      colnames(myderiv) <- colnames(dP)
+    }
+    if (deriv2 && !is.null(myderiv2)) {
+      dimnames(myderiv2) <- list(
+        names(out_vec),
+        colnames(dP),
+        colnames(dP)
+      )
     }
     
     # Build final parvec

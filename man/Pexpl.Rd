@@ -47,7 +47,7 @@ for faster evaluation.}
 }
 \value{
 A function
-\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
 that evaluates the parameter transformation.
 The result is an object of class \link{parvec}, which contains
 \itemize{

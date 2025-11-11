@@ -5,7 +5,7 @@
 \title{Generate a parameter transformation function}
 \usage{
 P(
-  trafo = NULL,
+  x = NULL,
   method = c("explicit", "implicit"),
   parameters = NULL,
   deriv = TRUE,
@@ -22,7 +22,7 @@ P(
 )
 }
 \arguments{
-\item{trafo}{Object of class \code{eqnvec} or a named character vector,
+\item{x}{Either an \code{eqnlist} or an object of class \code{eqnvec} or a named character vector,
 or a list thereof. If a list is provided, \code{P()} is called on each
 element and conditions are taken from the list names.}
 

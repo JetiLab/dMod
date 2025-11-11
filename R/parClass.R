@@ -693,20 +693,19 @@ print.parvec <- function(x) {
 }
 
 
-#' Subset method for parvec objects (optimized)
+#' Subset method for parvec objects
 #'
-#' Efficiently subsets a `parvec` while keeping its numeric values, Jacobian
-#' (`deriv`), and Hessian (`deriv2`) consistent. Assumes that parameter and
-#' derivative dimensions are aligned and consistent.
+#' Safely subsets a `parvec` object while keeping its Jacobian (`deriv`)
+#' and Hessian (`deriv2`) attributes consistent.
 #'
-#' Only the parameter dimension (rows) is subset; derivative basis dimensions
-#' remain unchanged. When `drop = TRUE`, zero columns in the Jacobian and the
-#' corresponding Hessian dimensions are removed.
+#' This version is robust against missing derivative entries:
+#' if parameters being subsetted are not present in the Jacobian or Hessian,
+#' zero rows (and matching dimensions) are added automatically.
 #'
 #' @param x A `parvec` object.
 #' @param ... Parameter indices or names to subset.
-#' @param drop Logical; if `TRUE`, drop zero Jacobian columns and matching
-#'   Hessian dimensions.
+#' @param drop Logical; if `TRUE`, drop zero Jacobian columns and
+#'   matching Hessian dimensions.
 #'
 #' @return A `parvec` object with updated numeric values and derivative
 #'   attributes.
@@ -716,24 +715,48 @@ print.parvec <- function(x) {
   out <- unclass(x)[...]
   nms <- names(out)
   
-  # --- Subset Jacobian ---
+  # --- Subset Jacobian (first derivatives) ---
   deriv <- attr(x, "deriv")
   if (!is.null(deriv)) {
-    deriv <- deriv[..., , drop = FALSE]
+    available <- intersect(nms, rownames(deriv))
+    missing <- setdiff(nms, rownames(deriv))
+    
+    # Subset existing rows
+    deriv_sub <- deriv[available, , drop = FALSE]
+    
+    # Add zero rows for missing parameters
+    if (length(missing)) {
+      add_rows <- matrix(0, nrow = length(missing), ncol = ncol(deriv),
+                         dimnames = list(missing, colnames(deriv)))
+      deriv_sub <- rbind(deriv_sub, add_rows)
+    }
+    
+    # Reorder rows to match the subset order
+    deriv <- deriv_sub[nms, , drop = FALSE]
   }
   
-  # --- Subset Hessian ---
+  # --- Subset Hessian (second derivatives) ---
   deriv2 <- attr(x, "deriv2")
   if (!is.null(deriv2)) {
-    n_out <- length(out)
-    n_basis <- dim(deriv2)[2]
-    idx1 <- seq_len(n_out)
-    idx2 <- seq_len(n_basis)
-    idx3 <- seq_len(n_basis)
-    deriv2 <- deriv2[idx1, idx2, idx3, drop = FALSE]
+    basis_names <- dimnames(deriv2)[[2]]
+    available1 <- intersect(nms, dimnames(deriv2)[[1]])
+    missing1 <- setdiff(nms, dimnames(deriv2)[[1]])
+    
+    # Subset existing first dimension
+    deriv2_sub <- deriv2[available1, , , drop = FALSE]
+    
+    # Add zero slices for missing parameters (first dimension)
+    if (length(missing1)) {
+      add_slices <- array(0, dim = c(length(missing1), dim(deriv2)[2], dim(deriv2)[3]),
+                          dimnames = list(missing1, dimnames(deriv2)[[2]], dimnames(deriv2)[[3]]))
+      deriv2_sub <- abind::abind(deriv2_sub, add_slices, along = 1)
+    }
+    
+    # Reorder first dimension to match the subset order
+    deriv2 <- deriv2_sub[nms, , , drop = FALSE]
   }
   
-  # --- Drop empty Jacobian columns if requested ---
+  # --- Drop zero columns and matching Hessian dimensions if requested ---
   if (drop && !is.null(deriv)) {
     keep.cols <- colSums(abs(deriv)) > 0
     deriv <- deriv[, keep.cols, drop = FALSE]
@@ -742,7 +765,7 @@ print.parvec <- function(x) {
     }
   }
   
-  # --- Rebuild parvec ---
+  # --- Rebuild the parvec object ---
   as.parvec(out, deriv = deriv, deriv2 = deriv2)
 }
 

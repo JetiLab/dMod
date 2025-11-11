@@ -29,7 +29,7 @@ Xs <- function(odemodel, ...) {
 }
 
 #' @export
-#' @import deSolve einsum
+#' @importFrom einsum einsum
 Xs.deSolve <- function(odemodel, 
                        forcings=NULL, 
                        events=NULL, 
@@ -160,7 +160,7 @@ Xs.deSolve <- function(odemodel,
       
     }
     
-    return(prdframe(out, deriv = dX, sensitivities = mysensitivities, parameters = pars))
+    return(prdframe(out, deriv = dX, parameters = pars))
   }
   
   attr(P2X, "parameters") <- c(variables, parameters)
@@ -395,13 +395,13 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
         dPsub  <- dP [controls$dimnames_sens$sens, , drop = FALSE]
         dP2sub <- dP2[controls$dimnames_sens$sens, , , drop = FALSE]
         
-        # --- First-order chain rule: dX/dθ = dX/dP * dP/dθ
+        # --- First-order chain rule: ∂x_i/∂θ_j = ∂x_i/∂p_k * ∂p_k/∂θ_j
         dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
         
         # --- Second-order chain rule:
-        # d²X/dθ² = d²X/dP² * dP/dθ * dP/dθ + dX/dθ * dP²/d²θ
-        # term1: d²X/dP² * dP/dθ * dP/dθ
-        # term2: dX/dP * dP²/d²θ
+        # ∂²x_i/∂θ_k∂θ_j =
+        #   (∂²x_i/∂p_a∂p_b) * (∂p_b/∂θ_k) * (∂p_a/∂θ_j) # term1
+        # + (∂x_i/∂p_a) * (∂²p_a/∂θ_k∂θ_j)               # term2
         term1 <- einsum::einsum("aikl,kj,lm->aijm", mysensitivities2, dPsub, dPsub)
         term2 <- einsum::einsum("aik,kmj->aijm",  mysensitivities,  dP2sub)
         dX2 <- term1 + term2
@@ -416,7 +416,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
         dX2 <- mysensitivities2
       }
     }
-    prdframe(out, deriv = dX, sensitivities = mysensitivities, deriv2 = dX2, sensitivities2 = mysensitivities2, parameters = pars)
+    prdframe(out, deriv = dX, deriv2 = dX2, parameters = pars)
     
   }
   
@@ -501,12 +501,6 @@ Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optio
   
   
   prdfn(P2X, c(variables, parameters), condition) 
-  
-  
-  
-  
-  
-  
   
 }
 
@@ -622,7 +616,7 @@ Xd <- function(data, condition = NULL) {
     
     #attr(out, "parameters") <- unique(sensGrid[,2])
     
-    prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = pars)
+    prdframe(out, deriv = myderivs, parameters = pars)
     
   }
   
@@ -636,240 +630,345 @@ Xd <- function(data, condition = NULL) {
 
 #' Observation functions. 
 #' 
-#' @description Creates an object of type [obsfn] that evaluates an observation function
-#' and its derivatives based on the output of a model prediction function, see [prdfn], 
-#' as e.g. produced by [Xs].
-#' @param g Named character vector or equation vector defining the observation function
-#' @param f Named character of equations or object that can be converted to eqnvec or object of class fn.
-#' If f is provided, states and parameters are guessed from f.
-#' @param states character vector, alternative definition of "states", usually the names of `f`. If both,
-#' f and states are provided, the states argument overwrites the states derived from f.
-#' @param parameters character vector, alternative definition of the "parameters",
-#' usually the symbols contained in "g" and "f" except for `states` and the code word `time`. If both,
-#' f and parameters are provided, the parameters argument overwrites the parameters derived from f and g.
-#' @param condition either NULL (generic prediction for any condition) or a character, denoting
-#' the condition for which the function makes a prediction.
-#' @param attach.input logical, indiating whether the original input should be
-#' returned with the output.
-#' @param deriv logical, generate function to evaluate derivatives of observables. Necessary for parameter estimation.
-#' @param compile Logical, compile the function (see [funC0])
-#' @param modelname Character, used if `compile = TRUE`, sets a fixed filename for the
-#' C file.
-#' @param verbose Print compiler output to R command line.
-#' @return Object of class [obsfn], i.e.
-#' a function `y(..., deriv = TRUE, conditions = NULL)` representing the evaluation of the 
-#' observation function. Arguments `out` (model prediction) and `pars` (parameter values)
-#' shoudl be passed by the `...` argument.
-#' If `out` has the attribute  "sensitivities", the result of
-#' `y(out, pars)`, will have an attributed "deriv" which reflecs the sensitivities of 
-#' the observation with respect to the parameters.
-#' If `pars` is the result of a parameter transformation `p(pars)` (see [P]), 
-#' the Jacobian 
-#' of the parameter transformation and the sensitivities of the observation function
-#' are multiplied according to the chain rule for differentiation.
-#' @details For [odemodel]s with forcings, it is best, to pass the prediction function `x` to the "f"-argument 
-#' instead of the equations themselves. If an eqnvec is passed to "f" in this case, the forcings and states
-#' have to be specified manually via the "states"-argument.
+#' @description 
+#' Creates an object of type [obsfn] that evaluates an observation function
+#' and, if requested, its first and second derivatives based on the output of a model 
+#' prediction function, see [prdfn], as e.g. produced by [Xs].
+#' 
+#' @param g Named character vector or [eqnvec] defining the observation function.
+#' @param f Named character vector of equations or an object that can be converted 
+#' to [eqnvec], or an object of class 'fn'. If `f` is provided, states and parameters 
+#' are automatically inferred from `f`.
+#' @param states Character vector, alternative definition of state variables, usually 
+#' the names of `f`. If both `f` and `states` are provided, the `states` argument 
+#' overrides those derived from `f`.
+#' @param parameters Character vector, alternative definition of parameters, usually 
+#' the symbols contained in `g` and `f` except for `states` and the keyword `time`. 
+#' If both `f` and `parameters` are provided, the `parameters` argument overrides those 
+#' derived from `f` and `g`.
+#' @param condition Either `NULL` (generic prediction for any condition) or a character 
+#' string specifying the condition for which the function generates predictions.
+#' @param attach.input Logical, indicating whether the original model input should be 
+#' included in the output.
+#' @param deriv Logical, if `TRUE`, the function evaluates first-order derivatives
+#' of observables with respect to parameters.
+#' @param deriv2 Logical, if `TRUE`, the function also evaluates second derivatives 
+#' of observables with respect to parameters.
+#' @param compile Logical, if `TRUE`, the function is compiled (see [CppODE::funCpp]).
+#' @param modelname Character, used if `compile = TRUE`, specifies a fixed filename 
+#' for the generated C file.
+#' @param verbose Logical, print compiler output to the R console.
+#' 
+#' @return 
+#' An object of class [obsfn], i.e. a function 
+#' `y(..., deriv = TRUE, deriv2 = FALSE, condition = NULL, verbose = F)` representing the evaluation of the 
+#' observation function. The function returns observable values and, if requested, 
+#' their first- and second-order derivatives with respect to the parameters.
+#' 
 #' @example inst/examples/prediction.R
+#' 
+#' @importFrom CppODE funCpp
+#' @importFrom einsum einsum
+#' @importFrom abind abind
 #' @export
-Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL, attach.input = TRUE, deriv = TRUE, compile = FALSE, modelname = NULL, verbose = FALSE) {
- 
+Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
+              attach.input = TRUE, deriv = TRUE, deriv2 = TRUE,
+              compile = FALSE, modelname = NULL, verbose = FALSE) {
   
-  # Idea: 
-  # If replicate scaling is undispensible and different 
-  # observable names for different replicates is not an option, then
-  # g could be a list of observables. For this case, the observation
-  # function has to return a list of observations for each condition.
-  # Not yet clear how this works with the "+" operator.
-  myattach.input <- attach.input
-  
-  warnings <- FALSE
-  modelname_deriv <- NULL
+  if (deriv2 && !deriv) {
+    warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
+    deriv <- TRUE
+  }
   
   if (is.null(f) && is.null(states) && is.null(parameters)) 
     stop("Not all three arguments f, states and parameters can be NULL")
   
-  # Modify modelname by condition
-  if (!is.null(modelname) && !is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
+  # --- Define model name with condition suffix (to avoid name collisions) ---
+  if (is.null(modelname)) modelname <- "obsfn"
+  if (!is.null(condition)) modelname <- paste("obsfn",modelname, sanitizeConditions(condition), sep = "_")
   
-  # Then add suffix(es) for derivative function
-  if (!is.null(modelname)) modelname_deriv <- paste(modelname, "deriv", sep = "_")
-  
-  # Get potential paramters from g, forcings are treated as parameters because
-  # sensitivities dx/dp with respect to forcings are zero.
-  # Distinguish between
-  # symbols = any symbol that occurrs in g
-  # states = states of the underlying prediction function
-  # parameters = parameters of the underlying prediction function
-  # estimate = parameters p for which derivatives should be returned and states x assumed to provide derivatives, dx/dp
+  # --- Identify symbols in g ---
   symbols <- getSymbols(unclass(g))
+  
+  # --- Infer states and parameters ---
   if (is.null(f)) {
     states <- union(states, "time")
-    estimate <- union(states, parameters)
-    parameters <- union(parameters, setdiff(symbols, c(states, "time")))
+    parameters <- union(parameters, setdiff(symbols, states))
   } else if (inherits(f, "fn")) {
     myforcings <- Reduce(union, lapply(lapply(attr(f, "mappings"), 
-                                              function(mymapping) {attr(mymapping, "forcings")}), 
-                                       function(myforcing) {as.character(myforcing$name)}))
+                                              function(m) attr(m, "forcings")), 
+                                       function(ff) as.character(ff$name)))
     mystates <- unique(c(do.call(c, lapply(getEquations(f), names)), "time"))
-    if(length(intersect(myforcings, mystates)) > 0)
-      stop("Forcings and states overlap in different conditions. Please run Y for each condition by supplying only the condition specific f.")
+    if (length(intersect(myforcings, mystates)) > 0)
+      stop("Forcings and states overlap in different conditions.")
     
     mystates <- c(mystates, myforcings)
-    myparameters <- setdiff(union(getParameters(f), getSymbols(unclass(g))), c(mystates, myforcings))
-    
-    estimate <- c(states, parameters)
-    if (is.null(states)) estimate <- c(estimate, setdiff(mystates, myforcings))
-    if (is.null(parameters)) estimate <- c(estimate, myparameters)
+    myparameters <- setdiff(union(getParameters(f), getSymbols(unclass(g))), 
+                            c(mystates, myforcings))
     states <- union(mystates, states)
     parameters <- union(myparameters, parameters)
   } else {
-    # Get all states and parameters from f
     f <- as.eqnvec(f)
     mystates <- union(names(f), "time")
     myparameters <- getSymbols(c(unclass(g), unclass(f)), exclude = mystates)
-    # Set states and parameters to be estimated according to arguments, and
-    # take values from mystates and myparameters, if NULL
-    estimate <- c(states, parameters)
-    if (is.null(states)) estimate <- c(estimate, mystates)
-    if (is.null(parameters)) estimate <- c(estimate, myparameters)
-    # Return states and parameters according to what is found in the equations and what is supplied by the user (probably not needed)
     states <- union(mystates, states)
     parameters <- union(myparameters, parameters)
   }
-
-  # cat("States:\n")
-  # print(states)
-  # cat("Parameters:\n")
-  # print(parameters)
-  # cat("Estimate:\n")
-  # print(estimate)
   
-  # Observables defined by g
   observables <- names(g)
+  obsParams <- intersect(symbols, parameters)
+  obsStates <- setdiff(symbols, parameters)
   
-  gEval <- funC0(g, variables = states, parameters = parameters, compile = compile, modelname = modelname, 
-                 verbose = verbose, convenient = FALSE, warnings = FALSE)
+  # --- Compile evaluator for g (value, Jacobian, Hessian) ---
+  gEval <- CppODE::funCpp(
+    x          = g,
+    variables  = obsStates,
+    parameters = obsParams,
+    compile    = compile,
+    modelname  = modelname,
+    verbose    = verbose,
+    convenient = FALSE,
+    warnings   = FALSE,
+    deriv      = deriv,
+    deriv2     = deriv2
+  )
   
-  # Produce everything that is needed for derivatives
-  if (deriv) {
-    # Character matrices of derivatives
-    dxdp <- dgdx <- dgdp <- NULL    
-    states.est <- intersect(states, estimate)
-    pars.est <- intersect(parameters, estimate)
+  controls <- list(attach.input = attach.input)
+  
+  # --- Core observation mapping function ---
+  X2Y <- function(out, pars, deriv = TRUE, deriv2 = FALSE, env = parent.frame()) {
     
-    variables.deriv <- c(
-      states, 
-      as.vector(outer(states.est, c(states.est, pars.est), paste, sep = "."))
-    )
-    
-    if (length(states.est) > 0 & length(pars.est) > 0) {
-      dxdp <- apply(expand.grid.alt(states.est, c(states.est, pars.est)), 1, paste, collapse = ".")
-      dxdp <- matrix(dxdp, nrow = length(states.est))
+    if (deriv2 && !deriv) {
+      warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
+      deriv <- TRUE
     }
-    if (length(states.est) > 0)
-      dgdx <- matrix(jacobianSymb(g, states.est), nrow = length(g))
-    if (length(pars.est) > 0) {
-      dgdp <- cbind(
-        matrix("0", nrow = length(g), ncol = length(states.est)), 
-        matrix(jacobianSymb(g, pars.est), nrow = length(g))
-      )
-    }
-    
-    # Sensitivities of the observables
-    derivs <- as.vector(sumSymb(prodSymb(dgdx, dxdp), dgdp))
-    if (length(derivs) == 0) stop("Neither states nor parameters involved. Use Y() with argument 'deriv = FALSE' instead.")
-    names(derivs) <- apply(expand.grid.alt(observables, c(states.est, pars.est)), 1, paste, collapse = ".")
-    
-    derivsEval <- funC0(derivs, variables = variables.deriv, parameters = parameters, compile = compile, modelname = modelname_deriv,
-                        verbose = verbose, convenient = FALSE, warnings = FALSE)
-    
-  }
-  
-  # Vector with zeros for possibly missing derivatives
-  # zeros <- rep(0, length(dxdp))
-  # names(zeros) <- dxdp
-  # Redundant -> missing values have been implemented in funC0
-  
-  controls <- list(attach.input = attach.input) 
-  
-  X2Y <- function(out, pars) {
     
     attach.input <- controls$attach.input
     
-    # Prepare list for with()
-    nOut <- ncol(out)
-    values <- gEval(M = out, p = pars)
+    outEval <- gEval(out[, obsStates], 
+                     pars[obsParams], 
+                     deriv = deriv, 
+                     deriv2 = deriv2)
     
-    sensitivities.export <- NULL
-    myderivs <- NULL
+    # --- Observable values ---
+    values <- cbind(time = out[,"time"], outEval$out)
+    if (attach.input) values <- cbind(values, submatrix(out, cols = -1))
     
-    dout <- attr(out, "sensitivities")
-    if (!is.null(dout) & deriv) {
-      dvalues <- derivsEval(M = cbind(out, dout), p = pars)
-      sensitivities.export <- cbind(time = out[, 1], dvalues)
+    myderivs <- myderivs2 <- NULL
+    
+    # --- Compute first and second derivatives ---
+    if (deriv && !deriv2) {
+      
+      # --- Direct first derivatives from g ---
+      # dGdX[j,a,i] = ∂g_j/∂x_a
+      # dGdP[j,b,i] = ∂g_j/∂p_b
+      # dX[i,a,k]   = ∂x_a/∂θ_k
+      # dP[b,k]     = ∂p_b/∂θ_k
+      dGdX <- outEval$jacobian[, obsStates, , drop = FALSE]
+      dGdP <- outEval$jacobian[, obsParams, , drop = FALSE]
+      dX   <- attr(out,  "deriv")
+      dP   <- attr(pars, "deriv")
+      
+      if (!is.null(dX)) dXsub <- dX[, obsStates, , drop = FALSE]
+      if (!is.null(dP)) dPsub <- dP[obsParams, , drop = FALSE]
+      
+      myderivs <- NULL
+      outer_pars <- character(0)
+      
+      # ---------------------------------------------------------------------
+      # CASE 1: dX ≠ NULL, dP ≠ NULL → full chain rule
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + (∂g_j/∂p_b)(∂p_b/∂θ_k)
+      if (!is.null(dX) && !is.null(dP)) {
+        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        term12 <- einsum::einsum("jbi,bk->ijk",  dGdP, dPsub)
+        myderivs <- term11 + term12
+        outer_pars <- colnames(dP)
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 2: dX ≠ NULL, dP = NULL → dynamic + local observation parameters
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + ∂g_j/∂p_local
+      if (!is.null(dX) && is.null(dP)) {
+        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        dyn_params   <- intersect(obsParams, colnames(dX))
+        local_params <- setdiff(obsParams, dyn_params)
+        
+        if (length(local_params) > 0) {
+          term12 <- aperm(dGdP[, local_params, , drop = FALSE], c(3, 1, 2))
+          myderivs <- abind::abind(term11, term12, along = 3)
+          outer_pars <- c(colnames(dX), local_params)
+        } else {
+          myderivs <- term11
+          outer_pars <- colnames(dX)
+        }
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 3: dX = NULL, dP ≠ NULL → parameter-only derivatives
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂p_b)(∂p_b/∂θ_k)
+      if (is.null(dX) && !is.null(dP)) {
+        myderivs <- einsum::einsum("jbi,bk->ijk", dGdP, dPsub)
+        outer_pars <- colnames(dP)
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 4: dX = NULL, dP = NULL → purely algebraic observables
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = ∂g_j/∂p_b  (direct dependence on local parameters)
+      if (is.null(dX) && is.null(dP)) {
+        myderivs <- aperm(dGdP, c(3, 1, 2))
+        outer_pars <- obsParams
+      }
+      
+      # --- Assign dimension names and optionally attach inputs ---
+      if (!is.null(myderivs))
+        dimnames(myderivs) <- list(NULL, observables, outer_pars)
+      
+      if (attach.input && !is.null(myderivs) && !is.null(dX))
+        myderivs <- abind::abind(myderivs, dX, along = 2)
+      
+    } else if (deriv && deriv2) {
+      
+      # --- Direct first and second derivatives from g ---
+      # dGdX[j,a,i] = ∂g_j/∂x_a,   dGdP[j,b,i] = ∂g_j/∂p_b
+      # dG2dX2[j,a,b,i] = ∂²g_j/∂x_a∂x_b,   dG2dXdP[j,a,b,i] = ∂²g_j/∂x_a∂p_b
+      # dG2dPdX[j,b,a,i] = ∂²g_j/∂p_b∂x_a,  dG2dP2[j,b,c,i] = ∂²g_j/∂p_b∂p_c
+      dGdX <- outEval$jacobian[, obsStates, , drop = FALSE]
+      dGdP <- outEval$jacobian[, obsParams, , drop = FALSE]
+      dG2dX2  <- outEval$hessian[, obsStates,  obsStates,  , drop = FALSE]
+      dG2dXdP <- outEval$hessian[, obsStates,  obsParams, , drop = FALSE]
+      dG2dPdX <- outEval$hessian[, obsParams, obsStates,  , drop = FALSE]
+      dG2dP2  <- outEval$hessian[, obsParams, obsParams, , drop = FALSE]
+      
+      # dX[i,a,k] = ∂x_a/∂θ_k,   dP[b,k] = ∂p_b/∂θ_k
+      # dX2[i,a,k,l] = ∂²x_a/∂θ_k∂θ_l,   dP2[b,k,l] = ∂²p_b/∂θ_k∂θ_l
+      dX  <- attr(out,  "deriv")
+      dP  <- attr(pars, "deriv")
+      dX2 <- attr(out,  "deriv2")
+      dP2 <- attr(pars, "deriv2")
+      
+      if (!is.null(dX))  dXsub  <- dX[,  obsStates, , drop = FALSE]
+      if (!is.null(dX2)) dX2sub <- dX2[, obsStates, , , drop = FALSE]
+      if (!is.null(dP))  dPsub  <- dP[obsParams, , drop = FALSE]
+      if (!is.null(dP2)) dP2sub <- dP2[obsParams, , , drop = FALSE]
+      
+      # ---------------------------------------------------------------------
+      # CASE 1: dX ≠ NULL, dP ≠ NULL → full chain rule
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + (∂g_j/∂p_b)(∂p_b/∂θ_k)
+      # ∂²g_j/∂θ_k∂θ_l = (1)+(2)+(3)+(4)+(5)+(6)
+      if (!is.null(dX) && !is.null(dP)) {
+        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        term12 <- einsum::einsum("jbi,bk->ijk",  dGdP, dPsub)
+        myderivs <- term11 + term12
+        outer_pars <- colnames(dP)
+        
+        term21 <- einsum::einsum("jabi,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
+        term22 <- einsum::einsum("jabi,iak,bl->ijkl",  dG2dXdP, dXsub, dPsub)
+        term23 <- einsum::einsum("jbai,bk,ial->ijkl",  dG2dPdX, dPsub, dXsub)
+        term24 <- einsum::einsum("jbci,bk,cl->ijkl",   dG2dP2,  dPsub, dPsub)
+        term25 <- einsum::einsum("jai,iakl->ijkl",     dGdX,    dX2sub)
+        term26 <- einsum::einsum("jbi,bkl->ijkl",      dGdP,    dP2sub)
+        
+        myderivs2 <- Reduce(`+`, list(term21, term22, term23, term24, term25, term26))
+        outer_pars2 <- outer_pars
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 2: dX ≠ NULL, dP = NULL → dynamic + local observation parameters
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + ∂g_j/∂p_local
+      # ∂²g_j/∂θ_k∂θ_l = block Hessian [dyn θ | local obs-θ]
+      if (!is.null(dX) && is.null(dP)) {
+        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        dyn_params   <- colnames(dX)
+        local_params <- setdiff(obsParams, dyn_params)
+        
+        if (length(local_params) > 0) {
+          term12 <- aperm(dGdP[, local_params, , drop = FALSE], c(3,1,2))
+          myderivs <- abind::abind(term11, term12, along = 3)
+          outer_pars <- c(dyn_params, local_params)
+        } else {
+          myderivs <- term11
+          outer_pars <- dyn_params
+        }
+        
+        n_i <- dim(dGdX)[3]; n_j <- length(observables)
+        Kx <- length(dyn_params); Kl <- length(local_params); Ktot <- Kx + Kl
+        myderivs2 <- array(0, dim = c(n_i, n_j, Ktot, Ktot))
+        
+        # xx-block: (1)+(5)
+        term21 <- einsum::einsum("jabi,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
+        term25 <- einsum::einsum("jai,iakl->ijkl",     dGdX,    dX2sub)
+        myderivs2[, , 1:Kx, 1:Kx] <- term21 + term25
+        
+        # x–p_local, p_local–x, p_local–p_local
+        if (Kl > 0) {
+          myderivs2[, , 1:Kx, Kx+seq_len(Kl)] <- einsum::einsum("jabi,iak->ijkb",
+                                                                dG2dXdP[, obsStates, local_params, , drop = FALSE], dXsub)
+          myderivs2[, , Kx+seq_len(Kl), 1:Kx] <- einsum::einsum("jbai,ial->ijbl",
+                                                                dG2dPdX[, local_params, obsStates, , drop = FALSE], dXsub)
+          myderivs2[, , Kx+seq_len(Kl), Kx+seq_len(Kl)] <-
+            aperm(dG2dP2[, local_params, local_params, , drop = FALSE], c(4,1,2,3))
+        }
+        outer_pars2 <- outer_pars
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 3: dX = NULL, dP ≠ NULL → parameter-only derivatives
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = (∂g_j/∂p_b)(∂p_b/∂θ_k)
+      # ∂²g_j/∂θ_k∂θ_l = (4)+(6)
+      if (is.null(dX) && !is.null(dP)) {
+        myderivs <- einsum::einsum("jbi,bk->ijk", dGdP, dPsub)
+        outer_pars <- colnames(dP)
+        term24 <- einsum::einsum("jbci,bk,cl->ijkl", dG2dP2, dPsub, dPsub)
+        term26 <- einsum::einsum("jbi,bkl->ijkl",    dGdP,   dP2sub)
+        myderivs2 <- term24 + term26
+        outer_pars2 <- outer_pars
+      }
+      
+      # ---------------------------------------------------------------------
+      # CASE 4: dX = NULL, dP = NULL → purely algebraic observables
+      # ---------------------------------------------------------------------
+      # ∂g_j/∂θ_k = ∂g_j/∂p_local,  ∂²g_j/∂θ_k∂θ_l = ∂²g_j/∂p_b∂p_c
+      if (is.null(dX) && is.null(dP)) {
+        myderivs  <- aperm(dGdP, c(3,1,2))
+        myderivs2 <- aperm(dG2dP2, c(4,1,2,3))
+        outer_pars <- obsParams
+        outer_pars2 <- obsParams
+      }
+      
+      # --- Assign dimension names and optionally attach inputs ---
+      if (!is.null(myderivs))
+        dimnames(myderivs) <- list(NULL, observables, outer_pars)
+      if (!is.null(myderivs2))
+        dimnames(myderivs2) <- list(NULL, observables, outer_pars2, outer_pars2)
+      
+      if (attach.input && !is.null(dX) && !is.null(myderivs)) {
+        myderivs <- abind::abind(myderivs, dX, along = 2)
+        if (!is.null(myderivs2) && !is.null(dX2))
+          myderivs2 <- abind::abind(myderivs2, dX2, along = 2)
+      }
     }
     
-    
-    # Parameter transformation
-    dP <- attr(pars, "deriv")
-    if (!is.null(dP) & !is.null(dout) & deriv) {
-      
-      parameters.all <- c(states.est, pars.est)
-      parameters.missing <- parameters.all[!parameters.all %in% rownames(dP)]
-      
-      if (length(parameters.missing) > 0 & warnings)
-        warning("Parameters ", paste(parameters.missing, collapse = ", ", "are missing in the Jacobian of the parameter transformation. Zeros are introduced."))
-      
-      dP.full <- matrix(0, nrow = length(parameters.all), ncol = ncol(dP), dimnames = list(parameters.all, colnames(dP)))
-      dP.full[intersect(rownames(dP), parameters.all),] <- dP[intersect(rownames(dP), parameters.all),]
-
-      # Multiplication with tangent map
-      sensLong <- matrix(dvalues, nrow = nrow(out)*length(observables))
-      sensLong <- sensLong %*% dP.full
-      dvalues <- matrix(sensLong, nrow = dim(out)[1])
-      
-      # Naming
-      sensGrid <- expand.grid.alt(observables, colnames(dP.full))
-      sensNames <- paste(sensGrid[,1], sensGrid[,2], sep = ".")
-      colnames(dvalues) <- sensNames
-      
-    }
-    
-    
-    
-    # Format output
-    values <- cbind(time = out[,"time"], values)
-    if (attach.input)
-      values <- cbind(values, submatrix(out, cols = -1))
-    
-    
-    myderivs <- myparameters <- NULL
-    if (!is.null(dout) & deriv & !attach.input) {
-      myderivs <- cbind(time = out[,"time"], dvalues)
-      if (is.null(dP)) myparameters <- names(pars) else myparameters <- colnames(dP)
-    }
-    if (!is.null(dout) & deriv & attach.input) {
-      myderivs <- cbind(time = out[,"time"], dvalues, submatrix(attr(out, "deriv"), cols = -1))
-      if (is.null(dP)) myparameters <- names(pars) else myparameters <- colnames(dP)
-    }
-    
-    
-    # Output 
-    prdframe(prediction = values, deriv = myderivs, sensitivities = sensitivities.export, parameters = pars) 
-    
-    
-    
+    # --- Return predictions and sensitivities ---------------------------
+    prdframe(prediction = values, deriv = myderivs, deriv2 = myderivs2, parameters = pars)
   }
   
-  attr(X2Y, "equations") <- g
+  # --- Attach metadata --------------------------------------------------
+  attr(X2Y, "equations")  <- as.eqnvec(g)
   attr(X2Y, "parameters") <- parameters
-  attr(X2Y, "states") <- states
-  attr(X2Y, "modelname") <- modelname
+  attr(X2Y, "states")     <- states
+  attr(X2Y, "modelname")  <- modelname
   
   obsfn(X2Y, parameters, condition)
-  
 }
+
+
 
 #' Generate a prediction function that returns times
 #' 

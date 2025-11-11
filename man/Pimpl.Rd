@@ -5,7 +5,7 @@
 \title{Parameter transformation (implicit)}
 \usage{
 Pimpl(
-  trafo,
+  x,
   parameters = NULL,
   deriv = TRUE,
   deriv2 = FALSE,
@@ -21,7 +21,7 @@ Pimpl(
 )
 }
 \arguments{
-\item{trafo}{Residual system as an \code{eqnvec} defining
+\item{x}{An \code{eqnvec} defining
 \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0},
 or an \code{eqnlist} specifying an ODE model in stoichiometric form.}
 
@@ -58,7 +58,7 @@ Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
 }
 \value{
 A function
-\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
 that returns the steady-state parameter vector with attached attributes
 \code{"deriv"} (Jacobian) and \code{"deriv2"} (Hessian, if requested).
 }

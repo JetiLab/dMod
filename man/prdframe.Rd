@@ -4,14 +4,7 @@
 \alias{prdframe}
 \title{Prediction frame}
 \usage{
-prdframe(
-  prediction = NULL,
-  deriv = NULL,
-  deriv2 = NULL,
-  sensitivities = NULL,
-  sensitivities2 = NULL,
-  parameters = NULL
-)
+prdframe(prediction = NULL, deriv = NULL, deriv2 = NULL, parameters = NULL)
 }
 \arguments{
 \item{prediction}{Numeric matrix of model predictions.}
@@ -19,10 +12,6 @@ prdframe(
 \item{deriv}{3D numeric array of first-order sensitivities with respect to outer parameters.}
 
 \item{deriv2}{4D numeric array of second-order sensitivities with respect to outer parameters.}
-
-\item{sensitivities}{3D numeric array of first-order sensitivities with respect to inner parameters.}
-
-\item{sensitivities2}{4D numeric array of second-order sensitivities with respect to inner parameters.}
 
 \item{parameters}{Named numeric vector of the inner parameters used for the prediction.}
 }
@@ -37,13 +26,8 @@ The object carries several attributes containing sensitivities and parameter inf
 \itemize{
 \item \code{"deriv"} – 3D array of first-order sensitivities with respect to outer parameters
 (see \link{P}); dimensions: \verb{(time, state, outer parameter)}
-\item \code{"sensitivities"} – 3D array of first-order sensitivities with respect to inner parameters
-(the model parameters, i.e. the left-hand side of the parameter transformation);
-dimensions: \verb{(time, state, inner parameter)}
 \item \code{"deriv2"} – 4D array of second-order sensitivities with respect to outer parameters;
 dimensions: \verb{(time, state, outer parameter, outer parameter)}
-\item \code{"sensitivities2"} – 4D array of second-order sensitivities with respect to inner parameters;
-dimensions: \verb{(time, state, inner parameter, inner parameter)}
 \item \code{"parameters"} – vector of the inner parameters used to generate the prediction
 }
 
