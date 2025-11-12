@@ -234,7 +234,7 @@ Pexpl <- function(trafo,
   # Build compiled (or fallback R) evaluator for transformation
   # ---------------------------------------------------------------------------
   PEval <- CppODE::funCpp(
-    x          = trafo,
+    unclass(trafo),
     variables  = NULL,
     parameters = parameters,
     fixed      = fixed,
@@ -664,16 +664,16 @@ Pimpl <- function(x,
     modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
   FEval <- CppODE::funCpp(
-    x          = as.eqnvec(trafo[dep_st]),
+    as.eqnvec(trafo[dep_st]),
     variables  = NULL,
-    parameters = c(states, nonstates),                # fixed order: states, then nonstates
+    parameters = c(states, nonstates),
     fixed      = NULL,
     compile    = compile,
     modelname  = modelname,
     verbose    = verbose,
     convenient = FALSE,
-    deriv      = isTRUE(deriv) || isTRUE(deriv2),     # need Jacobian if either requested
-    deriv2     = isTRUE(deriv2)                       # Hessian only if requested
+    deriv      = isTRUE(deriv) || isTRUE(deriv2),
+    deriv2     = isTRUE(deriv2)
   )
   
   # RootSolve default options (merged with user list)
@@ -928,15 +928,29 @@ Pimpl <- function(x,
     # --- dimension names for derivatives ---
     if (deriv && !is.null(myderiv)) {
       rownames(myderiv) <- names(out_vec)
-      colnames(myderiv) <- colnames(dP)
+      if (!is.null(dP)) {
+        colnames(myderiv) <- colnames(dP)
+      } else {
+        colnames(myderiv) <- cols_nonfixed
+      }
     }
+    
     if (deriv2 && !is.null(myderiv2)) {
-      dimnames(myderiv2) <- list(
-        names(out_vec),
-        colnames(dP),
-        colnames(dP)
-      )
+      if (!is.null(dP)) {
+        dimnames(myderiv2) <- list(
+          names(out_vec),
+          colnames(dP),
+          colnames(dP)
+        )
+      } else {
+        dimnames(myderiv2) <- list(
+          names(out_vec),
+          cols_nonfixed,
+          cols_nonfixed
+        )
+      }
     }
+    
     
     # Build final parvec
     res <- as.parvec(out_vec,

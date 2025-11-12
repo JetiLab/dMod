@@ -12,39 +12,35 @@ set.seed(5555)
 # Define via reactions
 
 reactions <- eqnlist() %>%
-  addReaction("TCA_buffer", "TCA_cell",  rate = "import*TCA_buffer", description = "Uptake") %>%
-  addReaction("TCA_cell", "TCA_buffer",  rate = "export_sinus*TCA_cell", description = "Sinusoidal export") %>%
-  addReaction("TCA_cell", "TCA_cana",    rate = "export_cana*TCA_cell", description = "Canalicular export") %>%
-  addReaction("TCA_cana", "TCA_buffer",  rate = "reflux*TCA_cana", description = "Reflux into the buffer")
+  addReaction("TCA_buffer", "TCA_cell",  rate = "k_import*TCA_buffer", description = "Uptake") %>%
+  addReaction("TCA_cell", "TCA_buffer",  rate = "k_export_sinus*TCA_cell", description = "Sinusoidal export") %>%
+  addReaction("TCA_cell", "TCA_cana",    rate = "k_export_cana*TCA_cell", description = "Canalicular export") %>%
+  addReaction("TCA_cana", "TCA_buffer",  rate = "k_reflux*TCA_cana", description = "Reflux into the buffer")
 
 # Define via ODE system (equivalent)
 
-# f <- eqnvec(TCA_buffer = "-import * TCA_buffer + export_sinus * TCA_cell + reflux * TCA_cana",
-#             TCA_cana = "export_cana * TCA_cell - reflux * TCA_cana",
-#             TCA_cell = "import * TCA_buffer - export_sinus * TCA_cell - export_cana * TCA_cell")
+# f <- eqnvec(TCA_buffer = "-k_import * TCA_buffer + k_export_sinus * TCA_cell + k_reflux * TCA_cana",
+#             TCA_cana = "k_export_cana * TCA_cell - k_reflux * TCA_cana",
+#             TCA_cell = "k_import * TCA_buffer - k_export_sinus * TCA_cell - k_export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = T, solver = "boost")
-
-
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
 # Generate trajectories for the default condition
 x <- Xs(mymodel, condition = NULL)
 
 
 # For demonstration define parameters (initials and dynamic parameters)
-pars <- c(reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, import_ = 0.2, export_sinus = 0.2, export_cana = 0.04)
+pars <- c(k_reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, k_import = 0.2, k_export_sinus = 0.2, k_export_cana = 0.04)
 
 
 # Plot trjectories
-times <- seq(0, 50, 0.01) 
+times <- seq(0, 50, by = 0.1) 
 out <- x(times, pars)
 plot(out) # Note this is a ggplot object
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = TRUE, modelname = "obsfn")
-
-
+g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn", attach.input = F)
 
 ## Simulate data -------------------------------------------------------------------------------------------------------------
 
@@ -58,14 +54,13 @@ pars["s"] <- 1e3
 # Evaluate the expression separately
 out <- (g * x)(times, pars, conditions = "closed")
 plot(out)
-
-
-
+getDerivs(out) %>% plot()
 
 
 # simulate data for time points
 timesD <- c(0.1, 1, 3, 7, 11, 15, 20, 41)
-datasheet <- subset(as.data.frame(out), time %in% timesD & name %in% names(observables))
+outD <- (g * x)(timesD, pars, conditions = "closed")
+datasheet <- subset(as.data.frame(outD), time %in% timesD & name %in% names(observables))
 datasheet <- within(datasheet, {
   sigma <- 0.1*value
   value <- rnorm(length(value), value, sigma)
@@ -74,30 +69,33 @@ data <- as.datalist(datasheet)
 plot(out, data)
 
 
+resids <- res(data$closed, out$closed)
+
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
-innerpars <- getParameters(x)
-trafo <- NULL %>% 
+innerpars <- getParameters(x,g)
+trafo <- NULL %>%
   define("x~x", x = innerpars) %>% # identity
-  define("TCA_buffer~0") %>% 
-  insert("x~exp(log(10)*y)", x = .currentSymbols, y = toupper(.currentSymbols))
+  define("TCA_buffer~0") %>%
+  insert("x~10*y", x = .currentSymbols, y = toupper(.currentSymbols))
 
 
 # # Explicit trafo
-# trafo <- eqnvec(TCA_buffer = "0", 
-#                 TCA_cell = "exp(log(10)*TCA_cell)",
-#                 TCA_cana = "exp(log(10)*TCA_cana)", 
-#                 import = "exp(log(10)*import)",
-#                 export_sinus = "exp(log(10)*export_sinus)", 
-#                 export_cana = "exp(log(10)*export_cana)",
-#                 reflux = "exp(log(10)*reflux)", 
-#                 s = "exp(log(10)*s)")
+trafo <- eqnvec(TCA_buffer = "0",
+                TCA_cell = "exp(log(10)*TCA_cell)",
+                TCA_cana = "exp(log(10)*TCA_cana)",
+                k_import = "exp(log(10)*k_import)",
+                k_export_sinus = "exp(log(10)*k_export_sinus)",
+                k_export_cana = "exp(log(10)*k_export_cana)",
+                k_reflux = "exp(log(10)*k_reflux)",
+                s = "exp(log(10)*s)")
 
-
-p <- P(trafo, condition = "closed")
+# debugonce("Pexpl")
+p <- P(unclass(trafo), condition = "closed", compile = F)
 # Set every parameter to -1 in the log-space
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*p)(times, pouter),data)
+
 
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------

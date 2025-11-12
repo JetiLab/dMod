@@ -28,11 +28,12 @@ x <- odemodel(reactions, events = events, compile = F, deriv2 = T, solver = "boo
      optionsSens = myopts,
      optionsSens2 = myopts)
 
+# debugonce(Pimpl)
 p.SS <- P(reactions, attach.input = T, deriv2 = T, compile = F)
 pouter <- c(k_p = 0.3, k1 = 0.1, k2 = 0.2, k_d = 0.4, dose = 1)
-p.SS(pouter, deriv2 = T)
+p.SS(pouter)
 
-p.SS(pouter, deriv2 = T) %>% getDerivs()
+p.SS(pouter) %>% getDerivs()
 
 
 observables <- eqnvec(

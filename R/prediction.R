@@ -721,7 +721,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
   
   # --- Compile evaluator for g (value, Jacobian, Hessian) ---
   gEval <- CppODE::funCpp(
-    x          = g,
+    g,
     variables  = obsStates,
     parameters = obsParams,
     compile    = compile,
@@ -754,9 +754,8 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     values <- cbind(time = out[,"time"], outEval$out)
     if (attach.input) values <- cbind(values, submatrix(out, cols = -1))
     
-    myderivs <- myderivs2 <- NULL
-    
     # --- Compute first and second derivatives ---
+    myderivs <- myderivs2 <- NULL
     if (deriv && !deriv2) {
       
       # --- Direct first derivatives from g ---
@@ -772,7 +771,6 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       if (!is.null(dX)) dXsub <- dX[, obsStates, , drop = FALSE]
       if (!is.null(dP)) dPsub <- dP[obsParams, , drop = FALSE]
       
-      myderivs <- NULL
       outer_pars <- character(0)
       
       # ---------------------------------------------------------------------
@@ -792,16 +790,16 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + ∂g_j/∂p_local
       if (!is.null(dX) && is.null(dP)) {
         term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
-        dyn_params   <- intersect(obsParams, colnames(dX))
+        dyn_params   <- intersect(obsParams, dimnames(dX)[[3]])
         local_params <- setdiff(obsParams, dyn_params)
         
         if (length(local_params) > 0) {
           term12 <- aperm(dGdP[, local_params, , drop = FALSE], c(3, 1, 2))
           myderivs <- abind::abind(term11, term12, along = 3)
-          outer_pars <- c(colnames(dX), local_params)
+          outer_pars <- c(dimnames(dX)[[3]], local_params)
         } else {
           myderivs <- term11
-          outer_pars <- colnames(dX)
+          outer_pars <- dimnames(dX)[[3]]
         }
       }
       
@@ -827,8 +825,24 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       if (!is.null(myderivs))
         dimnames(myderivs) <- list(NULL, observables, outer_pars)
       
-      if (attach.input && !is.null(myderivs) && !is.null(dX))
+      if (attach.input && !is.null(myderivs) && !is.null(dX)) {
+        # Extract and align parameter names
+        dyn_params <- dimnames(dX)[[3]]
+        all_params <- outer_pars
+        
+        # Pad dX with zeros if myderivs has extra (local) parameters
+        if (length(extra <- setdiff(all_params, dyn_params)) > 0) {
+          pad <- array(0, dim = c(dim(dX)[1:2], length(extra)),
+                       dimnames = list(NULL, NULL, extra))
+          dX <- abind::abind(dX, pad, along = 3)
+        }
+        
+        # Reorder parameters to match myderivs
+        dX <- dX[, , all_params, drop = FALSE]
+        
+        # Combine along observable/state dimension
         myderivs <- abind::abind(myderivs, dX, along = 2)
+      }
       
     } else if (deriv && deriv2) {
       
@@ -854,6 +868,8 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       if (!is.null(dX2)) dX2sub <- dX2[, obsStates, , , drop = FALSE]
       if (!is.null(dP))  dPsub  <- dP[obsParams, , drop = FALSE]
       if (!is.null(dP2)) dP2sub <- dP2[obsParams, , , drop = FALSE]
+      
+      outer_pars <- character(0)
       
       # ---------------------------------------------------------------------
       # CASE 1: dX ≠ NULL, dP ≠ NULL → full chain rule
@@ -884,7 +900,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ∂²g_j/∂θ_k∂θ_l = block Hessian [dyn θ | local obs-θ]
       if (!is.null(dX) && is.null(dP)) {
         term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
-        dyn_params   <- colnames(dX)
+        dyn_params   <- dimnames(dX)[[3]]
         local_params <- setdiff(obsParams, dyn_params)
         
         if (length(local_params) > 0) {
@@ -949,9 +965,39 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
         dimnames(myderivs2) <- list(NULL, observables, outer_pars2, outer_pars2)
       
       if (attach.input && !is.null(dX) && !is.null(myderivs)) {
+        # Extract dynamic and total parameter names
+        dyn_params <- dimnames(dX)[[3]]
+        all_params <- outer_pars
+        
+        # Pad dX with zeros if local parameters are missing
+        if (length(extra <- setdiff(all_params, dyn_params)) > 0) {
+          pad <- array(0, dim = c(dim(dX)[1:2], length(extra)),
+                       dimnames = list(NULL, NULL, extra))
+          dX <- abind::abind(dX, pad, along = 3)
+        }
+        # Align parameter order
+        dX <- dX[, , all_params, drop = FALSE]
+        
+        # Concatenate first derivatives (along observable/state dimension)
         myderivs <- abind::abind(myderivs, dX, along = 2)
-        if (!is.null(myderivs2) && !is.null(dX2))
+        
+        # --- Handle second-order derivatives in the same way ---
+        if (!is.null(myderivs2) && !is.null(dX2)) {
+          dyn_params2 <- dimnames(dX2)[[3]]
+          all_params2 <- outer_pars2
+          
+          # Pad missing parameter dimensions with zeros
+          if (length(extra2 <- setdiff(all_params2, dyn_params2)) > 0) {
+            pad2 <- array(0, dim = c(dim(dX2)[1:2], length(extra2), length(extra2)),
+                          dimnames = list(NULL, NULL, extra2, extra2))
+            dX2 <- abind::abind(dX2, pad2, along = 3)
+          }
+          # Align parameter order for 3rd/4th dimensions
+          dX2 <- dX2[, , all_params2, all_params2, drop = FALSE]
+          
+          # Concatenate second derivatives (along observable/state dimension)
           myderivs2 <- abind::abind(myderivs2, dX2, along = 2)
+        }
       }
     }
     

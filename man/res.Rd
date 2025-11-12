@@ -2,30 +2,20 @@
 % Please edit documentation in R/data.R
 \name{res}
 \alias{res}
-\title{Compare data and model prediction by computing residuals}
+\title{Compute residuals}
 \usage{
 res(data, out, err = NULL)
 }
 \arguments{
-\item{data}{data.frame with name (factor), time (numeric), value (numeric) and sigma (numeric)}
+\item{data}{Data frame with columns time, name, value, sigma, lloq}
 
-\item{out}{output of ode(), optionally augmented with attributes
-"deriv" (output of ode() for the sensitivity equations) and
-"parameters" (character vector of parameter names, a subsest of those
-contained in the sensitivity equations). If "deriv" is given, also "parameters"
-needs to be given.}
+\item{out}{Numeric matrix with predictions (first column = time)}
 
-\item{err}{output of the error model function}
+\item{err}{Optional error model predictions}
 }
 \value{
-data.frame with the original data augmented by columns "prediction" (
-numeric, the model prediction), "residual" (numeric, difference between
-prediction and data value), "weighted.residual" (numeric, residual devided
-by sigma). If "deriv" was given, the returned data.frame has an
-attribute "deriv" (data.frame with the derivatives of the residuals with
-respect to the parameters).
+Object of class objframe with data and derivatives
 }
 \description{
-When sigma is given in the data, it always has priority over the sigma in the error model
+Compute residuals
 }
-\concept{dMod interface}

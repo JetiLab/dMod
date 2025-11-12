@@ -562,6 +562,30 @@ unique.parframe <- function(x, incomparables = FALSE, tol = 1, ...) {
 
 #' Dispatch as.parvec.
 #'
+#' Creates an object of class `parvec`, optionally carrying first- and
+#' second-order derivatives. No automatic identity or zero derivatives are
+#' created.
+#'
+#' @param x Numeric vector of parameter values.
+#' @param names Optional character vector of parameter names.
+#' @param deriv Optional Jacobian matrix (first derivatives), `FALSE` to drop,
+#'   or `NULL` to inherit if present attribute 'deriv'.
+#' @param deriv2 Optional Hessian array (second derivatives), `FALSE` to drop,
+#'   or `NULL` to inherit if present atribute 'deriv2'.
+#'
+#' @return
+#' A numeric vector of class `"parvec"` with optional attributes:
+#' \itemize{
+#'   \item `attr(x, "deriv")`  — Jacobian matrix, or `NULL`
+#'   \item `attr(x, "deriv2")` — Hessian tensor, or `NULL`
+#' }
+#'
+#' @details
+#' If `deriv = FALSE` or `deriv2 = FALSE`, the respective attributes are
+#' forcibly removed, even if they exist in the input `x`.
+#' If `deriv = NULL` or `deriv2 = NULL`, existing attributes are inherited
+#' (if present), but nothing is created automatically.
+#'
 #' @export
 #' @rdname parvec
 as.parvec <- function(x, ...) {
@@ -569,80 +593,41 @@ as.parvec <- function(x, ...) {
 }
 
 
-#' Parameter vector (with optional first- and second-order derivatives)
-#'
-#' Creates an object of class `parvec`, storing parameter values together with
-#' their first (`deriv`) and second (`deriv2`) derivatives.
-#'
-#' @param x Numeric vector of parameter values.
-#' @param names Optional character vector of parameter names.
-#' @param deriv Either a logical flag, a Jacobian matrix, or `NULL`.
-#'   * If `FALSE`, no Jacobian is stored (attribute set to `NULL`).
-#'   * If `NULL`, an identity matrix is assumed.
-#'   * If a matrix, it is used as-is (no missing entries are filled).
-#' @param deriv2 Either a logical flag, a 3D array, or `NULL`.
-#'   * If `FALSE`, no Hessian is stored (attribute set to `NULL`).
-#'   * If `NULL`, a zero tensor is assumed.
-#'   * If an array, it is used as-is (no missing entries are filled).
-#'
-#' @return An object of class `"parvec"`, i.e. a named numeric vector with attributes:
-#' \itemize{
-#'   \item `attr(x, "deriv")` — Jacobian matrix (or `NULL`)
-#'   \item `attr(x, "deriv2")` — Hessian tensor (or `NULL`)
-#' }
-#'
-#' @details
-#' The function does not attempt to reconcile or complete partially specified
-#' Jacobians or Hessians. If custom derivative objects are provided, they are
-#' attached exactly as given. Only when `deriv = NULL` or `deriv2 = NULL` are
-#' default identity and zero structures created, respectively.
-#'
 #' @export
+#' @rdname parvec
 as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...) {
   
-  # --- Base vector and naming ---
+  # --- Basic setup ---
   p <- as.numeric(x)
   if (is.null(names)) names(p) <- names(x) else names(p) <- names
-  n <- length(p)
   pnames <- names(p)
   
-  # === Handle Jacobian (first derivatives) ===
+  # --- First derivatives ---
   if (isFALSE(deriv)) {
     full_deriv <- NULL
-  } else {
-    if (is.null(deriv)) deriv <- attr(x, "deriv", exact = TRUE)
-    if (is.null(deriv)) {
-      # default identity
-      full_deriv <- diag(n)
-      dimnames(full_deriv) <- list(pnames, pnames)
-    } else {
-      # use provided matrix as-is
-      full_deriv <- deriv
-    }
+  } else if (is.matrix(deriv)) {
+    full_deriv <- deriv
+  } else { # deriv == NULL
+    full_deriv <- attr(x, "deriv", exact = TRUE)
   }
   
-  # === Handle Hessian (second derivatives) ===
+  # --- Second derivatives ---
   if (isFALSE(deriv2)) {
     full_deriv2 <- NULL
-  } else {
-    if (is.null(deriv2)) deriv2 <- attr(x, "deriv2", exact = TRUE)
-    if (is.null(deriv2)) {
-      # default zero tensor
-      full_deriv2 <- array(0, dim = c(n, n, n),
-                           dimnames = list(pnames, pnames, pnames))
-    } else {
-      # use provided array as-is
-      full_deriv2 <- deriv2
-    }
+  } else if (is.array(deriv2)) {
+    full_deriv2 <- deriv2
+  } else { # deriv2 == NULL
+    full_deriv2 <- attr(x, "deriv2", exact = TRUE)
   }
   
-  # === Assemble final object ===
+  # --- Assemble object ---
   attr(p, "deriv")  <- full_deriv
   attr(p, "deriv2") <- full_deriv2
   class(p) <- c("parvec", "numeric")
-  
-  return(p)
+  p
 }
+
+
 
 
 
