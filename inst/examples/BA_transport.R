@@ -24,9 +24,10 @@ reactions <- eqnlist() %>%
 #             TCA_cell = "k_import * TCA_buffer - k_export_sinus * TCA_cell - k_export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = F, deriv2 = T, solver = "boost")
 # Generate trajectories for the default condition
 x <- Xs(mymodel, condition = NULL)
+compile(x, cores = 3)
 
 
 # For demonstration define parameters (initials and dynamic parameters)
@@ -34,14 +35,13 @@ pars <- c(k_reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0, k_import =
 
 
 # Plot trjectories
-times <- seq(0, 50, by = 0.1) 
+times <- seq(0, 50, len = 300) 
 out <- x(times, pars)
 plot(out) # Note this is a ggplot object
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn", attach.input = F)
-
+g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn_small", attach.input = F)
 ## Simulate data -------------------------------------------------------------------------------------------------------------
 
 # Fix parameters to steady state values (calculated on paper / by hand), replace buffer -> TCA_buffer = 0
@@ -52,10 +52,8 @@ pars["s"] <- 1e3
 
 # Simulate trajectories 
 # Evaluate the expression separately
-out <- (g * x)(times, pars, conditions = "closed")
+out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
 plot(out)
-getDerivs(out) %>% plot()
-
 
 # simulate data for time points
 timesD <- c(0.1, 1, 3, 7, 11, 15, 20, 41)
@@ -68,8 +66,19 @@ datasheet <- within(datasheet, {
 data <- as.datalist(datasheet)
 plot(out, data)
 
+out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
+getDerivs(out) %>% plot()
 
 resids <- res(data$closed, out$closed)
+
+resids.deriv <- attr(resids, "deriv")
+resids.deriv
+
+dim(attr(out$closed, "deriv"))
+dimnames(attr(out$closed, "deriv"))[[2]]  # Die Variablennamen
+
+resids.deriv2 <- attr(resids, "deriv2")
+resids.deriv2[1,,]
 
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
 innerpars <- getParameters(x,g)

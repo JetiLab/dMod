@@ -6,7 +6,7 @@
 #' @param data DataFrame with columns: time, name, value, sigma, lloq
 #' @param out NumericMatrix with predictions (first column = time)
 #' @param err Nullable NumericMatrix with error model predictions
-#' @return List with data and derivatives (3D/4D arrays)
+#' @return List with data and derivatives as 2D/3D arrays
 #' @export
 res_cpp <- function(data, out, err = NULL) {
     .Call(`_dMod_res_cpp`, data, out, err)

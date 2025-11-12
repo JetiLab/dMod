@@ -14,7 +14,7 @@ res_cpp(data, out, err = NULL)
 \item{err}{Nullable NumericMatrix with error model predictions}
 }
 \value{
-List with data and derivatives (3D/4D arrays)
+List with data and derivatives as 2D/3D arrays
 }
 \description{
 Compute residuals (Rcpp implementation)

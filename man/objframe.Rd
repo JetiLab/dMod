@@ -15,13 +15,13 @@ objframe(
 \arguments{
 \item{mydata}{Data frame produced by \link{res}.}
 
-\item{deriv}{3D numeric array of first-order derivatives of residuals (∂r/∂θ).}
+\item{deriv}{numeric matrix of first-order derivatives of residuals (∂ri/∂θ).}
 
-\item{deriv2}{4D numeric array of second-order derivatives of residuals (∂²r/∂θ∂θ).}
+\item{deriv2}{3D numeric array of second-order derivatives of residuals (∂²r/∂²θ).}
 
-\item{deriv.err}{3D numeric array of first-order derivatives of the error model (∂σ/∂θ).}
+\item{deriv.err}{numeric matrix of first-order derivatives of the error model (∂σ/∂θ).}
 
-\item{deriv2.err}{4D numeric array of second-order derivatives of the error model (∂²σ/∂θ∂θ).}
+\item{deriv2.err}{3D numeric array of second-order derivatives of the error model (∂²σ/∂²θ).}
 }
 \value{
 An object of class \code{"objframe"} (data.frame) with attributes \code{"deriv"}, \code{"deriv2"},

@@ -6,34 +6,34 @@ using namespace Rcpp;
 //' @param data DataFrame with columns: time, name, value, sigma, lloq
 //' @param out NumericMatrix with predictions (first column = time)
 //' @param err Nullable NumericMatrix with error model predictions
-//' @return List with data and derivatives (3D/4D arrays)
+//' @return List with data and derivatives as 2D/3D arrays
 //' @export
 // [[Rcpp::export]]
 List res_cpp(DataFrame data, 
-             NumericMatrix out,
-             Nullable<NumericMatrix> err = R_NilValue) {
+            NumericMatrix out,
+            Nullable<NumericMatrix> err = R_NilValue) {
  
-  // Extract data columns
-  NumericVector data_time = data["time"];
-  CharacterVector data_name = data["name"];
-  NumericVector data_value = data["value"];
-  NumericVector data_sigma = data["sigma"];
-  NumericVector data_lloq = data["lloq"];
-  int n_data = data_time.size();
-  
-  // Get unique times and names
-  NumericVector times = clone(data_time);
-  times = sort_unique(times);
-  CharacterVector names = unique(data_name);
-  
-  // Get out column names
-  CharacterVector out_colnames = colnames(out);
-  
-  // Match data to unique times/names
-  IntegerVector data_time_idx(n_data);
-  IntegerVector data_name_idx(n_data);
-  
-  for (int i = 0; i < n_data; i++) {
+ // Extract data columns
+ NumericVector data_time = data["time"];
+ CharacterVector data_name = data["name"];
+ NumericVector data_value = data["value"];
+ NumericVector data_sigma = data["sigma"];
+ NumericVector data_lloq = data["lloq"];
+ int n_data = data_time.size();
+ 
+ // Get unique times and names
+ NumericVector times = clone(data_time);
+ times = sort_unique(times);
+ CharacterVector names = unique(data_name);
+ 
+ // Get out column names
+ CharacterVector out_colnames = colnames(out);
+ 
+ // Match data to unique times/names
+ IntegerVector data_time_idx(n_data);
+ IntegerVector data_name_idx(n_data);
+ 
+ for (int i = 0; i < n_data; i++) {
    // Find time index (exact match)
    for (int t = 0; t < times.size(); t++) {
      if (data_time[i] == times[t]) {
@@ -48,22 +48,22 @@ List res_cpp(DataFrame data,
        break;
      }
    }
-  }
-  
-  // Match unique times in out (exact match)
-  IntegerVector out_time_idx(times.size());
-  for (int t = 0; t < times.size(); t++) {
+ }
+ 
+ // Match unique times in out (exact match)
+ IntegerVector out_time_idx(times.size());
+ for (int t = 0; t < times.size(); t++) {
    for (int i = 0; i < out.nrow(); i++) {
      if (times[t] == out(i, 0)) {
        out_time_idx[t] = i;
        break;
      }
    }
-  }
-  
-  // Match names in out columns
-  IntegerVector out_name_idx(names.size());
-  for (int j = 0; j < names.size(); j++) {
+ }
+ 
+ // Match names in out columns
+ IntegerVector out_name_idx(names.size());
+ for (int j = 0; j < names.size(); j++) {
    bool found = false;
    for (int k = 0; k < out_colnames.size(); k++) {
      if (names[j] == out_colnames[k]) {
@@ -76,20 +76,20 @@ List res_cpp(DataFrame data,
      stop("Observable in data does not have a prediction: " + 
        std::string(names[j]));
    }
-  }
-  
-  // Extract predictions
-  NumericVector prediction(n_data);
-  for (int i = 0; i < n_data; i++) {
+ }
+ 
+ // Extract predictions
+ NumericVector prediction(n_data);
+ for (int i = 0; i < n_data; i++) {
    int time_idx = out_time_idx[data_time_idx[i]];
    int name_idx = out_name_idx[data_name_idx[i]];
    prediction[i] = out(time_idx, name_idx);
-  }
-  
-  // Handle first derivatives if available (3D array format)
-  SEXP deriv_out = R_NilValue;
-  
-  if (out.hasAttribute("deriv")) {
+ }
+ 
+ // Handle first derivatives - 2D array [n_data, n_pars]
+ SEXP deriv_out = R_NilValue;
+ 
+ if (out.hasAttribute("deriv")) {
    NumericVector deriv_array = out.attr("deriv");
    IntegerVector deriv_dims = deriv_array.attr("dim");
    
@@ -100,9 +100,8 @@ List res_cpp(DataFrame data,
    
    // Get parameter names from dimnames[[3]]
    CharacterVector pars;
-   List original_dimnames = R_NilValue;
    if (deriv_array.hasAttribute("dimnames")) {
-     original_dimnames = deriv_array.attr("dimnames");
+     List original_dimnames = deriv_array.attr("dimnames");
      if (original_dimnames.size() >= 3 && !Rf_isNull(original_dimnames[2])) {
        pars = as<CharacterVector>(original_dimnames[2]);
      }
@@ -116,41 +115,56 @@ List res_cpp(DataFrame data,
      }
    }
    
-   // Create 3D array: [n_data, n_vars_in_data, n_pars]
-   // Get unique variable names in data
-   CharacterVector data_vars = unique(data_name);
-   int n_data_vars = data_vars.size();
+   // Create 2D array: [n_data, n_pars]
+   NumericMatrix deriv_result(n_data, n_pars);
    
-   NumericVector deriv_result(n_data * n_data_vars * n_pars);
-   IntegerVector result_dims = IntegerVector::create(n_data, n_data_vars, n_pars);
-   
-   // Fill the 3D array
-   for (int i = 0; i < n_data; i++) {
-     int time_idx = out_time_idx[data_time_idx[i]];
-     int var_idx = data_name_idx[i];
-     
-     for (int p = 0; p < n_pars; p++) {
-       // Access source 3D array: [time_idx, var_idx, p]
-       int src_idx = time_idx + n_times_d * var_idx + n_times_d * n_vars * p;
-       // Store in result 3D array: [i, var_idx, p]
-       int dest_idx = i + n_data * var_idx + n_data * n_data_vars * p;
-       deriv_result[dest_idx] = deriv_array[src_idx];
+   // Get variable names from deriv dimnames to match correctly
+   CharacterVector deriv_varnames;
+   if (deriv_array.hasAttribute("dimnames")) {
+     List deriv_dimnames = deriv_array.attr("dimnames");
+     if (deriv_dimnames.size() >= 2 && !Rf_isNull(deriv_dimnames[1])) {
+       deriv_varnames = as<CharacterVector>(deriv_dimnames[1]);
      }
    }
    
-   deriv_result.attr("dim") = result_dims;
+   for (int i = 0; i < n_data; i++) {
+     int time_idx = out_time_idx[data_time_idx[i]];
+     
+     // Find which variable index this data point corresponds to in deriv array
+     String current_var = data_name[i];
+     int var_idx_in_deriv = -1;
+     
+     if (deriv_varnames.size() > 0) {
+       for (int v = 0; v < deriv_varnames.size(); v++) {
+         if (current_var == deriv_varnames[v]) {
+           var_idx_in_deriv = v;
+           break;
+         }
+       }
+     } else {
+       // Fallback: assume deriv has same variable order as OUT columns (minus time)
+       var_idx_in_deriv = out_name_idx[data_name_idx[i]] - 1;
+     }
+     
+     if (var_idx_in_deriv < 0) {
+       stop("Variable not found in deriv array: " + std::string(current_var));
+     }
+     
+     for (int p = 0; p < n_pars; p++) {
+       // Access source 3D array: [time_idx, var_idx_in_deriv, p]
+       int src_idx = time_idx + n_times_d * var_idx_in_deriv + n_times_d * n_vars * p;
+       deriv_result(i, p) = deriv_array[src_idx];
+     }
+   }
    
-   // Set dimnames: list(NULL, data_vars, pars)
-   List result_dimnames = List::create(R_NilValue, data_vars, pars);
-   deriv_result.attr("dimnames") = result_dimnames;
-   
+   colnames(deriv_result) = pars;
    deriv_out = deriv_result;
-  }
-  
-  // Handle second derivatives if available (4D array format)
-  SEXP deriv2_out = R_NilValue;
-  
-  if (out.hasAttribute("deriv2")) {
+ }
+ 
+ // Handle second derivatives - 3D array [n_data, n_pars, n_pars]
+ SEXP deriv2_out = R_NilValue;
+ 
+ if (out.hasAttribute("deriv2")) {
    NumericVector deriv2_array = out.attr("deriv2");
    IntegerVector deriv2_dims = deriv2_array.attr("dim");
    
@@ -176,28 +190,49 @@ List res_cpp(DataFrame data,
      }
    }
    
-   // Create 4D array: [n_data, n_vars_in_data, n_pars, n_pars]
-   CharacterVector data_vars = unique(data_name);
-   int n_data_vars = data_vars.size();
+   // Create 3D array: [n_data, n_pars, n_pars]
+   NumericVector deriv2_result(n_data * n_pars * n_pars2);
+   IntegerVector result_dims = IntegerVector::create(n_data, n_pars, n_pars2);
    
-   NumericVector deriv2_result(n_data * n_data_vars * n_pars * n_pars2);
-   IntegerVector result_dims = IntegerVector::create(n_data, n_data_vars, n_pars, n_pars2);
+   // Get variable names from deriv2 dimnames
+   CharacterVector deriv2_varnames;
+   if (deriv2_array.hasAttribute("dimnames")) {
+     List deriv2_dimnames = deriv2_array.attr("dimnames");
+     if (deriv2_dimnames.size() >= 2 && !Rf_isNull(deriv2_dimnames[1])) {
+       deriv2_varnames = as<CharacterVector>(deriv2_dimnames[1]);
+     }
+   }
    
-   // Fill the 4D array
    for (int i = 0; i < n_data; i++) {
      int time_idx = out_time_idx[data_time_idx[i]];
-     int var_idx = data_name_idx[i];
+     
+     // Find variable index in deriv2 array
+     String current_var = data_name[i];
+     int var_idx_in_deriv2 = -1;
+     
+     if (deriv2_varnames.size() > 0) {
+       for (int v = 0; v < deriv2_varnames.size(); v++) {
+         if (current_var == deriv2_varnames[v]) {
+           var_idx_in_deriv2 = v;
+           break;
+         }
+       }
+     } else {
+       var_idx_in_deriv2 = out_name_idx[data_name_idx[i]] - 1;
+     }
+     
+     if (var_idx_in_deriv2 < 0) {
+       stop("Variable not found in deriv2 array: " + std::string(current_var));
+     }
      
      for (int p1 = 0; p1 < n_pars; p1++) {
        for (int p2 = 0; p2 < n_pars2; p2++) {
-         // Access source 4D array: [time_idx, var_idx, p1, p2]
-         int src_idx = time_idx + n_times_d * var_idx + 
+         // Access source 4D array: [time_idx, var_idx_in_deriv2, p1, p2]
+         int src_idx = time_idx + n_times_d * var_idx_in_deriv2 + 
            n_times_d * n_vars * p1 + 
            n_times_d * n_vars * n_pars * p2;
-         // Store in result 4D array: [i, var_idx, p1, p2]
-         int dest_idx = i + n_data * var_idx + 
-           n_data * n_data_vars * p1 + 
-           n_data * n_data_vars * n_pars * p2;
+         // Store in result 3D array: [i, p1, p2]
+         int dest_idx = i + n_data * p1 + n_data * n_pars * p2;
          deriv2_result[dest_idx] = deriv2_array[src_idx];
        }
      }
@@ -205,22 +240,22 @@ List res_cpp(DataFrame data,
    
    deriv2_result.attr("dim") = result_dims;
    
-   // Set dimnames: list(NULL, data_vars, pars, pars)
-   List result_dimnames = List::create(R_NilValue, data_vars, pars, pars);
+   // Set dimnames: list(NULL, pars, pars)
+   List result_dimnames = List::create(R_NilValue, pars, pars);
    deriv2_result.attr("dimnames") = result_dimnames;
    
    deriv2_out = deriv2_result;
-  }
-  
-  // Handle error model
-  LogicalVector sNAIndex = is_na(data_sigma);
-  bool has_err = err.isNotNull();
-  
-  if (any(sNAIndex).is_true() && !has_err) {
+ }
+ 
+ // Handle error model
+ LogicalVector sNAIndex = is_na(data_sigma);
+ bool has_err = err.isNotNull();
+ 
+ if (any(sNAIndex).is_true() && !has_err) {
    stop("Some sigmas are NA and no errmodel exists. Please fix data$sigma or supply errmodel.");
-  }
-  
-  if (has_err && any(sNAIndex).is_true()) {
+ }
+ 
+ if (has_err && any(sNAIndex).is_true()) {
    NumericMatrix err_mat = as<NumericMatrix>(err);
    CharacterVector err_colnames = colnames(err_mat);
    
@@ -258,12 +293,12 @@ List res_cpp(DataFrame data,
        data_sigma[i] = err_pred;
      }
    }
-  }
-  
-  // Handle error model first derivatives (3D array format)
-  SEXP deriv_err_out = R_NilValue;
-  
-  if (has_err) {
+ }
+ 
+ // Handle error model first derivatives - 2D array [n_data, n_pars]
+ SEXP deriv_err_out = R_NilValue;
+ 
+ if (has_err) {
    NumericMatrix err_mat = as<NumericMatrix>(err);
    
    if (err_mat.hasAttribute("deriv")) {
@@ -289,15 +324,10 @@ List res_cpp(DataFrame data,
        }
      }
      
-     // Create 3D array for error derivatives
-     CharacterVector data_vars = unique(data_name);
-     int n_data_vars = data_vars.size();
+     // Create 2D array: [n_data, n_pars]
+     NumericMatrix deriv_err_result(n_data, n_pars);
      
-     NumericVector deriv_err_result(n_data * n_data_vars * n_pars);
-     IntegerVector result_dims = IntegerVector::create(n_data, n_data_vars, n_pars);
-     
-     // Match indices
-     CharacterVector err_colnames = colnames(err_mat);
+     // Match indices (exact match)
      IntegerVector err_time_idx(times.size());
      for (int t = 0; t < times.size(); t++) {
        for (int i = 0; i < err_mat.nrow(); i++) {
@@ -308,37 +338,59 @@ List res_cpp(DataFrame data,
        }
      }
      
+     // Get variable names from deriv_err dimnames
+     CharacterVector deriv_err_varnames;
+     if (deriv_err_array.hasAttribute("dimnames")) {
+       List deriv_err_dimnames = deriv_err_array.attr("dimnames");
+       if (deriv_err_dimnames.size() >= 2 && !Rf_isNull(deriv_err_dimnames[1])) {
+         deriv_err_varnames = as<CharacterVector>(deriv_err_dimnames[1]);
+       }
+     }
+     
      for (int i = 0; i < n_data; i++) {
        int time_idx = err_time_idx[data_time_idx[i]];
-       int var_idx = data_name_idx[i];
+       
+       // Find variable index in deriv_err array
+       String current_var = data_name[i];
+       int var_idx_in_deriv_err = -1;
+       
+       if (deriv_err_varnames.size() > 0) {
+         for (int v = 0; v < deriv_err_varnames.size(); v++) {
+           if (current_var == deriv_err_varnames[v]) {
+             var_idx_in_deriv_err = v;
+             break;
+           }
+         }
+       } else {
+         var_idx_in_deriv_err = out_name_idx[data_name_idx[i]] - 1;
+       }
+       
+       if (var_idx_in_deriv_err < 0) {
+         stop("Variable not found in deriv_err array: " + std::string(current_var));
+       }
        
        for (int p = 0; p < n_pars; p++) {
-         int src_idx = time_idx + n_times_d * var_idx + n_times_d * n_vars * p;
-         int dest_idx = i + n_data * var_idx + n_data * n_data_vars * p;
-         
+         int src_idx = time_idx + n_times_d * var_idx_in_deriv_err + n_times_d * n_vars * p;
          double val = deriv_err_array[src_idx];
          
          // Set to 0 if NA or if sigma was not NA
          if (NumericVector::is_na(val) || !sNAIndex[i]) {
-           deriv_err_result[dest_idx] = 0.0;
+           deriv_err_result(i, p) = 0.0;
          } else {
-           deriv_err_result[dest_idx] = val;
+           deriv_err_result(i, p) = val;
          }
        }
      }
      
-     deriv_err_result.attr("dim") = result_dims;
-     List result_dimnames = List::create(R_NilValue, data_vars, pars);
-     deriv_err_result.attr("dimnames") = result_dimnames;
-     
+     colnames(deriv_err_result) = pars;
      deriv_err_out = deriv_err_result;
    }
-  }
-  
-  // Handle error model second derivatives (4D array format)
-  SEXP deriv2_err_out = R_NilValue;
-  
-  if (has_err) {
+ }
+ 
+ // Handle error model second derivatives - 3D array [n_data, n_pars, n_pars]
+ SEXP deriv2_err_out = R_NilValue;
+ 
+ if (has_err) {
    NumericMatrix err_mat = as<NumericMatrix>(err);
    
    if (err_mat.hasAttribute("deriv2")) {
@@ -365,15 +417,11 @@ List res_cpp(DataFrame data,
        }
      }
      
-     // Create 4D array for error second derivatives
-     CharacterVector data_vars = unique(data_name);
-     int n_data_vars = data_vars.size();
+     // Create 3D array: [n_data, n_pars, n_pars]
+     NumericVector deriv2_err_result(n_data * n_pars * n_pars2);
+     IntegerVector result_dims = IntegerVector::create(n_data, n_pars, n_pars2);
      
-     NumericVector deriv2_err_result(n_data * n_data_vars * n_pars * n_pars2);
-     IntegerVector result_dims = IntegerVector::create(n_data, n_data_vars, n_pars, n_pars2);
-     
-     // Match indices
-     CharacterVector err_colnames = colnames(err_mat);
+     // Match indices (exact match)
      IntegerVector err_time_idx(times.size());
      for (int t = 0; t < times.size(); t++) {
        for (int i = 0; i < err_mat.nrow(); i++) {
@@ -384,18 +432,43 @@ List res_cpp(DataFrame data,
        }
      }
      
+     // Get variable names from deriv2_err dimnames
+     CharacterVector deriv2_err_varnames;
+     if (deriv2_err_array.hasAttribute("dimnames")) {
+       List deriv2_err_dimnames = deriv2_err_array.attr("dimnames");
+       if (deriv2_err_dimnames.size() >= 2 && !Rf_isNull(deriv2_err_dimnames[1])) {
+         deriv2_err_varnames = as<CharacterVector>(deriv2_err_dimnames[1]);
+       }
+     }
+     
      for (int i = 0; i < n_data; i++) {
        int time_idx = err_time_idx[data_time_idx[i]];
-       int var_idx = data_name_idx[i];
+       
+       // Find variable index in deriv2_err array
+       String current_var = data_name[i];
+       int var_idx_in_deriv2_err = -1;
+       
+       if (deriv2_err_varnames.size() > 0) {
+         for (int v = 0; v < deriv2_err_varnames.size(); v++) {
+           if (current_var == deriv2_err_varnames[v]) {
+             var_idx_in_deriv2_err = v;
+             break;
+           }
+         }
+       } else {
+         var_idx_in_deriv2_err = out_name_idx[data_name_idx[i]] - 1;
+       }
+       
+       if (var_idx_in_deriv2_err < 0) {
+         stop("Variable not found in deriv2_err array: " + std::string(current_var));
+       }
        
        for (int p1 = 0; p1 < n_pars; p1++) {
          for (int p2 = 0; p2 < n_pars2; p2++) {
-           int src_idx = time_idx + n_times_d * var_idx + 
+           int src_idx = time_idx + n_times_d * var_idx_in_deriv2_err + 
              n_times_d * n_vars * p1 + 
              n_times_d * n_vars * n_pars * p2;
-           int dest_idx = i + n_data * var_idx + 
-             n_data * n_data_vars * p1 + 
-             n_data * n_data_vars * n_pars * p2;
+           int dest_idx = i + n_data * p1 + n_data * n_pars * p2;
            
            double val = deriv2_err_array[src_idx];
            
@@ -410,35 +483,35 @@ List res_cpp(DataFrame data,
      }
      
      deriv2_err_result.attr("dim") = result_dims;
-     List result_dimnames = List::create(R_NilValue, data_vars, pars, pars);
+     List result_dimnames = List::create(R_NilValue, pars, pars);
      deriv2_err_result.attr("dimnames") = result_dimnames;
      
      deriv2_err_out = deriv2_err_result;
    }
-  }
-  
-  // Apply LLOQ constraint
-  for (int i = 0; i < n_data; i++) {
+ }
+ 
+ // Apply LLOQ constraint
+ for (int i = 0; i < n_data; i++) {
    if (data_value[i] < data_lloq[i]) {
      data_value[i] = data_lloq[i];
    }
-  }
-  
-  // Compute residuals
-  LogicalVector is_bloq(n_data);
-  NumericVector residual(n_data);
-  NumericVector weighted_residual(n_data);
-  NumericVector weighted_0(n_data);
-  
-  for (int i = 0; i < n_data; i++) {
+ }
+ 
+ // Compute residuals
+ LogicalVector is_bloq(n_data);
+ NumericVector residual(n_data);
+ NumericVector weighted_residual(n_data);
+ NumericVector weighted_0(n_data);
+ 
+ for (int i = 0; i < n_data; i++) {
    is_bloq[i] = (data_value[i] <= data_lloq[i]);
    residual[i] = prediction[i] - data_value[i];
    weighted_residual[i] = residual[i] / data_sigma[i];
    weighted_0[i] = prediction[i] / data_sigma[i];
-  }
-  
-  // Create output data frame
-  DataFrame result = DataFrame::create(
+ }
+ 
+ // Create output data frame
+ DataFrame result = DataFrame::create(
    _["time"] = data_time,
    _["name"] = data_name,
    _["value"] = data_value,
@@ -449,16 +522,16 @@ List res_cpp(DataFrame data,
    _["weighted.residual"] = weighted_residual,
    _["weighted.0"] = weighted_0,
    _["bloq"] = is_bloq
-  );
-  
-  // Return as list with 3D/4D array attributes
-  List output = List::create(
+ );
+ 
+ // Return as list with 2D/3D array attributes
+ List output = List::create(
    _["data"] = result,
    _["deriv"] = deriv_out,
    _["deriv2"] = deriv2_out,
    _["deriv.err"] = deriv_err_out,
    _["deriv2.err"] = deriv2_err_out
-  );
-  
-  return output;
+ );
+ 
+ return output;
 }

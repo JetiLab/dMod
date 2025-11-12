@@ -733,10 +733,10 @@ objlist <- function(value, gradient, hessian) {
 #' It is typically created by [res] and used internally in objective functions.
 #'
 #' @param mydata Data frame produced by [res].
-#' @param deriv 3D numeric array of first-order derivatives of residuals (∂r/∂θ).
-#' @param deriv2 4D numeric array of second-order derivatives of residuals (∂²r/∂θ∂θ).
-#' @param deriv.err 3D numeric array of first-order derivatives of the error model (∂σ/∂θ).
-#' @param deriv2.err 4D numeric array of second-order derivatives of the error model (∂²σ/∂θ∂θ).
+#' @param deriv numeric matrix of first-order derivatives of residuals (∂ri/∂θ).
+#' @param deriv2 3D numeric array of second-order derivatives of residuals (∂²r/∂²θ).
+#' @param deriv.err numeric matrix of first-order derivatives of the error model (∂σ/∂θ).
+#' @param deriv2.err 3D numeric array of second-order derivatives of the error model (∂²σ/∂²θ).
 #'
 #' @return
 #' An object of class `"objframe"` (data.frame) with attributes `"deriv"`, `"deriv2"`,

@@ -965,38 +965,38 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
         dimnames(myderivs2) <- list(NULL, observables, outer_pars2, outer_pars2)
       
       if (attach.input && !is.null(dX) && !is.null(myderivs)) {
-        # Extract dynamic and total parameter names
+        # ----- First-order: pad dX over θ if local obs-params exist -----
         dyn_params <- dimnames(dX)[[3]]
         all_params <- outer_pars
         
-        # Pad dX with zeros if local parameters are missing
-        if (length(extra <- setdiff(all_params, dyn_params)) > 0) {
+        if (length(extra <- setdiff(all_params, dyn_params)) > 0L) {
           pad <- array(0, dim = c(dim(dX)[1:2], length(extra)),
                        dimnames = list(NULL, NULL, extra))
           dX <- abind::abind(dX, pad, along = 3)
         }
-        # Align parameter order
         dX <- dX[, , all_params, drop = FALSE]
-        
-        # Concatenate first derivatives (along observable/state dimension)
         myderivs <- abind::abind(myderivs, dX, along = 2)
         
-        # --- Handle second-order derivatives in the same way ---
+        # ----- Second-order: build full-sized zero tensor and place dX2 block -----
         if (!is.null(myderivs2) && !is.null(dX2)) {
           dyn_params2 <- dimnames(dX2)[[3]]
           all_params2 <- outer_pars2
           
-          # Pad missing parameter dimensions with zeros
-          if (length(extra2 <- setdiff(all_params2, dyn_params2)) > 0) {
-            pad2 <- array(0, dim = c(dim(dX2)[1:2], length(extra2), length(extra2)),
-                          dimnames = list(NULL, NULL, extra2, extra2))
-            dX2 <- abind::abind(dX2, pad2, along = 3)
-          }
-          # Align parameter order for 3rd/4th dimensions
-          dX2 <- dX2[, , all_params2, all_params2, drop = FALSE]
+          n_i <- dim(dX2)[1]
+          n_a <- dim(dX2)[2]
+          Ktot <- length(all_params2)
           
-          # Concatenate second derivatives (along observable/state dimension)
-          myderivs2 <- abind::abind(myderivs2, dX2, along = 2)
+          # Build full tensor with proper dimnames
+          dX2_full <- array(0, dim = c(n_i, n_a, Ktot, Ktot),
+                            dimnames = list(NULL,
+                                            dimnames(dX2)[[2]],  # <- keep proper state names
+                                            all_params2, all_params2))
+          
+          idx <- match(dyn_params2, all_params2)
+          dX2_full[, , idx, idx] <- dX2
+          
+          # Concatenate along observable/state axis
+          myderivs2 <- abind::abind(myderivs2, dX2_full, along = 2)
         }
       }
     }
