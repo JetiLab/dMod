@@ -55,7 +55,7 @@ for the generated C file.}
 }
 \value{
 An object of class \link{obsfn}, i.e. a function
-\code{y(..., deriv = TRUE, deriv2 = FALSE, condition = NULL, verbose = F)} representing the evaluation of the
+\code{g(..., deriv = TRUE, deriv2 = FALSE, condition = NULL, verbose = F)} representing the evaluation of the
 observation function. The function returns observable values and, if requested,
 their first- and second-order derivatives with respect to the parameters.
 }

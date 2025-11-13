@@ -8,9 +8,9 @@
 #'   - weighted.0       (numeric) : w0 (unscaled)
 #'   - sigma            (numeric) : s
 #' @param derivs NumericMatrix of first derivatives of prediction (NOT wr),
-#'   with columns: time, name, then parameter columns.
+#'   with columns corresponding to parameters only (no time/name columns).
 #' @param derivs_err NumericMatrix of first derivatives of sigma,
-#'   same structure as derivs (time, name, parameters) or NULL.
+#'   same dimension as derivs (n_data × n_pars) or NULL.
 #' @param opt_BLOQ Character scalar, e.g. "M3", "M4NM", "M4BEAL", "M1".
 #'   Only "M4BEAL" changes the ALOQ contribution (extra Phi(w0) term).
 #' @param opt_hessian Named LogicalVector controlling Hessian components
@@ -45,6 +45,27 @@
 #' @export
 nll_ALOQ_cpp <- function(nout, derivs = NULL, derivs_err = NULL, opt_BLOQ = "M3", opt_hessian = logicalVector(), bessel_correction = 1.0, deriv2 = NULL, deriv2_err = NULL) {
     .Call(`_dMod_nll_ALOQ_cpp`, nout, derivs, derivs_err, opt_BLOQ, opt_hessian, bessel_correction, deriv2, deriv2_err)
+}
+
+#' Non-linear log likelihood for the BLOQ part (C++ implementation)
+#'
+#' @param nout_bloq DataFrame with BLOQ rows from res()/res_cpp, must contain:
+#'   - value             (numeric) : original DV (for LLOQ check in M4)
+#'   - weighted.residual (numeric) : wr
+#'   - weighted.0        (numeric) : w0
+#'   - sigma             (numeric) : s
+#' @param derivs_bloq NumericMatrix of first derivatives of prediction,
+#'   dimension n_data × n_pars, only parameter columns (no time/name).
+#' @param derivs_err_bloq NumericMatrix of first derivatives of sigma,
+#'   same dimension as derivs_bloq, or NULL.
+#' @param opt_BLOQ Character scalar, one of "M3","M4NM","M4BEAL","M1".
+#' @param opt_hessian Named LogicalVector controlling Hessian pieces
+#'   ("BLOQ_part1","BLOQ_part2","BLOQ_part3").
+#'
+#' @return An object of class "objlist" (list with value, gradient, hessian).
+#' @export
+nll_BLOQ_cpp <- function(nout_bloq, derivs_bloq = NULL, derivs_err_bloq = NULL, opt_BLOQ = "M3", opt_hessian = logicalVector()) {
+    .Call(`_dMod_nll_BLOQ_cpp`, nout_bloq, derivs_bloq, derivs_err_bloq, opt_BLOQ, opt_hessian)
 }
 
 #' Compute residuals (Rcpp implementation, optimized)

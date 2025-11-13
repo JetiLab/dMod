@@ -7,31 +7,50 @@
 compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
-\item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.}
+\item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.
+The corresponding C/C++ source files (e.g., \code{model.c}, \code{model.cpp},
+\code{model_deriv.c}) are automatically detected based on the model name.}
 
-\item{output}{Optional character string. If provided, all compiled files
-will be linked into this shared object (e.g. \code{"myModel"} produces
-\code{"myModel.so"} or \code{"myModel.dll"}).}
+\item{output}{Optional character string. If supplied, all compiled object
+files are linked into a single shared library named
+\code{paste0(output, .Platform$dynlib.ext)}. If omitted, each source file is
+built into a separate shared library.}
 
-\item{args}{Optional character string with additional arguments passed to
-the \verb{R CMD SHLIB} call (e.g. \code{"-leinspline"}).}
+\item{args}{Optional character string containing additional flags passed
+to \verb{R CMD SHLIB} during compilation and linking (e.g., \code{"-leinspline"}).
+If \code{NULL} or empty, the compiler is invoked with \code{-O3}.}
 
-\item{cores}{Integer. Number of CPU cores used for parallel compilation when
-compiling multiple files (only on non-Windows systems).}
+\item{cores}{Integer. Number of CPU cores used for parallel compilation
+of individual source files into object files. Parallel compilation is
+supported on all major operating systems.}
 
-\item{verbose}{Logical. If \code{TRUE}, compiler output is printed to the R console.}
+\item{verbose}{Logical. If \code{TRUE}, compiler and linker output is printed
+to the R console.}
 }
 \value{
 Invisibly returns \code{TRUE} if compilation succeeds.
 }
 \description{
-Compiles one or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn} into a
-shared library (\code{.so} or \code{.dll}). If multiple objects are provided, their
-corresponding C/C++ source files are compiled together into a single
-shared object.
+Compiles one or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn} into
+shared libraries (\code{.so} or \code{.dll}).
+
+If \code{output} is \code{NULL}, each detected C/C++ source file is compiled and
+linked into its own shared object.
+
+If \code{output} is provided, all detected source files are compiled
+(optionally in parallel if multiple files are present and \code{cores > 1})
+into object files (\code{.o}) and then linked together into a single shared
+library with the specified name.
+
+If no additional compiler flags are supplied via \code{args}, the compilation
+defaults to using \code{-O3} for optimization.
 }
 \details{
-On non-Windows systems, parallel compilation is performed via
-\code{parallel::mclapply()} if multiple files are detected.
-On Windows, compilation is always single-threaded.
+Compilation proceeds in two stages. First, each C/C++ source file is
+compiled into an object file (\code{.o}), using parallel processing if enabled.
+Second, the object files are linked into one or multiple shared libraries,
+depending on whether \code{output} is specified. Any previously loaded shared
+objects with matching names are automatically unloaded before linking.
+The resulting shared libraries are loaded into the current R session upon
+successful compilation.
 }

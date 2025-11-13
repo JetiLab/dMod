@@ -24,10 +24,10 @@ nll_ALOQ_cpp(
 }}
 
 \item{derivs}{NumericMatrix of first derivatives of prediction (NOT wr),
-with columns: time, name, then parameter columns.}
+with columns corresponding to parameters only (no time/name columns).}
 
 \item{derivs_err}{NumericMatrix of first derivatives of sigma,
-same structure as derivs (time, name, parameters) or NULL.}
+same dimension as derivs (n_data × n_pars) or NULL.}
 
 \item{opt_BLOQ}{Character scalar, e.g. "M3", "M4NM", "M4BEAL", "M1".
 Only "M4BEAL" changes the ALOQ contribution (extra Phi(w0) term).}

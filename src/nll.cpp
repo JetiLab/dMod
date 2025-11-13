@@ -2,42 +2,8 @@
 #include <cmath>
 #include <string>
 #include <vector>
-
+#include "nll_helpers.hpp"
 using namespace Rcpp;
-
-// =======================
-// Helper: extract named logical flag
-// =======================
-
-// Safely extract a named logical flag from a LogicalVector.
-// If not found, returns default_value.
-bool get_flag(const LogicalVector& lv,
-              const std::string& name,
-              bool default_value = true) {
-  if (lv.size() == 0) return default_value;
-  CharacterVector nms = lv.names();
-  if (nms.size() != lv.size()) return default_value;
-  
-  for (int i = 0; i < lv.size(); ++i) {
-    if (TYPEOF(nms[i]) != STRSXP) continue;
-    std::string s = as<std::string>(nms[i]);
-    if (s == name) {
-      if (LogicalVector::is_na(lv[i])) return false;
-      return lv[i];
-    }
-  }
-  return default_value;
-}
-
-// =======================
-// Helper: G_by_Phi(w) = φ(w)/Φ(w)
-// =======================
-
-inline double G_by_Phi_single(double w) {
-  double log_phi = R::dnorm4(w, 0.0, 1.0, 1);    // log density
-  double log_Phi = R::pnorm5(w, 0.0, 1.0, 1, 1); // log CDF
-  return std::exp(log_phi - log_Phi);
-}
 
 // =======================
 // nll_ALOQ_cpp
@@ -50,9 +16,9 @@ inline double G_by_Phi_single(double w) {
 //'   - weighted.0       (numeric) : w0 (unscaled)
 //'   - sigma            (numeric) : s
 //' @param derivs NumericMatrix of first derivatives of prediction (NOT wr),
-//'   with columns: time, name, then parameter columns.
+//'   with columns corresponding to parameters only (no time/name columns).
 //' @param derivs_err NumericMatrix of first derivatives of sigma,
-//'   same structure as derivs (time, name, parameters) or NULL.
+//'   same dimension as derivs (n_data × n_pars) or NULL.
 //' @param opt_BLOQ Character scalar, e.g. "M3", "M4NM", "M4BEAL", "M1".
 //'   Only "M4BEAL" changes the ALOQ contribution (extra Phi(w0) term).
 //' @param opt_hessian Named LogicalVector controlling Hessian components
@@ -186,22 +152,18 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
  if (n_rows != n) {
    stop("Number of rows in 'derivs' must match number of residuals.");
  }
- if (n_cols <= 2) {
-   stop("'derivs' must have at least 3 columns: time, name, parameter(s).");
+ if (n_cols <= 0) {
+   stop("'derivs' must have at least one parameter column.");
  }
  
- int n_pars = n_cols - 2; // drop time and name
- CharacterVector deriv_colnames = colnames(deriv_mat);
- CharacterVector par_names(n_pars);
- for (int j = 0; j < n_pars; ++j) {
-   par_names[j] = deriv_colnames[j + 2];
- }
+ int n_pars = n_cols; // ALL columns are parameter derivatives
+ CharacterVector par_names = colnames(deriv_mat);
  
  // dxdp: [n, n_pars]
  NumericMatrix dxdp(n, n_pars);
  for (int i = 0; i < n; ++i) {
    for (int j = 0; j < n_pars; ++j) {
-     dxdp(i, j) = deriv_mat(i, j + 2);
+     dxdp(i, j) = deriv_mat(i, j);
    }
  }
  
@@ -211,12 +173,12 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
    NumericMatrix deriv_err_mat(derivs_err.get());
    int ne_rows = deriv_err_mat.nrow();
    int ne_cols = deriv_err_mat.ncol();
-   if (ne_rows != n || ne_cols != n_cols) {
-     stop("'derivs_err' must have the same dimensions as 'derivs'.");
+   if (ne_rows != n || ne_cols != n_pars) {
+     stop("'derivs_err' must have dimensions [n_data × n_pars].");
    }
    for (int i = 0; i < n; ++i) {
      for (int j = 0; j < n_pars; ++j) {
-       dsdp(i, j) = deriv_err_mat(i, j + 2);
+       dsdp(i, j) = deriv_err_mat(i, j);
      }
    }
  } else {
@@ -249,10 +211,9 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
      double ds = dsdp(i, j);
      
      // NOTE: We treat wr and w0 as already Bessel-scaled values.
-     // These formulas match your R implementation structure.
-     double tmp_wr  = inv_s * dx - (wr_i * inv_s) * ds;  // = b/s*dxdp - wr'/s*dsdp
-     double tmp_w0  = inv_s * dx - (w0_i * inv_s) * ds;  // = b/s*dxdp - w0'/s*dsdp
-     double tmp_log = inv_s * ds;                        // d(log s) / dθ
+     double tmp_wr  = inv_s * dx - (wr_i * inv_s) * ds;
+     double tmp_w0  = inv_s * dx - (w0_i * inv_s) * ds;
+     double tmp_log = inv_s * ds;    // d(log s) / dθ
      
      dwrdp(i, j)  = tmp_wr;
      dw0dp(i, j)  = tmp_w0;
@@ -264,7 +225,7 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
  std::vector<double> G_w0(n, 0.0);
  if (use_M4BEAL) {
    for (int i = 0; i < n; ++i) {
-     G_w0[i] = G_by_Phi_single(w0[i]);  // w0 already Bessel-scaled if needed
+     G_w0[i] = G_single(w0[i]);
    }
  }
  
@@ -388,8 +349,7 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
      
      // ---- Approximate extra M4BEAL Hessian (same algebra as R) ----
      if (use_M4BEAL) {
-       // Only needed once
-       bool ALOQ_part1_flag = ALOQ_part1; // reuse
+       bool ALOQ_part1_flag = ALOQ_part1;
        
        // M4BEAL Term 1:
        //   2 * t( (-w0 * G - G^2) * dw0dp ) %*% dw0dp
@@ -575,10 +535,361 @@ Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout,
  else
    out["hessian"] = R_NilValue;
  
- 
  out.attr("chisquare")       = chisquare_ml;  // TRUE chi-square (no Bessel)
  out.attr("neg2ll")          = neg2ll_ml;    // TRUE -2logL (no Bessel, but incl. M4BEAL if used)
  out.attr("besselcorrected") = use_bessel;
  
  return out;
+}
+
+
+// -----------------------------------------------------------
+// nll_BLOQ_cpp
+// -----------------------------------------------------------
+
+//' Non-linear log likelihood for the BLOQ part (C++ implementation)
+//'
+//' @param nout_bloq DataFrame with BLOQ rows from res()/res_cpp, must contain:
+//'   - value             (numeric) : original DV (for LLOQ check in M4)
+//'   - weighted.residual (numeric) : wr
+//'   - weighted.0        (numeric) : w0
+//'   - sigma             (numeric) : s
+//' @param derivs_bloq NumericMatrix of first derivatives of prediction,
+//'   dimension n_data × n_pars, only parameter columns (no time/name).
+//' @param derivs_err_bloq NumericMatrix of first derivatives of sigma,
+//'   same dimension as derivs_bloq, or NULL.
+//' @param opt_BLOQ Character scalar, one of "M3","M4NM","M4BEAL","M1".
+//' @param opt_hessian Named LogicalVector controlling Hessian pieces
+//'   ("BLOQ_part1","BLOQ_part2","BLOQ_part3").
+//'
+//' @return An object of class "objlist" (list with value, gradient, hessian).
+//' @export
+// [[Rcpp::export]]
+Rcpp::List nll_BLOQ_cpp(const Rcpp::DataFrame& nout_bloq,
+                        Rcpp::Nullable<Rcpp::NumericMatrix> derivs_bloq = R_NilValue,
+                        Rcpp::Nullable<Rcpp::NumericMatrix> derivs_err_bloq = R_NilValue,
+                        std::string opt_BLOQ = "M3",
+                        Rcpp::LogicalVector opt_hessian = Rcpp::LogicalVector()) {
+  
+  // -----------------------------------------------
+  // Extract required vectors
+  // -----------------------------------------------
+  NumericVector value = nout_bloq["value"];
+  NumericVector wr    = nout_bloq["weighted.residual"];
+  NumericVector w0    = nout_bloq["weighted.0"];
+  NumericVector s     = nout_bloq["sigma"];
+  
+  int n = wr.size();
+  
+  // -----------------------------------------------
+  // Objective value
+  // -----------------------------------------------
+  NumericVector objvals(n);
+  
+  if (opt_BLOQ == "M3") {
+    for (int i = 0; i < n; ++i)
+      objvals[i] = -2.0 * R::pnorm5(-wr[i], 0,1,1,1);
+  }
+  
+  else if (opt_BLOQ == "M4NM" || opt_BLOQ == "M4BEAL") {
+    for (int i = 0; i < n; ++i) {
+      double Phi_wr = R::pnorm5(wr[i],0,1,1,0);
+      double Phi_w0 = R::pnorm5(w0[i],0,1,1,0);
+      double r      = Phi_wr / Phi_w0;
+      objvals[i] = (r>=1) ? R_PosInf : -2*std::log(1-r);
+    }
+    
+    // numeric fix
+    for (int i=0;i<n;++i) {
+      if (!R_finite(objvals[i])) {
+        double d= w0[i]-wr[i];
+        double ld=std::log(d);
+        double intercept = (ld>0?1.8:-1.9*ld+0.9);
+        double lin       = (ld>0?0.9:0.5);
+        objvals[i] = intercept + lin*w0[i] + 0.95*w0[i]*w0[i];
+      }
+    }
+  }
+  
+  double obj = 0;
+  for (int i=0;i<n;++i) obj+=objvals[i];
+  
+  // ------------------------------------------------
+  // No derivatives → return objlist(value,NULL,NULL)
+  // ------------------------------------------------
+  if (derivs_bloq.isNull()) {
+    Rcpp::List out = Rcpp::List::create(
+      _["value"]=obj,
+      _["gradient"]=R_NilValue,
+      _["hessian"]=R_NilValue
+    );
+    out.attr("class") = CharacterVector::create("objlist","list");
+    return out;
+  }
+  
+  // ------------------------------------------------
+  // Extract dxdp, dsdp
+  // ------------------------------------------------
+  NumericMatrix dxdp(derivs_bloq.get());
+  int p = dxdp.ncol();
+  
+  NumericMatrix dsdp(n,p);
+  if (!derivs_err_bloq.isNull()) {
+    NumericMatrix D(derivs_err_bloq.get());
+    if (D.nrow()!=n || D.ncol()!=p)
+      stop("derivs.err.bloq wrong dims");
+    for (int i=0;i<n;++i)
+      for (int j=0;j<p;++j)
+        dsdp(i,j) = D(i,j);
+  } else {
+    std::fill(dsdp.begin(), dsdp.end(), 0.0);
+  }
+  
+  CharacterVector parnames = colnames(dxdp);
+  
+  // ------------------------------------------------
+  // First-order derivatives dwrdp, dw0dp, dlogsdp
+  // ------------------------------------------------
+  NumericMatrix dwrdp(n,p), dw0dp(n,p), dlogsdp(n,p);
+  
+  for (int i=0;i<n;++i) {
+    double invs=1.0/s[i];
+    for (int j=0;j<p;++j) {
+      double dx=dxdp(i,j);
+      double ds=dsdp(i,j);
+      dwrdp(i,j)= invs*dx - (wr[i]*invs)*ds;
+      dw0dp(i,j)= invs*dx - (w0[i]*invs)*ds;
+      dlogsdp(i,j)= invs*ds;
+    }
+  }
+  
+  // ------------------------------------------------
+  // Gradient
+  // ------------------------------------------------
+  NumericVector grad(p); grad.names()=parnames;
+  
+  if (opt_BLOQ=="M3") {
+    NumericVector Gm(n);
+    for (int i=0;i<n;++i) Gm[i]=G_single(-wr[i],-wr[i]);
+    
+    for (int j=0;j<p;++j) {
+      double s_=0;
+      for (int i=0;i<n;++i)
+        s_+= Gm[i]*dwrdp(i,j);
+      grad[j]=2*s_;
+    }
+  }
+  
+  else if (opt_BLOQ=="M4NM" || opt_BLOQ=="M4BEAL") {
+    
+    NumericVector G_wr_w0 = G_vec(wr, w0);
+    NumericVector G_wr_wr = G_vec(wr, wr);
+    NumericVector G_w0_w0 = G_vec(w0, w0);
+    NumericVector G_w0_wr = G_vec(w0, wr);
+    NumericVector G0      = G_vec(w0, w0);
+    
+    NumericVector c1(n),c2(n),c3(n);
+    for (int i=0;i<n;++i) {
+      c1[i]=2.0/(1.0/G_wr_w0[i] - 1.0/G_wr_wr[i]);
+      c2[i]=2.0/(1.0/G_w0_w0[i] - 1.0/G_w0_wr[i]);
+      c3[i]=2.0*G0[i];
+    }
+    
+    for (int j=0;j<p;++j) {
+      double S1=0,S2=0,S3=0;
+      for (int i=0;i<n;++i) {
+        S1+=c1[i]*dwrdp(i,j);
+        S2+=c2[i]*dw0dp(i,j);
+        S3+=c3[i]*dw0dp(i,j);
+      }
+      grad[j] = S1 - S2 + S3;
+    }
+  }
+  
+  // ------------------------------------------------
+  // Hessian
+  // ------------------------------------------------
+  NumericMatrix H(p,p); rownames(H)=parnames; colnames(H)=parnames;
+  
+  bool P1 = get_flag(opt_hessian,"BLOQ_part1",true);
+  bool P2 = get_flag(opt_hessian,"BLOQ_part2",true);
+  bool P3 = get_flag(opt_hessian,"BLOQ_part3",true);
+  
+  if (opt_BLOQ=="M3") {
+    
+    NumericVector Gm(n);
+    for (int i=0;i<n;++i) Gm[i]=G_single(-wr[i],-wr[i]);
+    
+    // part1
+    if (P1) {
+      for (int j=0;j<p;++j)
+        for (int k=0;k<p;++k) {
+          
+          double sum_=0;
+          for (int i=0;i<n;++i) {
+            
+            double coef = (-wr[i]*Gm[i] + Gm[i]*Gm[i]);
+            sum_ += coef * dwrdp(i,j)*dwrdp(i,k);
+          }
+          H(j,k) += 2*sum_;
+        }
+    }
+    
+    // part2
+    if (P2) {
+      for (int j=0;j<p;++j)
+        for (int k=0;k<p;++k) {
+          
+          double s1=0,s2=0;
+          for (int i=0;i<n;++i) {
+            double invs2=1.0/(s[i]*s[i]);
+            double coef = Gm[i]*invs2;
+            s1+=coef*dxdp(i,j)*dsdp(i,k);
+            s2+=coef*dsdp(i,j)*dxdp(i,k);
+          }
+          H(j,k) -= 2*(s1+s2);
+        }
+    }
+    
+    // part3
+    if (P3) {
+      for (int j=0;j<p;++j)
+        for (int k=0;k<p;++k) {
+          
+          double sum3=0;
+          for (int i=0;i<n;++i) {
+            double invs2=1.0/(s[i]*s[i]);
+            double coef = Gm[i]*(2*(-wr[i]))*invs2;
+            sum3 += coef * dsdp(i,j) * dsdp(i,k);
+          }
+          H(j,k) -= 2*sum3;
+        }
+    }
+  }
+  
+  // ------------------------------------------------
+  // M4 Hessian
+  // ------------------------------------------------
+  else if (opt_BLOQ == "M4NM" || opt_BLOQ == "M4BEAL") {
+    
+    // ------------------------------------------------------------------
+    // Precompute stable factors
+    // ------------------------------------------------------------------
+    NumericVector stable_wr = stable_fun(wr, w0, wr);
+    NumericVector stable_w0 = stable_fun(w0, w0, wr);
+    NumericVector G0        = G_vec(w0, w0);
+    
+    // Number of parameters
+    int p = dxdp.ncol();
+    
+    // ------------------------------------------------------------------
+    // Build coefficient vectors A1..A6
+    // ------------------------------------------------------------------
+    NumericVector A1(n), A2(n), A3(n), A4(n), A5(n), A6(n);
+    
+    for (int i = 0; i < n; ++i) {
+      A1[i] = -wr[i] * stable_wr[i];
+      A2[i] =  stable_wr[i];
+      
+      A3[i] = -w0[i] * stable_w0[i];
+      A4[i] =  stable_w0[i];
+      
+      A5[i] = -w0[i] * G0[i] - G0[i] * G0[i];
+      A6[i] =  G0[i];
+    }
+    
+    // ------------------------------------------------------------------
+    // part1 = 2 * ( d(A1) + d2(A2) − d(A3) − d2(A4) )
+    // ------------------------------------------------------------------
+    NumericMatrix tmp11 = d_dp_sq_cpp(A1, wr, s, dxdp, dsdp);
+    NumericMatrix tmp12 = d2_dp2_cpp(A2, wr, s, dxdp, dsdp);
+    NumericMatrix tmp21 = d_dp_sq_cpp(A3, w0, s, dxdp, dsdp);
+    NumericMatrix tmp22 = d2_dp2_cpp(A4, w0, s, dxdp, dsdp);
+    
+    NumericMatrix part1(p, p);
+    
+    for (int j = 0; j < p; ++j) {
+      for (int k = 0; k < p; ++k) {
+        part1(j, k) = 2.0 * (
+          tmp11(j, k) +
+            tmp12(j, k) -
+            tmp21(j, k) -
+            tmp22(j, k)
+        );
+      }
+    }
+    
+    // ------------------------------------------------------------------
+    // part2 = -2 * Σ_i (a_ij * a_ik)
+    //         with a_i = stable_wr * dwrdp − stable_w0 * dw0dp
+    // ------------------------------------------------------------------
+    NumericMatrix part2(p, p);
+    
+    for (int j = 0; j < p; ++j) {
+      for (int k = 0; k < p; ++k) {
+        
+        double sum = 0.0;
+        
+        for (int i = 0; i < n; ++i) {
+          double aij = stable_wr[i] * dwrdp(i, j)
+          - stable_w0[i] * dw0dp(i, j);
+          double aik = stable_wr[i] * dwrdp(i, k)
+            - stable_w0[i] * dw0dp(i, k);
+          
+          sum += aij * aik;
+        }
+        
+        part2(j, k) = -2.0 * sum;
+      }
+    }
+    
+    // ------------------------------------------------------------------
+    // part3 = 2 * ( d(A5) + d2(A6) )
+    // ------------------------------------------------------------------
+    NumericMatrix tmp31 = d_dp_sq_cpp(A5, w0, s, dxdp, dsdp);
+    NumericMatrix tmp32 = d2_dp2_cpp(A6, w0, s, dxdp, dsdp);
+    
+    NumericMatrix part3(p, p);
+    
+    for (int j = 0; j < p; ++j) {
+      for (int k = 0; k < p; ++k) {
+        part3(j, k) = 2.0 * (
+          tmp31(j, k) +
+            tmp32(j, k)
+        );
+      }
+    }
+    
+    // ------------------------------------------------------------------
+    // Accumulate contributions into Hessian H
+    // ------------------------------------------------------------------
+    if (P1) {
+      for (int j = 0; j < p; ++j)
+        for (int k = 0; k < p; ++k)
+          H(j, k) += part1(j, k);
+    }
+    
+    if (P2) {
+      for (int j = 0; j < p; ++j)
+        for (int k = 0; k < p; ++k)
+          H(j, k) += part2(j, k);
+    }
+    
+    if (P3) {
+      for (int j = 0; j < p; ++j)
+        for (int k = 0; k < p; ++k)
+          H(j, k) += part3(j, k);
+    }
+  }
+  
+  // ------------------------------------------------
+  // Build objlist
+  // ------------------------------------------------
+  Rcpp::List out = Rcpp::List::create(
+    _["value"]    = obj,
+    _["gradient"] = grad,
+    _["hessian"]  = H
+  );
+  out.attr("class") = CharacterVector::create("objlist","list");
+  return out;
 }

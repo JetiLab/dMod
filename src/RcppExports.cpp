@@ -28,6 +28,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// nll_BLOQ_cpp
+Rcpp::List nll_BLOQ_cpp(const Rcpp::DataFrame& nout_bloq, Rcpp::Nullable<Rcpp::NumericMatrix> derivs_bloq, Rcpp::Nullable<Rcpp::NumericMatrix> derivs_err_bloq, std::string opt_BLOQ, Rcpp::LogicalVector opt_hessian);
+RcppExport SEXP _dMod_nll_BLOQ_cpp(SEXP nout_bloqSEXP, SEXP derivs_bloqSEXP, SEXP derivs_err_bloqSEXP, SEXP opt_BLOQSEXP, SEXP opt_hessianSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::DataFrame& >::type nout_bloq(nout_bloqSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type derivs_bloq(derivs_bloqSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type derivs_err_bloq(derivs_err_bloqSEXP);
+    Rcpp::traits::input_parameter< std::string >::type opt_BLOQ(opt_BLOQSEXP);
+    Rcpp::traits::input_parameter< Rcpp::LogicalVector >::type opt_hessian(opt_hessianSEXP);
+    rcpp_result_gen = Rcpp::wrap(nll_BLOQ_cpp(nout_bloq, derivs_bloq, derivs_err_bloq, opt_BLOQ, opt_hessian));
+    return rcpp_result_gen;
+END_RCPP
+}
 // res_cpp
 List res_cpp(DataFrame data, NumericMatrix out, Nullable<NumericMatrix> err);
 RcppExport SEXP _dMod_res_cpp(SEXP dataSEXP, SEXP outSEXP, SEXP errSEXP) {
@@ -44,6 +59,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_dMod_nll_ALOQ_cpp", (DL_FUNC) &_dMod_nll_ALOQ_cpp, 8},
+    {"_dMod_nll_BLOQ_cpp", (DL_FUNC) &_dMod_nll_BLOQ_cpp, 5},
     {"_dMod_res_cpp", (DL_FUNC) &_dMod_res_cpp, 3},
     {NULL, NULL, 0}
 };

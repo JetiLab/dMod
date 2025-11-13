@@ -661,7 +661,7 @@ Xd <- function(data, condition = NULL) {
 #' 
 #' @return 
 #' An object of class [obsfn], i.e. a function 
-#' `y(..., deriv = TRUE, deriv2 = FALSE, condition = NULL, verbose = F)` representing the evaluation of the 
+#' `g(..., deriv = TRUE, deriv2 = FALSE, condition = NULL, verbose = F)` representing the evaluation of the 
 #' observation function. The function returns observable values and, if requested, 
 #' their first- and second-order derivatives with respect to the parameters.
 #' 
@@ -1015,51 +1015,51 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
 }
 
 
-
-#' Generate a prediction function that returns times
-#' 
-#' Function to deal with non-ODE models within the framework of dMod. See example.
-#' 
-#' @param condition  either NULL (generic prediction for any condition) or a character, denoting
-#' the condition for which the function makes a prediction.
-#' @return Object of class [prdfn].
-#' @examples 
-#' x <- Xt()
-#' g <- Y(c(y = "a*time^2+b"), f = NULL, parameters = c("a", "b"))
-#' 
-#' times <- seq(-1, 1, by = .05)
-#' pars <- c(a = .1, b = 1)
-#' 
-#' plot((g*x)(times, pars))
-#' @export
-Xt <- function(condition = NULL) {
-  
-  
-  
-  # Controls to be modified from outside
-  controls <- list()
-  
-  P2X <- function(times, pars, deriv=TRUE){
-    
-    out <- matrix(times, ncol = 1, dimnames = list(NULL, "time"))
-    sens <- deriv <- out
-    
-    prdframe(out, deriv = deriv, sensitivities = sens, parameters = pars)
-    
-  }
-  
-  attr(P2X, "parameters") <- NULL
-  attr(P2X, "equations") <- NULL
-  attr(P2X, "forcings") <- NULL
-  attr(P2X, "events") <- NULL
-  
-  
-  prdfn(P2X, NULL, condition) 
-  
-  
-  
-  
-}
+ 
+# #' Generate a prediction function that returns times
+# #' 
+# #' Function to deal with non-ODE models within the framework of dMod. See example.
+# #' 
+# #' @param condition  either NULL (generic prediction for any condition) or a character, denoting
+# #' the condition for which the function makes a prediction.
+# #' @return Object of class [prdfn].
+# #' @examples 
+# #' x <- Xt()
+# #' g <- Y(c(y = "a*time^2+b"), f = NULL, parameters = c("a", "b"))
+# #' 
+# #' times <- seq(-1, 1, by = .05)
+# #' pars <- c(a = .1, b = 1)
+# #' 
+# #' plot((g*x)(times, pars))
+# #' @export
+# Xt <- function(condition = NULL) {
+# 
+# 
+# 
+#   # Controls to be modified from outside
+#   controls <- list()
+# 
+#   P2X <- function(times, pars, deriv=TRUE){
+# 
+#     out <- matrix(times, ncol = 1, dimnames = list(NULL, "time"))
+#     sens <- deriv <- out
+# 
+#     prdframe(out, deriv = deriv, sensitivities = sens, parameters = pars)
+# 
+#   }
+# 
+#   attr(P2X, "parameters") <- NULL
+#   attr(P2X, "equations") <- NULL
+#   attr(P2X, "forcings") <- NULL
+#   attr(P2X, "events") <- NULL
+# 
+# 
+#   prdfn(P2X, NULL, condition)
+# 
+# 
+# 
+# 
+# }
 
 
 

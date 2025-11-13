@@ -27,7 +27,7 @@ reactions <- eqnlist() %>%
 mymodel <- odemodel(reactions, modelname = "bamodel", compile = F, deriv2 = T, solver = "boost")
 # Generate trajectories for the default condition
 x <- Xs(mymodel, condition = NULL)
-compile(x, cores = 3)
+compile(x, output = "bamodel_solver", cores = 3) # Compile C/C++ output of odemodel in parallel
 
 
 # For demonstration define parameters (initials and dynamic parameters)
@@ -41,7 +41,7 @@ plot(out) # Note this is a ggplot object
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn_small", attach.input = F)
+g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn_small", attach.input = T)
 ## Simulate data -------------------------------------------------------------------------------------------------------------
 
 # Fix parameters to steady state values (calculated on paper / by hand), replace buffer -> TCA_buffer = 0
@@ -107,13 +107,62 @@ plot((g*x*p)(times, pouter),data)
 
 out <- (g*x*p)(timesD, pouter, deriv2 = T)
 
-resids <- res(data$closed, out$closed)
+nout <- res(data$closed, out$closed)
 
-resids.deriv <- attr(resids, "deriv")
-resids.deriv
+nout.deriv <- attr(nout, "deriv")
+nout.deriv
 
-resids.deriv2 <- attr(resids, "deriv2")
-resids.deriv2[1,,]
+nout.deriv2 <- attr(nout, "deriv2")
+nout.deriv2[1,,]
+
+
+nll.aloq <- nll_ALOQ_cpp(
+  nout,
+  derivs = nout.deriv,
+  opt_BLOQ = "M3",
+  opt_hessian = c(ALOQ_part1=TRUE, ALOQ_part2=TRUE, ALOQ_part3=TRUE),
+  bessel_correction = 1,
+  deriv2 = nout.deriv2
+)
+
+nll.aloq
+
+
+# Simulierter Output aus res() – BLOQ-Teil
+nout.bloq <- data.frame(
+  time = c(1, 2, 3),
+  name = "A",
+  value = c(0.1, 0.2, 0.0),            # DV – > 0 for M4
+  sigma = c(0.1, 0.1, 0.2),
+  weighted.residual = c(-2, -1, -0.5), # wr_i
+  weighted.0        = c(-3, -2, -1.5)  # w0_i (always < wr)
+)
+
+set.seed(1)
+n_pars <- 3
+
+derivs.bloq <- matrix(rnorm(3 * n_pars, sd = 0.1),
+                      nrow = 3, ncol = n_pars)
+colnames(derivs.bloq) <- c("p1", "p2", "p3")
+
+derivs.err.bloq <- matrix(rnorm(3 * n_pars, sd = 0.02),
+                          nrow = 3, ncol = n_pars)
+colnames(derivs.err.bloq) <- colnames(derivs.bloq)
+
+nll_bloq_M3 <- nll_BLOQ_cpp(
+  nout_bloq = nout.bloq,
+  derivs_bloq = derivs.bloq,
+  derivs_err_bloq = derivs.err.bloq,
+  opt_BLOQ = "M4NM",
+  opt_hessian = c(
+    BLOQ_part1 = TRUE,
+    BLOQ_part2 = TRUE,
+    BLOQ_part3 = TRUE
+  )
+)
+nll_bloq_M3
+
+
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 # # One Fit
