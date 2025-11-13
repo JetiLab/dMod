@@ -77,9 +77,6 @@ resids <- res(data$closed, outD$closed)
 resids.deriv <- attr(resids, "deriv")
 resids.deriv
 
-dim(attr(out$closed, "deriv"))
-dimnames(attr(out$closed, "deriv"))[[2]]  # Die Variablennamen
-
 resids.deriv2 <- attr(resids, "deriv2")
 resids.deriv2[1,,]
 
@@ -88,27 +85,35 @@ innerpars <- getParameters(x,g)
 trafo <- NULL %>%
   define("x~x", x = innerpars) %>% # identity
   define("TCA_buffer~0") %>%
-  insert("x~10*y", x = .currentSymbols, y = toupper(.currentSymbols))
+  insert("x~10^y", x = .currentSymbols, y = toupper(.currentSymbols))
 
 
-# # Explicit trafo
-trafo <- eqnvec(TCA_buffer = "0",
-                TCA_cell = "exp(log(10)*TCA_cell)",
-                TCA_cana = "exp(log(10)*TCA_cana)",
-                k_import = "exp(log(10)*k_import)",
-                k_export_sinus = "exp(log(10)*k_export_sinus)",
-                k_export_cana = "exp(log(10)*k_export_cana)",
-                k_reflux = "exp(log(10)*k_reflux)",
-                s = "exp(log(10)*s)")
+# # # Explicit trafo
+# trafo <- eqnvec(TCA_buffer = "0",
+#                 TCA_cell = "exp(log(10)*TCA_cell)",
+#                 TCA_cana = "exp(log(10)*TCA_cana)",
+#                 k_import = "exp(log(10)*k_import)",
+#                 k_export_sinus = "exp(log(10)*k_export_sinus)",
+#                 k_export_cana = "exp(log(10)*k_export_cana)",
+#                 k_reflux = "exp(log(10)*k_reflux)",
+#                 s = "exp(log(10)*s)")
 
 # debugonce("Pexpl")
-p <- P(unclass(trafo), condition = "closed", compile = F)
+p <- P(unclass(trafo), condition = "closed", compile = T, deriv2 = T)
 # Set every parameter to -1 in the log-space
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*p)(times, pouter),data)
 
+out <- (g*x*p)(timesD, pouter, deriv2 = T)
 
+resids <- res(data$closed, out$closed)
+
+resids.deriv <- attr(resids, "deriv")
+resids.deriv
+
+resids.deriv2 <- attr(resids, "deriv2")
+resids.deriv2[1,,]
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 # # One Fit

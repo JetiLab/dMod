@@ -10,6 +10,24 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// nll_ALOQ_cpp
+Rcpp::List nll_ALOQ_cpp(const Rcpp::DataFrame& nout, Rcpp::Nullable<Rcpp::NumericMatrix> derivs, Rcpp::Nullable<Rcpp::NumericMatrix> derivs_err, std::string opt_BLOQ, Rcpp::LogicalVector opt_hessian, double bessel_correction, Rcpp::Nullable<Rcpp::NumericVector> deriv2, Rcpp::Nullable<Rcpp::NumericVector> deriv2_err);
+RcppExport SEXP _dMod_nll_ALOQ_cpp(SEXP noutSEXP, SEXP derivsSEXP, SEXP derivs_errSEXP, SEXP opt_BLOQSEXP, SEXP opt_hessianSEXP, SEXP bessel_correctionSEXP, SEXP deriv2SEXP, SEXP deriv2_errSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::DataFrame& >::type nout(noutSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type derivs(derivsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericMatrix> >::type derivs_err(derivs_errSEXP);
+    Rcpp::traits::input_parameter< std::string >::type opt_BLOQ(opt_BLOQSEXP);
+    Rcpp::traits::input_parameter< Rcpp::LogicalVector >::type opt_hessian(opt_hessianSEXP);
+    Rcpp::traits::input_parameter< double >::type bessel_correction(bessel_correctionSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type deriv2(deriv2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type deriv2_err(deriv2_errSEXP);
+    rcpp_result_gen = Rcpp::wrap(nll_ALOQ_cpp(nout, derivs, derivs_err, opt_BLOQ, opt_hessian, bessel_correction, deriv2, deriv2_err));
+    return rcpp_result_gen;
+END_RCPP
+}
 // res_cpp
 List res_cpp(DataFrame data, NumericMatrix out, Nullable<NumericMatrix> err);
 RcppExport SEXP _dMod_res_cpp(SEXP dataSEXP, SEXP outSEXP, SEXP errSEXP) {
@@ -25,6 +43,7 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_dMod_nll_ALOQ_cpp", (DL_FUNC) &_dMod_nll_ALOQ_cpp, 8},
     {"_dMod_res_cpp", (DL_FUNC) &_dMod_res_cpp, 3},
     {NULL, NULL, 0}
 };
