@@ -55,9 +55,11 @@ pars["s"] <- 1e3
 out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
 plot(out)
 
+getDerivs(out) %>% plot()
+
 # simulate data for time points
 timesD <- c(0.1, 1, 3, 7, 11, 15, 20, 41)
-outD <- (g * x)(timesD, pars, conditions = "closed")
+outD <- (g * x)(timesD, pars, conditions = "closed", deriv2 = T)
 datasheet <- subset(as.data.frame(outD), time %in% timesD & name %in% names(observables))
 datasheet <- within(datasheet, {
   sigma <- 0.1*value
@@ -67,9 +69,10 @@ data <- as.datalist(datasheet)
 plot(out, data)
 
 out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
+plot(out)
 getDerivs(out) %>% plot()
 
-resids <- res(data$closed, out$closed)
+resids <- res(data$closed, outD$closed)
 
 resids.deriv <- attr(resids, "deriv")
 resids.deriv
