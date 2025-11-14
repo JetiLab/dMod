@@ -153,7 +153,7 @@ nll_bloq_M3 <- nll_BLOQ_cpp(
   nout_bloq = nout.bloq,
   derivs_bloq = derivs.bloq,
   derivs_err_bloq = derivs.err.bloq,
-  opt_BLOQ = "M4NM",
+  opt_BLOQ = "M3",
   opt_hessian = c(
     BLOQ_part1 = TRUE,
     BLOQ_part2 = TRUE,

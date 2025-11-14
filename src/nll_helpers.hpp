@@ -1,31 +1,28 @@
 #ifndef NLL_HELPERS_HPP
 #define NLL_HELPERS_HPP
 
-#include <Rcpp.h>
+#include <R.h>
+#include <Rmath.h>
 #include <cmath>
 #include <string>
 #include <vector>
-
-using namespace Rcpp;
+#include <algorithm>
 
 // ============================================================================
 // 1) get_flag  (named logical flag from R)
 // ============================================================================
-inline bool get_flag(const LogicalVector& lv,
+inline bool get_flag(const std::vector<int>& lv,
+                     const std::vector<std::string>& names,
                      const std::string& name,
                      bool default_value = true)
 {
-  if (lv.size() == 0) return default_value;
+  if (lv.empty()) return default_value;
+  if (names.size() != lv.size()) return default_value;
   
-  CharacterVector nms = lv.names();
-  if (nms.size() != lv.size()) return default_value;
-  
-  for (int i = 0; i < lv.size(); ++i) {
-    if (TYPEOF(nms[i]) == STRSXP &&
-        as<std::string>(nms[i]) == name)
-    {
-      if (LogicalVector::is_na(lv[i])) return false;
-      return lv[i];
+  for (size_t i = 0; i < lv.size(); ++i) {
+    if (names[i] == name) {
+      if (lv[i] == NA_LOGICAL) return false;
+      return lv[i] != 0;
     }
   }
   return default_value;
@@ -60,33 +57,45 @@ inline double G_single(double w1, double w2)
   return std::exp(log_phi(w1) - log_Phi(w2));
 }
 
-// Vectorized
-inline NumericVector G_vec(const NumericVector& w1,
-                           const NumericVector& w2)
+// Vectorized version using std::vector
+inline std::vector<double> G_vec(const std::vector<double>& w1,
+                                 const std::vector<double>& w2)
 {
-  int n = w1.size();
-  NumericVector out(n);
-  for (int i = 0; i < n; ++i)
+  size_t n = w1.size();
+  std::vector<double> out(n);
+  for (size_t i = 0; i < n; ++i)
     out[i] = G_single(w1[i], w2[i]);
   return out;
 }
 
-inline NumericVector G_vec(const NumericVector& w)
+inline std::vector<double> G_vec(const std::vector<double>& w)
 {
   return G_vec(w, w);
+}
+
+// Pointer-based versions (for direct use with R data)
+inline void G_vec_ptr(const double* w1, const double* w2, double* out, int n)
+{
+  for (int i = 0; i < n; ++i)
+    out[i] = G_single(w1[i], w2[i]);
+}
+
+inline void G_vec_ptr(const double* w, double* out, int n)
+{
+  G_vec_ptr(w, w, out, n);
 }
 
 // ============================================================================
 // 4) stable_fun  (used in M4-BEAL / M4-NM Hessian)
 // ============================================================================
-inline NumericVector stable_fun(const NumericVector& wn,
-                                const NumericVector& w0,
-                                const NumericVector& wr)
+inline std::vector<double> stable_fun(const std::vector<double>& wn,
+                                      const std::vector<double>& w0,
+                                      const std::vector<double>& wr)
 {
-  int n = wn.size();
-  NumericVector out(n);
+  size_t n = wn.size();
+  std::vector<double> out(n);
   
-  for (int i = 0; i < n; ++i) {
+  for (size_t i = 0; i < n; ++i) {
     
     double Phi0 = R::pnorm5(w0[i], 0, 1, 1, 0);
     double Phir = R::pnorm5(wr[i], 0, 1, 1, 0);
@@ -111,19 +120,47 @@ inline NumericVector stable_fun(const NumericVector& wn,
   return out;
 }
 
+// Pointer-based version
+inline void stable_fun_ptr(const double* wn, const double* w0, const double* wr,
+                           double* out, int n)
+{
+  for (int i = 0; i < n; ++i) {
+    
+    double Phi0 = R::pnorm5(w0[i], 0, 1, 1, 0);
+    double Phir = R::pnorm5(wr[i], 0, 1, 1, 0);
+    double denom = Phi0 - Phir;
+    
+    // Case wn == w0
+    if (wn[i] == w0[i]) {
+      if (denom <= 0)
+        out[i] = 0.0;
+      else
+        out[i] = R::dnorm4(w0[i], 0, 1, 0) / denom;
+    }
+    // Case wn == wr
+    else {
+      if (denom <= 0)
+        out[i] = 1.0/(w0[i] - wr[i]) + wr[i];
+      else
+        out[i] = R::dnorm4(wr[i], 0, 1, 0) / denom;
+    }
+  }
+}
+
 // ============================================================================
 // 5) d_dp_sq_cpp : A * (dw/dp)(dw/dp)^T
+//    Matrix stored in column-major order
 // ============================================================================
-inline NumericMatrix d_dp_sq_cpp(const NumericVector& A,
-                                 const NumericVector& w,
-                                 const NumericVector& s,
-                                 const NumericMatrix& dxdp,
-                                 const NumericMatrix& dsdp)
+inline void d_dp_sq_cpp(const double* A,      // [n]
+                        const double* w,      // [n]
+                        const double* s,      // [n]
+                        const double* dxdp,   // [n x p] column-major
+                        const double* dsdp,   // [n x p] column-major
+                        double* out,          // [p x p] column-major
+                        int n,
+                        int p)
 {
-  int n = w.size();
-  int p = dxdp.ncol();
-  
-  NumericMatrix out(p, p);
+  std::fill(out, out + p * p, 0.0);
   
   for (int j = 0; j < p; ++j) {
     for (int k = 0; k < p; ++k) {
@@ -134,32 +171,31 @@ inline NumericMatrix d_dp_sq_cpp(const NumericVector& A,
         
         double invs = 1.0 / s[i];
         
-        double dw_j = invs*dxdp(i,j) - (w[i]*invs)*dsdp(i,j);
-        double dw_k = invs*dxdp(i,k) - (w[i]*invs)*dsdp(i,k);
+        double dw_j = invs * dxdp[i + j * n] - (w[i] * invs) * dsdp[i + j * n];
+        double dw_k = invs * dxdp[i + k * n] - (w[i] * invs) * dsdp[i + k * n];
         
         sum += A[i] * dw_j * dw_k;
       }
       
-      out(j,k) = sum;
+      out[j + k * p] = sum;
     }
   }
-  
-  return out;
 }
 
 // ============================================================================
 // 6) d2_dp2_cpp: A * second derivatives part
+//    Matrix stored in column-major order
 // ============================================================================
-inline NumericMatrix d2_dp2_cpp(const NumericVector& A,
-                                const NumericVector& w,
-                                const NumericVector& s,
-                                const NumericMatrix& dxdp,
-                                const NumericMatrix& dsdp)
+inline void d2_dp2_cpp(const double* A,      // [n]
+                       const double* w,      // [n]
+                       const double* s,      // [n]
+                       const double* dxdp,   // [n x p] column-major
+                       const double* dsdp,   // [n x p] column-major
+                       double* out,          // [p x p] column-major
+                       int n,
+                       int p)
 {
-  int n = w.size();
-  int p = dxdp.ncol();
-  
-  NumericMatrix out(p, p);
+  std::fill(out, out + p * p, 0.0);
   
   for (int j = 0; j < p; ++j) {
     for (int k = 0; k < p; ++k) {
@@ -172,19 +208,32 @@ inline NumericMatrix d2_dp2_cpp(const NumericVector& A,
         
         double term =
           A[i] * (
-              - invs2 * dxdp(i,j) * dsdp(i,k)
-          - invs2 * dsdp(i,j) * dxdp(i,k)
-          + (2.0 * w[i]) * invs2 * dsdp(i,j) * dsdp(i,k)
+              - invs2 * dxdp[i + j * n] * dsdp[i + k * n]
+        - invs2 * dsdp[i + j * n] * dxdp[i + k * n]
+        + (2.0 * w[i]) * invs2 * dsdp[i + j * n] * dsdp[i + k * n]
           );
         
         sum += term;
       }
       
-      out(j,k) = sum;
+      out[j + k * p] = sum;
     }
   }
-  
-  return out;
+}
+
+// ============================================================================
+// 7) Matrix addition utility (for combining Hessian parts)
+// ============================================================================
+inline void matrix_add(double* dest, const double* src, int n_elem)
+{
+  for (int i = 0; i < n_elem; ++i)
+    dest[i] += src[i];
+}
+
+inline void matrix_add_scaled(double* dest, const double* src, double scale, int n_elem)
+{
+  for (int i = 0; i < n_elem; ++i)
+    dest[i] += scale * src[i];
 }
 
 #endif  // NLL_HELPERS_HPP

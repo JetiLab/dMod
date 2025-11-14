@@ -155,7 +155,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
                    conditions = intersect(x.conditions, data.conditions),
                    bessel.correction = bessel.correction)
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = controls$conditions, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = FALSE, conditions = controls$conditions, env = NULL) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
@@ -172,7 +172,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
     # Create new environment if necessary
     if (is.null(env)) env <- new.env()
     
-    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, conditions = conditions)
+    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
     
     # Apply res() and nll() to compute residuals and the weighted residual sum of squares
     out.data <- lapply(conditions, function(cn) {
@@ -618,7 +618,7 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
 #' @param pars Named vector of outer parameters to construct the objlist
 #' @param deriv Logical. If TRUE, compute gradient and hessian
 #' @param opt.BLOQ Character denoting the method to deal with BLOQ data. 
-#' One of "M1", "M3", "M4NM", or "M4BEAL". See [normL2_indiv] for details.
+#' One of "M1", "M3", "M4NM", or "M4BEAL".
 #' @param opt.hessian Named logical vector to include or exclude various 
 #' summands of the hessian matrix. Controls which parts contribute to the 
 #' Hessian calculation for both ALOQ and BLOQ data.
@@ -638,329 +638,70 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
 #' in the "neg2ll" attribute for use in BIC/AIC calculations.
 #' 
 #' @export
-nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
-  ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE,
-  BLOQ_part1 = TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE,
-  PD = TRUE), bessel.correction = 1) {
+nll <- function(nout, pars, deriv,
+                opt.BLOQ = "M3",
+                opt.hessian = c(
+                  ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE,
+                  BLOQ_part1 = TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE,
+                  PD = TRUE),
+                bessel.correction = 1) {
   
-  # Split residuals into ALOQ and BLOQ
   is.bloq   <- nout$bloq
-  nout.bloq <- nout[is.bloq, , drop = FALSE]
+  nout.bloq <- nout[ is.bloq, , drop = FALSE]
   nout.aloq <- nout[!is.bloq, , drop = FALSE]
   
-  # Handle derivs
-  derivs          <- attr(nout, "deriv")
-  derivs.bloq     <- derivs[is.bloq, , drop = FALSE]
-  derivs.aloq     <- derivs[!is.bloq, , drop = FALSE]
-  derivs.err      <- attr(nout, "deriv.err")
-  derivs.err.bloq <- derivs.err[is.bloq, , drop = FALSE]
-  derivs.err.aloq <- derivs.err[!is.bloq, , drop = FALSE]
+  derivs     <- attr(nout, "deriv")
+  derivs.err <- attr(nout, "deriv.err")
+  deriv2     <- attr(nout, "deriv2")
+  deriv2.err <- attr(nout, "deriv2.err")
   
-  # Apply nll
+  derivs.aloq     <- if (!is.null(derivs))     derivs[!is.bloq, , drop = FALSE] else NULL
+  derivs.bloq     <- if (!is.null(derivs))     derivs[ is.bloq, , drop = FALSE] else NULL
+  derivs.err.aloq <- if (!is.null(derivs.err)) derivs.err[!is.bloq, , drop = FALSE] else NULL
+  derivs.err.bloq <- if (!is.null(derivs.err)) derivs.err[ is.bloq, , drop = FALSE] else NULL
+  
+  deriv2.aloq     <- if (!is.null(deriv2))     deriv2[!is.bloq, , , drop = FALSE] else NULL
+  deriv2.err.aloq <- if (!is.null(deriv2.err)) deriv2.err[!is.bloq, , , drop = FALSE] else NULL
+  
   mywrss <- init_empty_objlist(pars, deriv = deriv)
   nll_ALOQ_result <- NULL
-  if (!all(is.bloq))
-    nll_ALOQ_result <- nll_ALOQ(nout.aloq, derivs.aloq, derivs.err.aloq, 
-                                opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian, 
-                                bessel.correction = bessel.correction)
-  mywrss <- mywrss + nll_ALOQ_result
-  if (any(is.bloq) && (!opt.BLOQ == "M1"))
-    mywrss <- mywrss + nll_BLOQ(nout.bloq, derivs.bloq, derivs.err.bloq, 
-                                opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
   
-  # Extract and store attributes
+  if (!all(is.bloq)) {
+    nll_ALOQ_result <- .Call(
+      "C_nll_ALOQ",
+      nout.aloq,
+      derivs.aloq,
+      derivs.err.aloq,
+      opt.BLOQ,
+      opt.hessian,
+      bessel.correction,
+      deriv2.aloq,
+      deriv2.err.aloq,
+      PACKAGE = "dMod"
+    )
+  }
+  
+  mywrss <- mywrss + nll_ALOQ_result
+  
+  if (any(is.bloq) && opt.BLOQ != "M1") {
+    nll_BLOQ_result <- .Call(
+      "C_nll_BLOQ",
+      nout.bloq,
+      derivs.bloq,
+      derivs.err.bloq,
+      opt.BLOQ,
+      opt.hessian,
+      PACKAGE = "dMod"
+    )
+    mywrss <- mywrss + nll_BLOQ_result
+  }
+  
   chisquare <- attr(nll_ALOQ_result, "chisquare")
-  neg2ll <- attr(nll_ALOQ_result, "neg2ll")
+  neg2ll    <- attr(nll_ALOQ_result, "neg2ll")
   attr(mywrss, "chisquare") <- if (length(chisquare)) chisquare else 0
-  attr(mywrss, "neg2ll") <- if (length(neg2ll)) neg2ll else 0 
+  attr(mywrss, "neg2ll")    <- if (length(neg2ll))    neg2ll    else 0
   
   mywrss
-}
-
-
-
-#' Non-linear log likelihood for the ALOQ part of the data
-#' 
-#' @param nout output of [res()]
-#' @param derivs,derivs.err attributes of output of [res()]
-#' @param opt.BLOQ Character denoting the method to deal with BLOQ data
-#' @param opt.hessian Named logical vector to include or exclude
-#'   various non-convex summands of the hessian matrix
-#' @param bessel.correction Numeric. Bessel correction factor applied to the 
-#'   weighted residuals. Default is 1 (no correction). When use.bessel = TRUE 
-#'   in normL2(), this is already sqrt(n/(n-p)) where n is total data points 
-#'   and p is number of structural (non-errormodel) parameters.
-#'   
-#' @details The Bessel correction addresses downward bias in ML estimation of variance.
-#'   The correction is applied by multiplying weighted residuals with bessel.correction:
-#'   wr_corrected = wr * bessel.correction. This changes both the objective value 
-#'   AND the gradient/Hessian, leading to corrected parameter estimates during optimization.
-#'   
-#'   The returned objective value includes the Bessel correction and is used for optimization.
-#'   The TRUE maximum likelihood value (without correction) is stored in attr(*, "neg2ll")
-#'   for use in BIC/AIC calculations.
-#'   
-#' @md
-#' @importFrom stats pnorm dnorm
-nll_ALOQ <- function(nout,
-                     derivs,
-                     derivs.err,
-                     opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
-                     opt.hessian = c(
-                       # ALOQ (Above limit of quantification): Three parts of the hessian which can be obtained with first order derivs
-                       ALOQ_part1 = TRUE,
-                       ALOQ_part2 = TRUE,
-                       ALOQ_part3 = TRUE
-                     ),
-                     bessel.correction = 1) {
-  
-  # opt.BLOQ: only M4BEAL changes something, all others are implicit, since they do not change anything in the ALOQ part
-  # opt.hessian ALOQ_part1-ALOQ_part3
-  
-  # .. Residual terms ----#
-  wr <- nout$weighted.residual
-  w0 <- nout$weighted.0
-  s  <- nout$sigma
-  
-  # .. Compute TRUE negative log-likelihood (for BIC/AIC) ----#
-  chisquare_ml <- sum(wr^2)
-  neg2ll_ml <- chisquare_ml + sum(log(2*pi*s^2))
-  
-  # .. Apply Bessel correction to weighted residuals ----#
-  use_bessel <- bessel.correction != 1
-  if (use_bessel) {
-    wr <- wr * bessel.correction
-    w0 <- w0 * bessel.correction
-  }
-  
-  # .. Compute corrected objective value (for optimization) ----#
-  chisquare <- sum(wr^2)
-  obj <- chisquare + sum(log(2*pi*s^2))
-  
-  if (opt.BLOQ %in% "M4BEAL") {
-    bloq_term <- 2 * sum(stats::pnorm(w0, log.p = TRUE))
-    obj <- obj + bloq_term
-    neg2ll_ml <- neg2ll_ml + bloq_term
-  }
-  
-  grad <- NULL
-  hessian <- NULL
-  if (!is.null(derivs) && nrow(derivs) > 0) {
-    # .. Sensitivities terms ----#
-    #   sens = dres/dp = dx/dp, sens.err = dsigma/dp
-    dxdp <- as.matrix(derivs[, -(1:2), drop = FALSE])
-    dsdp <- 0 * dxdp
-    if (!is.null(derivs.err))
-      dsdp <- as.matrix(derivs.err[, -(1:2), drop = FALSE])
-    
-    # Compute base derivatives
-    dwrdp <- 1/s*dxdp - wr/s*dsdp
-    dw0dp <- 1/s*dxdp - w0/s*dsdp
-    
-    # Apply Bessel correction to derivatives if needed
-    if (use_bessel) {
-      dwrdp <- dwrdp * bessel.correction
-      dw0dp <- dw0dp * bessel.correction
-    }
-    
-    dlogsdp <- (1/s)*dsdp # dlogsig.dp
-    G_by_Phi <- function(w) exp(stats::dnorm(w, log = TRUE)- stats::pnorm(w, log.p = TRUE))
-    
-    # .. 2nd Sensitivity terms ----#
-    #   interaction terms of second derivative. d2adb2 means second derivative: d^2a/db^2
-    #   d2wrdp2 does not solely consist of second derivatives but via the prefactors also of some combinations of first order derivs.
-    # * These are the equations, but since we need to sum over residuals, they will be inserted directly
-    # d2wrdp2 <- - 1 / (s^2) * (dxdp * dsdp + dsdp * dxdp) +
-    #               2 * wr/(s^2) * dsdp * dsdp # - wr/s* d2sdp2 + 1/s * d2xdp2
-    
-    # .. Compute gradient ----#
-    grad <- as.vector(2*matrix(wr, nrow = 1) %*% dwrdp + 2*apply(dlogsdp,2, sum))
-    if (opt.BLOQ %in% "M4BEAL")
-      grad <- grad + as.vector((2 * matrix(G_by_Phi(w0), nrow = 1)) %*% (dw0dp))
-    names(grad) <- colnames(dxdp)
-    
-    # .. Compute hessian ----#
-    # >>>> All equations were double-checked, they should be fine. (Dont touch or read them, D2!) <<<<<<<
-    hessian <- matrix(0, nrow = ncol(dwrdp), ncol = ncol(dwrdp), dimnames = list(colnames(dwrdp), colnames(dwrdp)))
-    hessian <- hessian + 2 * t(dwrdp) %*% dwrdp # - 2 * t(dsig.dp) %*% dsig.dp # + 2. sens
-    
-    if (opt.hessian["ALOQ_part1"])  # "interaction"-terms of d2wrdp2
-      hessian <- hessian + 2 * (t(-wr/s^2 * dxdp) %*% dsdp + t(-wr/s^2 * dsdp) %*% dxdp) #slightly concave
-    if (opt.hessian["ALOQ_part2"])  # "interaction"-terms of d2wrdp2
-      hessian <- hessian + 2 * t(2 * wr^2/(s^2) * dsdp)%*%dsdp # + 2nd order derivs of logsig and wr
-    if (opt.hessian["ALOQ_part3"]) # The non-convex contribution by log(sigma)
-      hessian <- hessian - 2 * t(dlogsdp) %*% dlogsdp
-    
-    
-    if (opt.BLOQ %in% "M4BEAL") {
-      hessian <- hessian + 2 * t((-w0 * G_by_Phi(w0) - G_by_Phi(w0)^2) * dw0dp) %*% dw0dp # 1st order terms
-      hessian <- hessian + 2 * t(G_by_Phi(w0) * (-1)/(s^2) * dxdp ) %*% dsdp + 2 * t(G_by_Phi(w0) * (-1)/(s^2) * dsdp ) %*% dxdp # 2nd order terms
-      if (opt.hessian["ALOQ_part1"]) # The other term from second sensitivities of wr
-        hessian <- hessian + 2 * t(2 * G_by_Phi(w0) * w0/(s^2) * dsdp)%*%dsdp
-    }
-  }
-  
-  out <- objlist(value = obj, gradient = grad, hessian = hessian)
-  attr(out, "chisquare") <- chisquare_ml      # TRUE chisquare (without Bessel)
-  attr(out, "neg2ll") <- neg2ll_ml            # TRUE -2*log(L) (for BIC/AIC)
-  attr(out, "besselcorrected") <- use_bessel
-  out
-}
-
-
-
-#' Non-linear log likelihood for the BLOQ part of the data
-#' @md
-#' @param nout.bloq The bloq output of [res()]
-#' @param derivs.bloq,derivs.err.bloq attributes of output of [res()]
-#' @param opt.BLOQ Character denoting the method to deal with BLOQ data
-#' @param opt.hessian Named logical vector to include or exclude
-#'   various summands of the hessian matrix
-#' @importFrom stats pnorm dnorm
-nll_BLOQ <- function(nout.bloq,
-                     derivs.bloq,
-                     derivs.err.bloq,
-                     opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
-                     opt.hessian = c(
-                       BLOQ_part1 = TRUE,
-                       BLOQ_part2 = TRUE,
-                       BLOQ_part3 = TRUE
-                     )) {
-  
-  # .. Checks -----
-  if (opt.BLOQ %in% c("M4NM", "M4BEAL") & any(nout.bloq$value < 0))
-    stop("M4-Method cannot handle LLOQ < 0. Possible solutions:
-      * Use M3 which allows negative LLOQ (recommended)
-      * If you are working with log-transformed DV, exponentiate DV and LLOQ\n")
-  
-  # .. Residuals and sensitivities ----#
-  wr <- nout.bloq$weighted.residual
-  w0 <- nout.bloq$weighted.0
-  s  <- nout.bloq$sigma
-  
-  # .. Compute objective value ----#
-  if (opt.BLOQ == "M3"){
-    objvals.bloq <- -2*stats::pnorm(-wr, log.p = TRUE)
-  }
-  if (opt.BLOQ %in% c("M4NM", "M4BEAL")){
-    objvals.bloq <- -2*log(1 - stats::pnorm(wr) / stats::pnorm(w0))
-    # .... catch numerically problematic cases ----#
-    # The problematic region can be approximated by a parabola, intercept and linear coefficient depend on LOQ/s
-    intercept = ifelse(log(w0-wr) > 0, 1.8, -1.9 * log(w0-wr) +0.9)
-    lin = ifelse(log(w0-wr) > 0, 0.9, 0.5 )
-    objvals.bloq[!is.finite(objvals.bloq)] <-  (intercept + lin * w0 + 0.95 * w0^2)[!is.finite(objvals.bloq)]
-  }
-  
-  obj.bloq <- sum(objvals.bloq)
-  grad.bloq <- NULL
-  hessian.bloq <- NULL
-  
-  if (!is.null(derivs.bloq) && nrow(derivs.bloq) > 0){
-    # .. Sensitivities ----#
-    #   sens = dres/dp = dx/dp, sens.err = dsigma/dp = dsdp
-    dxdp <- as.matrix(derivs.bloq[, -(1:2), drop = FALSE])
-    dsdp <- 0 * dxdp
-    if (!is.null(derivs.err.bloq))
-      dsdp <- as.matrix(derivs.err.bloq[, -(1:2), drop = FALSE])
-    dwrdp <- 1/s*dxdp - wr/s*dsdp
-    dw0dp <- 1/s*dxdp - w0/s*dsdp
-    dlogsdp <- (1/s)*dsdp # dlogsig.dp
-    G_by_Phi <- function(w1, w2 = w1) exp(stats::dnorm(w1, log = TRUE) - stats::pnorm(w2, log.p = TRUE))
-    
-    # .. 2nd Sensitivities ----#
-    #   interaction terms of second derivative. d2adb2 means second derivative: d^2a/db^2
-    #   d2wrdp2 does not solely consist of second derivatives but via the prefactors also of some combinations of first order derivs.
-    # * These are the equations, but since we need to sum over residuals, they will be inserted directly
-    # d2wrdp2 <- - 1 / (s^2) * (dxdp * dsdp + dsdp * dxdp) +
-    #               2 * wr/(s^2) * dsdp * dsdp # - wr/s* d2sdp2 + 1/s * d2xdp2
-    
-    # .. Compute gradient ----#
-    if (opt.BLOQ == "M3"){
-      grad.bloq <- -2 * as.vector(matrix( G_by_Phi(-wr), nrow = 1) %*% (-dwrdp)) # minus sign of -2logLikelihood and -dwrdp cancel # [] clean this formula
-    }
-    if (opt.BLOQ %in% c("M4NM", "M4BEAL")){
-      grad.bloq <-             as.vector(matrix(2 / (1/G_by_Phi(wr,w0) - 1/G_by_Phi(wr,wr)), nrow = 1) %*% dwrdp)
-      grad.bloq <- grad.bloq - as.vector(matrix(2 / (1/G_by_Phi(w0,w0) - 1/G_by_Phi(w0,wr)), nrow = 1) %*% dw0dp)
-      grad.bloq <- grad.bloq + as.vector(matrix(2 * G_by_Phi(w0), nrow = 1) %*% dw0dp)
-    }
-    names(grad.bloq) <- colnames(dxdp)
-    
-    # .. Compute hessian ----
-    if (opt.BLOQ %in% "M3") {
-      hessian.bloq <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-      if (opt.hessian["BLOQ_part1"])
-        hessian.bloq <- hessian.bloq + 2 * t((-wr * G_by_Phi(-wr) + G_by_Phi(-wr)^2) * dwrdp) %*% dwrdp # 1st order terms
-      if (opt.hessian["BLOQ_part2"]){
-        hessian.bloq <- hessian.bloq - 2 * t(G_by_Phi(-wr) * (+1)/(s^2) * dxdp) %*% dsdp # 2nd order terms (+1) because the original term of d2wrdp2 contains -1/s^2, so (d2-wrdp) contains +1/s^2
-        hessian.bloq <- hessian.bloq - 2 * t(G_by_Phi(-wr) * (+1)/(s^2) * dsdp) %*% dxdp
-      }
-      if (opt.hessian["BLOQ_part3"])
-        hessian.bloq <- hessian.bloq - 2 *  t(G_by_Phi(-wr) * (2 * (-wr))/(s^2) * dsdp)%*%dsdp
-    }
-    
-    # .. M4 hessian ----
-    if (opt.BLOQ %in% c("M4NM", "M4BEAL")) {
-      d_dp_sq <- function(A, w = wr, sign = 1) {
-        # @details This function performs the multiplication of A with quadratic first order derivs: A*t(dw/dp)%*%(dw/dp)
-        # @param A: sth to multiply the derivs with
-        # @param w weighted residual: practically choice between wr or w0
-        # @param sign: +1 or -1, e.g. in H(-2*LLBM3), wr appears as -wr, therefore, the minus signs have to be propagated correctly. (In A, however, everything has to specified by hand).
-        dwdp <- 1/s*dxdp - w/s*dsdp
-        out <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-        out <- out + t(A * dwdp) %*% dwdp
-      }
-      d2_dp2 <- function(A, w = wr, sign = 1) {
-        # @details This function performs the multiplication of A with the second derivative terms: A*d^2w/dp^2
-        # @inheritParams d_dp_sq
-        out <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-        out <- out + t(A * (-1*sign)/(s^2) * dxdp) %*% dsdp
-        out <- out + t(A * (-1*sign)/(s^2) * dsdp) %*% dxdp
-        out <- out + t(A * (2 * (w*sign))/(s^2) * dsdp) %*% dsdp
-      }
-      # In hessian(BM4), one often gets an expression G(w0 or wr)/(Phi(w0)-Phi(wr))
-      # This function is replaces numerically problematic regions by an approximation
-      # @params wn,w0,wr "Weighted residual Numerator/Denominator 1/2"
-      stable <- function(wn, w0, wr) {
-        
-        if(!(identical(wn, w0) | identical(wn, wr)))
-          stop("The first argument wn needs to be identical to either the second or third")
-        
-        out <- stats::dnorm(wn)/(stats::pnorm(w0)-stats::pnorm(wr))
-        # two possible cases with different asymptotics: wn == wd1 or wn == wd2
-        if (identical(wn, w0)){
-          out[is.infinite(out)] <- 0
-          return(out)
-        }
-        if (identical(wn, wr)){
-          out[is.infinite(out)] <- 1/(w0-wr) + wr # This formula was found out "by hand", I didn't really search for an analytic justification. If you want, you can try l'Hospitalizing it.
-          return(out)
-        }
-      }
-      
-      part1 <- d_dp_sq(-wr * stable(wr,w0,wr)) +
-        d2_dp2(stable(wr,w0,wr)) -
-        (d_dp_sq(-w0 * stable(w0,w0,wr), w = w0) +
-           d2_dp2(stable(w0,w0,wr), w = w0))
-      part1 <- 2 * part1
-      
-      part2 <- stable(wr,w0,wr) * dwrdp - stable(w0,w0,wr) * dw0dp
-      part2 <- -2 * t(part2) %*% part2
-      
-      part3 <- d_dp_sq(-w0 * G_by_Phi(w0) - (G_by_Phi(w0))^2, w = w0) + d2_dp2(G_by_Phi(w0), w = w0)
-      part3 <- 2 * part3
-      
-      hessian.bloq <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-      if (opt.hessian["BLOQ_part1"])
-        hessian.bloq <- hessian.bloq + part1
-      if (opt.hessian["BLOQ_part2"])
-        hessian.bloq <- hessian.bloq + part2
-      if (opt.hessian["BLOQ_part3"])
-        hessian.bloq <- hessian.bloq + part3
-    }
-  }
-  
-  out <- objlist(value = obj.bloq, gradient = grad.bloq, hessian = hessian.bloq)
-  return(out)
 }
 
 
