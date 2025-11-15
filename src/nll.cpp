@@ -116,7 +116,7 @@ extern "C" SEXP C_nll_ALOQ(SEXP nout, SEXP derivs, SEXP derivs_err,
   if (use_M4BEAL) {
     double bloq_term = 0.0;
     for (int i = 0; i < n; ++i) {
-      bloq_term += 2.0 * R::pnorm5(w0_vec[i], 0.0, 1.0, 1, 1);
+      bloq_term += 2.0 * pnorm(w0_vec[i], 0.0, 1.0, 1, 1);  // FIXED: removed R::
     }
     obj += bloq_term;
     neg2ll_ml += bloq_term;
@@ -544,11 +544,11 @@ extern "C" SEXP C_nll_BLOQ(SEXP nout_bloq, SEXP derivs_bloq, SEXP derivs_err_blo
   
   // Extract required vectors
   int n;
-  double* value = get_numeric_column(nout_bloq, "value", &n);
+  // Note: 'value' column not actually used, but kept for consistency with original code
+  // double* value = get_numeric_column(nout_bloq, "value", &n);
   
   int n_check;
-  double* wr = get_numeric_column(nout_bloq, "weighted.residual", &n_check);
-  if (n_check != n) Rf_error("Column lengths mismatch");
+  double* wr = get_numeric_column(nout_bloq, "weighted.residual", &n);
   
   double* w0 = get_numeric_column(nout_bloq, "weighted.0", &n_check);
   if (n_check != n) Rf_error("Column lengths mismatch");
@@ -562,12 +562,12 @@ extern "C" SEXP C_nll_BLOQ(SEXP nout_bloq, SEXP derivs_bloq, SEXP derivs_err_blo
   
   if (strcmp(opt_BLOQ_str, "M3") == 0) {
     for (int i = 0; i < n; ++i)
-      objvals[i] = -2.0 * R::pnorm5(-wr[i], 0, 1, 1, 1);
+      objvals[i] = -2.0 * pnorm(-wr[i], 0, 1, 1, 1);  // FIXED: removed R::
   }
   else if (strcmp(opt_BLOQ_str, "M4NM") == 0 || strcmp(opt_BLOQ_str, "M4BEAL") == 0) {
     for (int i = 0; i < n; ++i) {
-      double Phi_wr = R::pnorm5(wr[i], 0, 1, 1, 0);
-      double Phi_w0 = R::pnorm5(w0[i], 0, 1, 1, 0);
+      double Phi_wr = pnorm(wr[i], 0, 1, 1, 0);  // FIXED: removed R::
+      double Phi_w0 = pnorm(w0[i], 0, 1, 1, 0);  // FIXED: removed R::
       double r = Phi_wr / Phi_w0;
       objvals[i] = (r >= 1) ? R_PosInf : -2 * std::log(1 - r);
     }

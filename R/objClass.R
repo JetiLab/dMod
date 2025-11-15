@@ -4,8 +4,6 @@
 
 ## Class "objlist" and its constructors ------------------------------------
 
-
-
 #' Generate objective list from numeric vector
 #' 
 #' @param p Named numeric vector
@@ -112,6 +110,8 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' The correction factor is sqrt(n/(n-p)) where n is the total number of data points and 
 #' p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
 #' is provided, FALSE otherwise.
+#' @param use.deriv2 logical. If TRUE second derivatives are used to construct the full hessian.
+#' Default is FALSE.
 #' 
 #' @return Object of class `objfn`, i.e. a function 
 #' `obj(..., fixed, deriv, conditions, env)` that returns an objective list,
@@ -120,14 +120,13 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' 
 #' The Bessel correction addresses the downward bias in maximum likelihood estimates of 
 #' variance parameters. When use.bessel = TRUE, the correction is applied globally across 
-#' all conditions based on the total number of data points and structural parameters, 
-#' consistent with NONMEM's approach where only THETA parameters (not SIGMA) contribute 
-#' to degrees of freedom.
+#' all conditions based on the total number of data points and structural parameters.
 #' 
 #' @example inst/examples/normL2.R
 #' @export
 normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
-                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)) {
+                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE),
+                   use.deriv2 = FALSE) {
 
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
   if (!is.null(times)) timesD <- sort(union(times, timesD))
@@ -155,15 +154,12 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
                    conditions = intersect(x.conditions, data.conditions),
                    bessel.correction = bessel.correction)
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = FALSE, conditions = controls$conditions, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = use.deriv2, conditions = controls$conditions, env = NULL) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pouter <- arglist[[1]]
     
-    # Generate output template
-    pars_out <- colnames(getDerivs(as.parvec(pouter)))
-   
     # Import from controls
     timesD <- controls$times
     attr.name <- controls$attr.name
@@ -172,19 +168,39 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
     # Create new environment if necessary
     if (is.null(env)) env <- new.env()
     
-    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+    # Prediction for all conditions at once
+    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, 
+                    deriv2 = deriv2, conditions = conditions)
     
-    # Apply res() and nll() to compute residuals and the weighted residual sum of squares
-    out.data <- lapply(conditions, function(cn) {
-      err <- NULL
-      if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
-        err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-      nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
-    })
+    # Extract parameters only once if identical
+    pars_pred <- if (length(prediction) > 0) getParameters(prediction[[1]]) else NULL
+    
+    # Check if error model is needed at all
+    use_errmodel <- !is.null(errmodel) && (is.null(e.conditions) || any(conditions %in% e.conditions))
+    
+    # Main loop
+    if (use_errmodel) {
+      out.data <- lapply(conditions, function(cn) {
+        # Only compute if condition is in e.conditions
+        if (is.null(e.conditions) || cn %in% e.conditions) {
+          err <- errmodel(out = prediction[[cn]], pars = pars_pred, conditions = cn)
+        } else {
+          err <- NULL
+        }
+        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), 
+            pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
+      })
+    } else {
+      # Faster path without error model
+      out.data <- lapply(conditions, function(cn) {
+        nll(res(data[[cn]], prediction[[cn]], NULL), 
+            pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
+      })
+    }
+    
     out.data <- Reduce("+", out.data)
     
-    
-    # Combine contributions and attach attributes
+    # Return
     out <- out.data
     attr(out, controls$attr.name) <- out.data$value
     
@@ -194,8 +210,6 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
     
     attr(out, "env") <- env
     return(out)
-      
-
   }
   class(myfn) <- c("objfn", "fn")
   attr(myfn, "conditions") <- data.conditions

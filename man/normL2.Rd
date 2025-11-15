@@ -10,7 +10,8 @@ normL2(
   errmodel = NULL,
   times = NULL,
   attr.name = "data",
-  use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)
+  use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE),
+  use.deriv2 = FALSE
 )
 }
 \arguments{
@@ -32,6 +33,9 @@ to account for the bias in maximum likelihood estimation of variance parameters.
 The correction factor is sqrt(n/(n-p)) where n is the total number of data points and
 p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel
 is provided, FALSE otherwise.}
+
+\item{use.deriv2}{logical. If TRUE second derivatives are used to construct the full hessian.
+Default is FALSE.}
 }
 \value{
 Object of class \code{objfn}, i.e. a function
@@ -49,9 +53,7 @@ Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
 
 The Bessel correction addresses the downward bias in maximum likelihood estimates of
 variance parameters. When use.bessel = TRUE, the correction is applied globally across
-all conditions based on the total number of data points and structural parameters,
-consistent with NONMEM's approach where only THETA parameters (not SIGMA) contribute
-to degrees of freedom.
+all conditions based on the total number of data points and structural parameters.
 }
 \examples{
 ## Generate a prediction function

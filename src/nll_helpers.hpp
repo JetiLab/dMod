@@ -32,11 +32,11 @@ inline bool get_flag(const std::vector<int>& lv,
 // 2) LOG-SAFE NORMAL HELPERS
 // ============================================================================
 inline double log_phi(double x) {
-  return R::dnorm4(x, 0.0, 1.0, 1);
+  return dnorm(x, 0.0, 1.0, 1);  // log=TRUE
 }
 
 inline double log_Phi(double x) {
-  return R::pnorm5(x, 0.0, 1.0, 1, 1);
+  return pnorm(x, 0.0, 1.0, 1, 1);  // lower.tail=TRUE, log.p=TRUE
 }
 
 // ============================================================================
@@ -97,8 +97,8 @@ inline std::vector<double> stable_fun(const std::vector<double>& wn,
   
   for (size_t i = 0; i < n; ++i) {
     
-    double Phi0 = R::pnorm5(w0[i], 0, 1, 1, 0);
-    double Phir = R::pnorm5(wr[i], 0, 1, 1, 0);
+    double Phi0 = pnorm(w0[i], 0, 1, 1, 0);  // lower.tail=TRUE, log.p=FALSE
+    double Phir = pnorm(wr[i], 0, 1, 1, 0);
     double denom = Phi0 - Phir;
     
     // Case wn == w0
@@ -106,14 +106,14 @@ inline std::vector<double> stable_fun(const std::vector<double>& wn,
       if (denom <= 0)
         out[i] = 0.0;
       else
-        out[i] = R::dnorm4(w0[i], 0, 1, 0) / denom;
+        out[i] = dnorm(w0[i], 0, 1, 0) / denom;  // log=FALSE
     }
     // Case wn == wr
     else {
       if (denom <= 0)
         out[i] = 1.0/(w0[i] - wr[i]) + wr[i];
       else
-        out[i] = R::dnorm4(wr[i], 0, 1, 0) / denom;
+        out[i] = dnorm(wr[i], 0, 1, 0) / denom;
     }
   }
   
@@ -126,8 +126,8 @@ inline void stable_fun_ptr(const double* wn, const double* w0, const double* wr,
 {
   for (int i = 0; i < n; ++i) {
     
-    double Phi0 = R::pnorm5(w0[i], 0, 1, 1, 0);
-    double Phir = R::pnorm5(wr[i], 0, 1, 1, 0);
+    double Phi0 = pnorm(w0[i], 0, 1, 1, 0);
+    double Phir = pnorm(wr[i], 0, 1, 1, 0);
     double denom = Phi0 - Phir;
     
     // Case wn == w0
@@ -135,14 +135,14 @@ inline void stable_fun_ptr(const double* wn, const double* w0, const double* wr,
       if (denom <= 0)
         out[i] = 0.0;
       else
-        out[i] = R::dnorm4(w0[i], 0, 1, 0) / denom;
+        out[i] = dnorm(w0[i], 0, 1, 0) / denom;
     }
     // Case wn == wr
     else {
       if (denom <= 0)
         out[i] = 1.0/(w0[i] - wr[i]) + wr[i];
       else
-        out[i] = R::dnorm4(wr[i], 0, 1, 0) / denom;
+        out[i] = dnorm(wr[i], 0, 1, 0) / denom;
     }
   }
 }

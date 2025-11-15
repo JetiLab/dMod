@@ -68,18 +68,6 @@ datasheet <- within(datasheet, {
 data <- as.datalist(datasheet)
 plot(out, data)
 
-out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
-plot(out)
-getDerivs(out) %>% plot()
-
-resids <- res(data$closed, outD$closed)
-
-resids.deriv <- attr(resids, "deriv")
-resids.deriv
-
-resids.deriv2 <- attr(resids, "deriv2")
-resids.deriv2[1,,]
-
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
 innerpars <- getParameters(x,g)
 trafo <- NULL %>%
@@ -105,74 +93,23 @@ outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*p)(times, pouter),data)
 
-out <- (g*x*p)(timesD, pouter, deriv2 = T)
-
-nout <- res(data$closed, out$closed)
-
-nout.deriv <- attr(nout, "deriv")
-nout.deriv
-
-nout.deriv2 <- attr(nout, "deriv2")
-nout.deriv2[1,,]
-
-
-nll.aloq <- nll_ALOQ_cpp(
-  nout,
-  derivs = nout.deriv,
-  opt_BLOQ = "M3",
-  opt_hessian = c(ALOQ_part1=TRUE, ALOQ_part2=TRUE, ALOQ_part3=TRUE),
-  bessel_correction = 1,
-  deriv2 = nout.deriv2
-)
-
-nll.aloq
-
-
-# Simulierter Output aus res() – BLOQ-Teil
-nout.bloq <- data.frame(
-  time = c(1, 2, 3),
-  name = "A",
-  value = c(0.1, 0.2, 0.0),            # DV – > 0 for M4
-  sigma = c(0.1, 0.1, 0.2),
-  weighted.residual = c(-2, -1, -0.5), # wr_i
-  weighted.0        = c(-3, -2, -1.5)  # w0_i (always < wr)
-)
-
-set.seed(1)
-n_pars <- 3
-
-derivs.bloq <- matrix(rnorm(3 * n_pars, sd = 0.1),
-                      nrow = 3, ncol = n_pars)
-colnames(derivs.bloq) <- c("p1", "p2", "p3")
-
-derivs.err.bloq <- matrix(rnorm(3 * n_pars, sd = 0.02),
-                          nrow = 3, ncol = n_pars)
-colnames(derivs.err.bloq) <- colnames(derivs.bloq)
-
-nll_bloq_M3 <- nll_BLOQ_cpp(
-  nout_bloq = nout.bloq,
-  derivs_bloq = derivs.bloq,
-  derivs_err_bloq = derivs.err.bloq,
-  opt_BLOQ = "M3",
-  opt_hessian = c(
-    BLOQ_part1 = TRUE,
-    BLOQ_part2 = TRUE,
-    BLOQ_part3 = TRUE
-  )
-)
-nll_bloq_M3
-
-
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 # # One Fit
-obj <- normL2(data, g * x * p) + constraintL2(pouter, sigma = 20)
+obj <- normL2(data, g * x * p)
+obj_2nd <- normL2(data, g * x * p, use.deriv2 = T)
+obj(pouter)
 
 # Fit on time (starting from pouter)
-myfit_1 <- trust(obj, pouter, rinit = 0.1, rmax = 5)
-mypred_1 <- (g * x * p)(times, myfit_1$argument)
-plot(mypred_1, data)
+myfit <- trust(obj, pouter, rinit = 0.1, rmax = 5)
+myfit_2nd <- trust(obj_2nd, pouter, rinit = 0.1, rmax = 5)
+mypred <- (g * x * p)(times, myfit$argument)
+mypred_2nd <- (g * x * p)(times, myfit_2nd$argument)
+plot(mypred, data)
+plot(mypred_2nd, data)
 
+obj(myfit$argument)
+obj_2nd(myfit_2nd$argument)
 ## Handling different experimental conditions
 
 # Define reflux and open condition according to "Dynamic Modelling in R p. 19-20"

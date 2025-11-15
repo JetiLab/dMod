@@ -22,7 +22,7 @@ nll(
 \item{deriv}{Logical. If TRUE, compute gradient and hessian}
 
 \item{opt.BLOQ}{Character denoting the method to deal with BLOQ data.
-One of "M1", "M3", "M4NM", or "M4BEAL". See \link{normL2_indiv} for details.}
+One of "M1", "M3", "M4NM", or "M4BEAL".}
 
 \item{opt.hessian}{Named logical vector to include or exclude various
 summands of the hessian matrix. Controls which parts contribute to the
