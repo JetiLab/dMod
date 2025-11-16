@@ -10,8 +10,7 @@ normL2(
   errmodel = NULL,
   times = NULL,
   attr.name = "data",
-  use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE),
-  use.deriv2 = FALSE
+  use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)
 )
 }
 \arguments{
@@ -33,9 +32,6 @@ to account for the bias in maximum likelihood estimation of variance parameters.
 The correction factor is sqrt(n/(n-p)) where n is the total number of data points and
 p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel
 is provided, FALSE otherwise.}
-
-\item{use.deriv2}{logical. If TRUE second derivatives are used to construct the full hessian.
-Default is FALSE.}
 }
 \value{
 Object of class \code{objfn}, i.e. a function

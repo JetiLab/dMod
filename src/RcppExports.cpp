@@ -23,3 +23,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+
+RcppExport SEXP C_nll_ALOQ(SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP, SEXP);
+RcppExport SEXP C_nll_BLOQ(SEXP, SEXP, SEXP, SEXP, SEXP);
+
+static const R_CallMethodDef CallEntries[] = {
+    {"_dMod_res_cpp", (DL_FUNC) &_dMod_res_cpp, 3},
+    {"C_nll_ALOQ", (DL_FUNC) &C_nll_ALOQ, 8},
+    {"C_nll_BLOQ", (DL_FUNC) &C_nll_BLOQ, 5},
+    {NULL, NULL, 0}
+};
+
+RcppExport void R_init_dMod(DllInfo *dll) {
+    R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
+    R_useDynamicSymbols(dll, FALSE);
+}

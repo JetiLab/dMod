@@ -110,8 +110,6 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' The correction factor is sqrt(n/(n-p)) where n is the total number of data points and 
 #' p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
 #' is provided, FALSE otherwise.
-#' @param use.deriv2 logical. If TRUE second derivatives are used to construct the full hessian.
-#' Default is FALSE.
 #' 
 #' @return Object of class `objfn`, i.e. a function 
 #' `obj(..., fixed, deriv, conditions, env)` that returns an objective list,
@@ -125,8 +123,7 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 #' @example inst/examples/normL2.R
 #' @export
 normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
-                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE),
-                   use.deriv2 = FALSE) {
+                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)) {
 
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
   if (!is.null(times)) timesD <- sort(union(times, timesD))
@@ -154,7 +151,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
                    conditions = intersect(x.conditions, data.conditions),
                    bessel.correction = bessel.correction)
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = use.deriv2, conditions = controls$conditions, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = FALSE, conditions = controls$conditions, env = NULL) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]

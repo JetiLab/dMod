@@ -951,7 +951,7 @@ objframe <- function(mydata,
   # prdfn + prdfn
   if (inherits(x1, "prdfn") & inherits(x2, "prdfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
@@ -967,7 +967,7 @@ objframe <- function(mydata,
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       #outpars <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](times = times, pars = pars, deriv = deriv)
+        outlist[[C]] <- mappings[[C]](times = times, pars = pars, deriv = deriv, deriv2 = deriv2)
         #outpars[[C]] <- attr(outlist[[C]], "pars")
         #attr(outlist[[C]], "pars") <- NULL
       }
@@ -985,7 +985,7 @@ objframe <- function(mydata,
   # obsfn + obsfn
   if (inherits(x1, "obsfn") & inherits(x2, "obsfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("out", "pars"))]
@@ -1000,7 +1000,7 @@ objframe <- function(mydata,
       }
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](out = out, pars = pars)
+        outlist[[C]] <- mappings[[C]](out = out, pars = pars, deriv = deriv, deriv2 = deriv2)
       }
 
       out <- as.prdlist(outlist)
@@ -1016,7 +1016,7 @@ objframe <- function(mydata,
   # parfn + parfn
   if (inherits(x1, "parfn") & inherits(x2, "parfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("pars"))]
@@ -1030,7 +1030,7 @@ objframe <- function(mydata,
       }
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](pars = pars, fixed = fixed, deriv = deriv)
+        outlist[[C]] <- mappings[[C]](pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
       }
 
       return(outlist)
