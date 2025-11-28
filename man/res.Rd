@@ -2,20 +2,17 @@
 % Please edit documentation in R/data.R
 \name{res}
 \alias{res}
-\title{Compute residuals}
+\title{Compare data and model prediction by computing residuals}
 \usage{
 res(data, out, err = NULL)
 }
 \arguments{
-\item{data}{Data frame with columns time, name, value, sigma, lloq}
+\item{data}{data.frame with columns: time, name, value, sigma, lloq}
 
-\item{out}{Numeric matrix with predictions (first column = time)}
+\item{out}{matrix with predictions (first column = time)}
 
-\item{err}{Optional error model predictions}
-}
-\value{
-Object of class objframe with data and derivatives
+\item{err}{Nullable matrix with error model predictions}
 }
 \description{
-Compute residuals
+When sigma is given in the data, it always has priority over the sigma in the error model
 }

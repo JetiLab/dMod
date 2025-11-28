@@ -154,7 +154,6 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                             
                             loadDLL(obj)
                             
-                            
                             whichPar.name <- names(pars)[whichIndex]
                             
                             

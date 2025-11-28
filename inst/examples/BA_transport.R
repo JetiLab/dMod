@@ -42,7 +42,7 @@ plot(out) # Note this is a ggplot object
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "obsfn_small", attach.input = T)
+g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "bamodel", attach.input = F)
 ## Simulate data -------------------------------------------------------------------------------------------------------------
 
 # Fix parameters to steady state values (calculated on paper / by hand), replace buffer -> TCA_buffer = 0
@@ -98,14 +98,18 @@ plot((g*x*p)(times, pouter),data)
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 # # One Fit
 obj <- normL2(data, g * x * p)
+obj(pouter, deriv2 = F)
 obj(pouter, deriv2 = T)
 
 # Fit on time (starting from pouter)
 myfit <- trust(obj, pouter, rinit = 0.1, rmax = 5, iterlim = 500, printIter = T, deriv2 = F)
-mypred <- (g * x * p)(times, myfit$argument)
+mypred <- (g * x * p)(times, myfit$argument, deriv2 = T)
 plot(mypred, data)
 
-obj(myfit$argument, deriv2 = T)
+obj(myfit$argument)
+
+system.time({obj(myfit$argument, deriv2 = F)})
+system.time({obj(myfit$argument, deriv2 = T)})
 ## Handling different experimental conditions
 
 # Define reflux and open condition according to "Dynamic Modelling in R p. 19-20"
@@ -122,26 +126,30 @@ plotData(data)
 # Parameter Trafo, usage of "+" operator for trafo functions (output of P())
 trafo <- getEquations(p, conditions = "closed") %>% 
   insert("K_REFLUX~K_REFLUX_OPEN")
-p <- p + P(trafo, condition = "open", compile = T)
+p <- p + P(trafo, condition = "open", compile = T, deriv2 = T)
 
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*p)(times, pouter),data)
 
 
+p(pouter, deriv2 = T)
 
 # Objective function
 obj <- normL2(data, g * x * p) + constraintL2(pouter, sigma = 4)
 
 # Evaluation of obj at pouter
-obj(pouter)
+obj(pouter, deriv2 = T)
+
+system.time({obj(pouter, deriv2 = F)})
+system.time({obj(pouter, deriv2 = T)})
 
 myfit <- trust(obj, pouter, rinit = 0.1, rmax = 5, iterlim = 500, printIter = T, deriv2 = F)
 
 # Fit 50 times, sample with sd=4 around pouter
-out_frame <- mstrust(obj, pouter, sd = 4, studyname = "bamodel", cores=8, fits=50, iterlim = 200)
+out_frame <- mstrust(obj, pouter, sd = 4, studyname = "bamodel", cores=8, fits=50, iterlim = 200, deriv2 = F)
 out_frame <- as.parframe(out_frame)
-# plotValues(out_frame) # Show "Waterfall" plot
+plotValues(out_frame) # Show "Waterfall" plot
 # plotPars(out_frame) # Show parameter plot
 bestfit <- as.parvec(myfit$argument)
 
@@ -150,12 +158,12 @@ bestfit <- as.parvec(myfit$argument)
 plot((g * x * p)(times, bestfit), data)
 # 
 # # Plot sensis
-# plot(getDerivs((g * x * p)(times, bestfit)))
+plot(getDerivs((g * x * p)(times, bestfit)))
 # 
-# # Calculate Parameter Profiles and plot different contributions (for identifiablility only "data" is of interest)
-# profiles <- profile(obj, bestfit, names(bestfit), method = "optimize", cores = 12)
+# Calculate Parameter Profiles and plot different contributions (for identifiablility only "data" is of interest)
+profiles <- profile(obj, bestfit, whichPar = c("K_REFLUX"), method = "optimize", cores = 1, stepControl = list(stop = "data"))
 # plotProfile(profiles)
-# plotProfile(profiles,mode %in% c("data", "prior"))
+plotProfile(profiles, mode %in% c("data", "prior"))
 # plotPaths(profiles, whichPar = "TCA_cana")
 # plotPaths(profiles, whichPar = "export_cana")
 # plotPaths(profiles, whichPar = "s")

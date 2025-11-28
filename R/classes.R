@@ -809,7 +809,7 @@ objframe <- function(mydata,
   # objfn + objfn
   if (inherits(x1, "objfn") & inherits(x2, "objfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = conditions12, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = conditions12, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("pars"))]
@@ -820,15 +820,15 @@ objframe <- function(mydata,
       # 3. If not null & intersection is empty, don't evaluate xi at all
       v1 <- v2 <- NULL
       if (is.null(conditions.x1)) {
-        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions.x1, env = env)
+        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions.x1, env = env)
       } else if (any(conditions %in% conditions.x1)) {
-        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, conditions = intersect(conditions, conditions.x1), env = env)
+        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = intersect(conditions, conditions.x1), env = env)
       }
 
       if (is.null(conditions.x2)) {
-        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions.x2, env = env)
+        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions.x2, env = env)
       } else if (any(conditions %in% conditions.x2)) {
-        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, conditions = intersect(conditions, conditions.x2), env = attr(v1, "env"))
+        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = intersect(conditions, conditions.x2), env = attr(v1, "env"))
       }
 
       out <- v1 + v2
