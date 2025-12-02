@@ -684,8 +684,8 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     stop("Not all three arguments f, states and parameters can be NULL")
   
   # --- Define model name with condition suffix (to avoid name collisions) ---
-  if (is.null(modelname)) modelname <- "obsfn" else modelname <- paste(modelname, "obsfun", sep = "_")
-  if (!is.null(condition)) modelname <- paste("obsfn",modelname, sanitizeConditions(condition), sep = "_")
+  if (is.null(modelname)) modelname <- "obsfn"
+  if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
   # --- Identify symbols in g ---
   symbols <- getSymbols(unclass(g))
