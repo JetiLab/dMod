@@ -64,13 +64,13 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                     verbose = FALSE,
                     cores = 1,
                     cautiousMode = FALSE,
-                    side = c("both", "left", "right")[1],
+                    side = c("both", "left", "right"),
                     ...) {
   # Ensure that obj is defined in this environment such that it is copied to the parallel workers
   force(obj)
   
   # sanitize "side" argument, must be either "left", "right" or "both"
-  if (!(side %in% c("left", "right", "both"))) stop("side must be either 'left', 'right' or 'both'")
+  side <- match.arg(side)
   
   # Guarantee that pars is named numeric without deriv attribute
   dotArgs <- list(...)
@@ -84,7 +84,7 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   if (method == "integrate") {
     sControl <- list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 500, stop = "value")
     aControl <- list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), fits=1, sd=0.1, start1stfromCenter = TRUE)
   }
   if (method == "optimize") {
     sControl <- list(stepsize = 1e-2, min = 1e-4, max = Inf, atol = 1e-1, rtol = 1e-1, limit = 100, stop = "value")

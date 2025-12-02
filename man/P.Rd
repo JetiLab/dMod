@@ -9,7 +9,7 @@ P(
   method = c("explicit", "implicit"),
   parameters = NULL,
   deriv = TRUE,
-  deriv2 = FALSE,
+  deriv2 = TRUE,
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,

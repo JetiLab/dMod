@@ -229,7 +229,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     stop("Events should be passed to odemodel()")
   }
   
-  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 500, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
+  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
   
   ## --- Warn about unknown options
   warn_unknown <- function(user, defaults, label) {
@@ -684,7 +684,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     stop("Not all three arguments f, states and parameters can be NULL")
   
   # --- Define model name with condition suffix (to avoid name collisions) ---
-  if (is.null(modelname)) modelname <- "obsfn"
+  if (is.null(modelname)) modelname <- "obsfn" else modelname <- paste(modelname, "obsfun", sep = "_")
   if (!is.null(condition)) modelname <- paste("obsfn",modelname, sanitizeConditions(condition), sep = "_")
   
   # --- Identify symbols in g ---

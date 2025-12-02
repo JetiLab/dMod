@@ -51,7 +51,7 @@ steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenC
   m_ss <- Alyssa(model, as.list(forcings), as.list(givenCQs), as.list(neglect), sparsifyLevel, outputFormat, testSteady)
   
   # Write steady states to disk.
-  if(length(m_ss)>1){    
+  if(length(m_ss)>0){    
     m_ssChar <- do.call(c, lapply(strsplit(m_ss, "="), function(eq) {
       out <- eq[2]
       names(out) <- eq[1]

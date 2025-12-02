@@ -17,7 +17,7 @@ profile(
   verbose = FALSE,
   cores = 1,
   cautiousMode = FALSE,
-  side = c("both", "left", "right")[1],
+  side = c("both", "left", "right"),
   ...
 )
 }

@@ -76,7 +76,7 @@ P <- function(x = NULL,
               method = c("explicit", "implicit"), 
               parameters=NULL, 
               deriv = TRUE,
-              deriv2 = FALSE,
+              deriv2 = TRUE,
               fixed = NULL,
               keep.root = TRUE, 
               positive = TRUE,
@@ -103,9 +103,12 @@ P <- function(x = NULL,
                    compile = compile, 
                    modelname = modelname, 
                    verbose = verbose)
-  } else if (!is.list(x)) {
-    x <- list(x)
-    names(x) <- condition
+  } else {
+    
+    if (!is.list(x)) {
+      x <- list(x)
+      names(x) <- condition
+    }
     
     fnout <- Reduce("+", lapply(1:length(x), function(i) {
       switch(method, 
@@ -166,7 +169,7 @@ P <- function(x = NULL,
 #' to the resulting function output and automatically composed when
 #' transformations are combined via the [parfn] interface.
 #'
-#' @param trafo `eqnvec` or named character vector.  
+#' @param trafo `eqnvec` or named character vector.
 #' Names correspond to **inner parameters**; each element defines how it depends
 #' on **outer parameters**.
 #' @param parameters Character vector of outer parameter names. If omitted,
@@ -174,8 +177,6 @@ P <- function(x = NULL,
 #' @param deriv Logical. If `TRUE`, compute and attach the Jacobian of the transformation.
 #' @param deriv2 Logical. If `TRUE`, compute and attach the Hessian as well.
 #' Implies `deriv = TRUE`.
-#' @param fixed Character vector of parameter names to be treated as fixed
-#' (no derivatives returned w.r.t. them).
 #' @param attach.input Logical. If `TRUE`, include unchanged input parameters
 #' in the output vector (identity mapping).
 #' @param compile Logical. If `TRUE`, compile the transformation via [funCpp]
@@ -185,17 +186,17 @@ P <- function(x = NULL,
 #' @param verbose Logical. Print compiler messages.
 #'
 #' @return
-#' A function  
-#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`  
-#' that evaluates the parameter transformation.  
+#' A function
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`
+#' that evaluates the parameter transformation.
 #' The result is an object of class [parvec], which contains
 #'
-#' - the transformed parameters (`numeric` vector)  
-#' - attribute `"deriv"`: the Jacobian matrix  
+#' - the transformed parameters (`numeric` vector)
+#' - attribute `"deriv"`: the Jacobian matrix
 #' - attribute `"deriv2"`: the Hessian tensor (if requested)
 #'
 #' @seealso
-#' [Pimpl] for implicit (steady-state) parameter transformations,  
+#' [Pimpl] for implicit (steady-state) parameter transformations,
 #' [P] for automatic mode selection.
 #'
 #' @importFrom CppODE funCpp
@@ -215,10 +216,8 @@ Pexpl <- function(trafo,
   # ---------------------------------------------------------------------------
   # Determine parameter sets
   # ---------------------------------------------------------------------------
-  symbols <- getSymbols(trafo)
-  
   if (is.null(parameters)) {
-    parameters <- symbols
+    parameters <- getSymbols(trafo)
   } else {
     identity <- parameters[!(parameters %in% names(trafo))]
     names(identity) <- identity
@@ -227,7 +226,7 @@ Pexpl <- function(trafo,
   }
   
   # Model name with condition label
-  if (is.null(modelname)) modelname <- "expl_parfn"
+  if (is.null(modelname)) modelname <- "expl_parfn" else paste(modelname, "expl_parfn", sep = "_")
   if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
   # ---------------------------------------------------------------------------
@@ -249,18 +248,19 @@ Pexpl <- function(trafo,
   # ---------------------------------------------------------------------------
   # Define returned parameter transformation function
   # ---------------------------------------------------------------------------
-  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE, env = parent.frame()) {
+  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
       deriv <- TRUE
     }
     
-    # Evaluate inner parameters
-    outPEval <- PEval(NULL, pars, attach.input = attach.input, deriv = deriv, deriv2 = deriv2, verbose = verbose)
+    # Evaluate inner parameters (fixed handled by funCpp at runtime)
+    outPEval <- PEval(NULL, pars, fixed = fixed, attach.input = attach.input,
+                      deriv = deriv, deriv2 = deriv2, verbose = verbose)
     
     pinner <- setNames(as.numeric(outPEval$out), colnames(outPEval$out))
-    # Sanity check
+    
     if (any(is.nan(pinner))) {
       stop(
         paste0(
@@ -271,92 +271,63 @@ Pexpl <- function(trafo,
       )
     }
     
-    # Identify fixed vs. active parameters
-    fixed_now <- if (is.null(fixed)) character(0) else names(fixed)
-    nonfixed  <- setdiff(attr(PEval, "parameter"), fixed_now)
-    
     # ----------------- Apply chain rules -----------------
     myderiv  <- NULL
     myderiv2 <- NULL
     
-    if (deriv2) {
+    # Get upstream derivatives if present
+    dP  <- attr(pars, "deriv",  exact = TRUE)
+    dP2 <- attr(pars, "deriv2", exact = TRUE)
+    has_upstream <- !is.null(dP)
+    
+    if (deriv && !is.null(outPEval$jacobian)) {
+      J_outer <- outPEval$jacobian[, , 1, drop = FALSE]
+      dim(J_outer) <- dim(J_outer)[1:2]
+      dimnames(J_outer) <- dimnames(outPEval$jacobian)[1:2]
       
-      # ----- First-order derivative -----
-      J_outer <- outPEval$jacobian[,,1]
-      if (!is.null(J_outer)) {
-        J_outer <- J_outer[, nonfixed, drop = FALSE]
-        
-        dP  <- attr(pars, "deriv",  exact = TRUE)
-        dP2 <- attr(pars, "deriv2", exact = TRUE)
-        
-        if (!is.null(dP) && !is.null(dP2)) {
-          # Parameter transformation active
-          dP <- dP[nonfixed, , drop = FALSE]
-          myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP)
-        } else {
-          # No transformation
-          myderiv <- J_outer
-        }
-      }
-      
-      # ----- Second-order derivative -----
-      H_outer <- outPEval$hessian[,,,1]
-      if (!is.null(H_outer)) {
-        H_outer <- H_outer[, nonfixed, nonfixed, drop = FALSE]
-        
-        dP  <- attr(pars, "deriv",  exact = TRUE)
-        dP2 <- attr(pars, "deriv2", exact = TRUE)
-        
-        if (!is.null(dP) && !is.null(dP2)) {
-          dP  <- dP [nonfixed, , drop = FALSE]
-          dP2 <- dP2[nonfixed, , , drop = FALSE]
-          
-          # term1: contraction of outer Hessian with two Jacobians
-          term1 <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP, dP)
-          # term2: contraction of outer Jacobian with second parameter derivatives
-          J_outer <- attr(pinner, "jacobian")[, nonfixed, 1, drop = FALSE]
-          term2 <- einsum::einsum("im,mjk->ijk", J_outer, dP2)
-          # combine both
-          myderiv2 <- term1 + term2
-          
-        } else {
-          # no parameter transformation
-          myderiv2 <- H_outer
-        }
-      }
-      
-    } else if (deriv) {
-      
-      # ----- First-order derivative only -----
-      J_outer <- outPEval$jacobian[,,1]
-      if (!is.null(J_outer)) {
-        J_outer <- J_outer[, nonfixed, drop = FALSE]
-        
-        dP  <- attr(pars, "deriv",  exact = TRUE)
-        dP2 <- attr(pars, "deriv2", exact = TRUE)
-        
-        if (!is.null(dP) && !is.null(dP2)) {
-          dP <- dP[nonfixed, , drop = FALSE]
-          myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP)
-        } else {
-          myderiv <- J_outer
-        }
+      if (has_upstream) {
+        # Chain rule: J_inner = J_outer %*% dP
+        nonfixed <- colnames(J_outer)
+        dP_sub <- dP[nonfixed, , drop = FALSE]
+        myderiv <- einsum::einsum("ij,jk->ik", J_outer, dP_sub)
+      } else {
+        myderiv <- J_outer
       }
     }
     
+    if (deriv2 && !is.null(outPEval$hessian)) {
+      H_outer <- outPEval$hessian[, , , 1, drop = FALSE]
+      dim(H_outer) <- dim(H_outer)[1:3]
+      dimnames(H_outer) <- dimnames(outPEval$hessian)[1:3]
+      
+      if (has_upstream && !is.null(dP2)) {
+        # Chain rule for Hessian
+        nonfixed <- colnames(J_outer)
+        dP_sub  <- dP[nonfixed, , drop = FALSE]
+        dP2_sub <- dP2[nonfixed, , , drop = FALSE]
+        
+        # term1: H_outer contracted with two Jacobians
+        term1 <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP_sub, dP_sub)
+        # term2: J_outer contracted with upstream Hessian
+        term2 <- einsum::einsum("im,mjk->ijk", J_outer, dP2_sub)
+        myderiv2 <- term1 + term2
+      } else {
+        myderiv2 <- H_outer
+      }
+    }
     
     # -------------------------------------------------------------------------
     # Assemble result and return
     # -------------------------------------------------------------------------
-    pinner <- as.parvec(pinner, 
-                        deriv = if(deriv) myderiv else FALSE, 
-                        deriv2 = if(deriv2) myderiv2 else FALSE)
+    pinner <- as.parvec(pinner,
+                        deriv  = if (deriv)  myderiv  else FALSE,
+                        deriv2 = if (deriv2) myderiv2 else FALSE)
     
     if (attach.input && !all(names(pars) %in% names(pinner))) {
-      pinner <- c(pinner, 
+      pinner <- c(pinner,
                   as.parvec(pars[setdiff(names(pars), names(pinner))],
-                            deriv = if(deriv) NULL else FALSE,
-                            deriv2 = if(deriv2) NULL else FALSE))
+                            deriv  = if (deriv)  NULL else FALSE,
+                            deriv2 = if (deriv2) NULL else FALSE))
     }
     
     pinner
@@ -369,10 +340,8 @@ Pexpl <- function(trafo,
   attr(p2p, "parameters") <- parameters
   attr(p2p, "modelname")  <- modelname
   
-  
   parfn(p2p, parameters, condition)
 }
-
 
 
 #' Parameter transformation (implicit)
@@ -501,7 +470,7 @@ Pexpl <- function(trafo,
 #' @param deriv2 Logical. If `TRUE`, compute and attach the Hessian.
 #'   Implies `deriv = TRUE`.
 #' @param fixed Character vector of parameter names treated as fixed
-#'   (excluded from derivatives).
+#'   (excluded from symbolic differentiation at compile time).
 #' @param keep.root Logical. Reuse the previous root as starting guess
 #'   to accelerate convergence.
 #' @param positive Logical. If `TRUE`, solve in log-space
@@ -516,8 +485,10 @@ Pexpl <- function(trafo,
 #'
 #' @return
 #' A function  
-#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`  
-#' that returns the steady-state parameter vector with attached attributes  
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)`
+#' where `fixed` is a named numeric vector of parameters to fix at runtime
+#' (excluded from derivatives but used for evaluation).
+#' Returns the steady-state parameter vector with attached attributes
 #' `"deriv"` (Jacobian) and `"deriv2"` (Hessian, if requested).
 #'
 #' @seealso
@@ -533,7 +504,7 @@ Pexpl <- function(trafo,
 Pimpl <- function(x,
                   parameters   = NULL,
                   deriv        = TRUE,
-                  deriv2       = FALSE,
+                  deriv2       = TRUE,
                   fixed        = NULL,
                   keep.root    = TRUE,
                   positive     = TRUE,
@@ -658,16 +629,26 @@ Pimpl <- function(x,
     stop("Pimpl: no dependent states to solve; 'parameters' covers all states.")
   }
   
+  # Validate: dep_st cannot be compile-time fixed (we need dfdx_dep for IFT)
+  if (!is.null(fixed) && any(fixed %in% dep_st)) {
+    stop("Dependent states cannot be compile-time fixed: ",
+         paste(intersect(fixed, dep_st), collapse = ", "))
+  }
+  
   # Build compiled evaluator for the dependent residuals only
   if (is.null(modelname)) modelname <- "impl_parfn"
   if (!is.null(condition))
     modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
+  # Parameters that will be symbolically differentiated (excluding compile-time fixed)
+  all_params <- c(states, nonstates)
+  diff_params <- setdiff(all_params, fixed)
+  
   FEval <- CppODE::funCpp(
     as.eqnvec(trafo[dep_st]),
     variables  = NULL,
-    parameters = c(states, nonstates),
-    fixed      = NULL,
+    parameters = all_params,
+    fixed      = fixed,
     compile    = compile,
     modelname  = modelname,
     verbose    = verbose,
@@ -675,6 +656,7 @@ Pimpl <- function(x,
     deriv      = isTRUE(deriv) || isTRUE(deriv2),
     deriv2     = isTRUE(deriv2)
   )
+  
   
   # RootSolve default options (merged with user list)
   defaultsRootSolve <- list(
@@ -688,8 +670,12 @@ Pimpl <- function(x,
   guess_env <- new.env(parent = emptyenv())
   guess_env$guess <- NULL
   
+  # Store compile-time fixed for use in p2p
+  
+  compile_fixed <- fixed
+  
   # Returned transformation closure
-  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE, env = parent.frame()) {
+  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE) {
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
@@ -700,11 +686,19 @@ Pimpl <- function(x,
     dP  <- attr(pars, "deriv",  exact = TRUE)
     dP2 <- attr(pars, "deriv2", exact = TRUE)
     
-    # Merge fixed values
+    # Merge runtime fixed values into p
     p <- pars
     if (!is.null(fixed)) {
-      if (any(names(fixed) %in% names(p))) p[names(fixed)] <- fixed else p <- c(p, fixed)
+      if (is.null(names(fixed))) stop("Runtime fixed must be a named numeric vector.")
+      if (any(names(fixed) %in% names(p))) {
+        p[names(fixed)] <- fixed
+      } else {
+        p <- c(p, fixed)
+      }
     }
+    
+    # Runtime fixed names (for filtering derivatives)
+    runtime_fixed_names <- if (!is.null(fixed)) names(fixed) else character(0)
     
     # Provide initial guesses for dependent states; validate others
     if (!all(dep_st %in% names(p))) p[setdiff(dep_st, names(p))] <- 1
@@ -767,33 +761,43 @@ Pimpl <- function(x,
     if (keep.root) guess_env$guess <- setNames(x_dep_star, dep_st)
     
     # Evaluate Jacobian/Hessian of the dependent residuals at the solution
+    # Note: we do NOT pass runtime fixed here - we need full Jacobians for IFT
+    # The runtime filtering happens later via cols_nonfixed
     E <- FEval(NULL, p = pack_full(x_dep_star),
                attach.input = FALSE, deriv = TRUE, deriv2 = deriv2, verbose = verbose)
     
-    # FEval Jacobian is w.r.t. c(states, nonstates)
+    # FEval Jacobian is w.r.t. diff_params (compile-time fixed already excluded)
     J <- E$jacobian[,,1, drop = TRUE]
-    all_cols <- c(states, nonstates)
+    all_cols <- diff_params
     
-    # Block partition df/d(·)
-    dfdx_dep   <- J[, match(dep_st,   all_cols), drop = FALSE]
-    dfdx_indep <- if (length(indep_st)) J[, match(indep_st, all_cols), drop = FALSE]
+    # Block partition df/d(·) - indices relative to diff_params
+    dep_st_diff   <- intersect(dep_st, diff_params)
+    indep_st_diff <- intersect(indep_st, diff_params)
+    nonstates_diff <- intersect(nonstates, diff_params)
+    
+    dfdx_dep   <- J[, match(dep_st_diff, all_cols), drop = FALSE]
+    dfdx_indep <- if (length(indep_st_diff)) J[, match(indep_st_diff, all_cols), drop = FALSE]
     else matrix(0, nrow = nrow(dfdx_dep), ncol = 0, dimnames = list(dep_st, character(0)))
-    dfdp_ns    <- J[, match(nonstates, all_cols), drop = FALSE]
+    dfdp_ns    <- if (length(nonstates_diff)) J[, match(nonstates_diff, all_cols), drop = FALSE]
+    else matrix(0, nrow = nrow(dfdx_dep), ncol = 0, dimnames = list(dep_st, character(0)))
     
     rownames(dfdx_dep) <- dep_st
-    colnames(dfdx_dep) <- dep_st
+    colnames(dfdx_dep) <- dep_st_diff
     if (ncol(dfdx_indep)) {
       rownames(dfdx_indep) <- dep_st
-      colnames(dfdx_indep) <- indep_st
+      colnames(dfdx_indep) <- indep_st_diff
     }
-    rownames(dfdp_ns) <- dep_st
-    colnames(dfdp_ns) <- nonstates
+    if (ncol(dfdp_ns)) {
+      rownames(dfdp_ns) <- dep_st
+      colnames(dfdp_ns) <- nonstates_diff
+    }
     
     # First-order IFT in x-space
     inv_fxd <- solve(dfdx_dep)
-    Dx_ns   <- - inv_fxd %*% dfdp_ns
+    Dx_ns   <- if (ncol(dfdp_ns)) - inv_fxd %*% dfdp_ns 
+    else matrix(0, nrow = length(dep_st), ncol = 0, dimnames = list(dep_st, character(0)))
     Dx_ind  <- if (ncol(dfdx_indep)) - inv_fxd %*% dfdx_indep
-    else matrix(0, nrow = nrow(dfdx_dep), ncol = 0, dimnames = list(dep_st, character(0)))
+    else matrix(0, nrow = length(dep_st), ncol = 0, dimnames = list(dep_st, character(0)))
     
     # Prepare the base output vector (solved states + pass-through)
     x_full_star <- setNames(numeric(length(states)), states)
@@ -801,8 +805,10 @@ Pimpl <- function(x,
     x_full_star[indep_st] <- x_ind
     out_vec <- c(x_full_star, r_ns)
     
-    # Build Jacobian over incoming parameter basis (excluding fixed)
-    cols_nonfixed <- setdiff(names(pars), names(fixed))
+    # Columns for derivatives: exclude both compile-time and runtime fixed
+    cols_nonfixed <- setdiff(names(pars), c(compile_fixed, runtime_fixed_names))
+    
+    # Build Jacobian over incoming parameter basis (excluding all fixed)
     J_outer <- matrix(0, nrow = length(out_vec), ncol = length(cols_nonfixed),
                       dimnames = list(names(out_vec), cols_nonfixed))
     
@@ -813,10 +819,10 @@ Pimpl <- function(x,
       if (length(idx)) J_outer[idx, idx] <- diag(1, length(idx))
     }
     
-    # Fill derivatives for dependent states
-    active_ns  <- intersect(nonstates, cols_nonfixed)
-    active_ind <- intersect(indep_st,  cols_nonfixed)
-    if (length(active_ns))  J_outer[dep_st, active_ns]  <- Dx_ns[,  active_ns,  drop = FALSE]
+    # Fill derivatives for dependent states (only for non-fixed parameters)
+    active_ns  <- intersect(nonstates_diff, cols_nonfixed)
+    active_ind <- intersect(indep_st_diff, cols_nonfixed)
+    if (length(active_ns))  J_outer[dep_st, active_ns]  <- Dx_ns[, active_ns, drop = FALSE]
     if (length(active_ind)) J_outer[dep_st, active_ind] <- Dx_ind[, active_ind, drop = FALSE]
     
     # Second-order IFT (x-space)
@@ -824,55 +830,69 @@ Pimpl <- function(x,
     if (deriv2) {
       H <- E$hessian[,,,1, drop = TRUE]
       
-      idx_xdep <- match(dep_st,   all_cols)
-      idx_xind <- match(indep_st, all_cols)
-      idx_ns   <- match(nonstates, all_cols)
+      idx_xdep <- match(dep_st_diff, all_cols)
+      idx_xind <- if (length(indep_st_diff)) match(indep_st_diff, all_cols) else integer(0)
+      idx_ns   <- if (length(nonstates_diff)) match(nonstates_diff, all_cols) else integer(0)
       
       H_xx   <- H[, idx_xdep, idx_xdep, drop = FALSE]
-      H_xp   <- H[, idx_xdep, idx_ns,   drop = FALSE]
-      H_pp   <- H[, idx_ns,   idx_ns,   drop = FALSE]
-      H_xind <- if (length(indep_st)) H[, idx_xdep, idx_xind, drop = FALSE] else NULL
-      H_indp <- if (length(indep_st)) H[, idx_xind, idx_ns,   drop = FALSE] else NULL
+      H_xp   <- if (length(idx_ns)) H[, idx_xdep, idx_ns, drop = FALSE] 
+      else array(0, dim = c(length(dep_st), length(dep_st), 0))
+      H_pp   <- if (length(idx_ns)) H[, idx_ns, idx_ns, drop = FALSE]
+      else array(0, dim = c(length(dep_st), 0, 0))
+      H_xind <- if (length(idx_xind)) H[, idx_xdep, idx_xind, drop = FALSE] else NULL
+      H_indp <- if (length(idx_xind) && length(idx_ns)) H[, idx_xind, idx_ns, drop = FALSE] else NULL
       
-      P_cols <- c(nonstates, indep_st)
+      P_cols <- c(nonstates_diff, indep_st_diff)
       D_depP <- cbind(Dx_ns, Dx_ind)
-      colnames(D_depP) <- P_cols
+      if (length(P_cols)) colnames(D_depP) <- P_cols
       
       rhs <- array(0, dim = c(length(dep_st), length(P_cols), length(P_cols)),
                    dimnames = list(dep_st, P_cols, P_cols))
       
-      rhs <- rhs + einsum::einsum("iab,aj,bk->ijk", H_xx, D_depP, D_depP)
-      
-      if (length(nonstates)) {
-        D_ns <- Dx_ns
-        rhs[, nonstates, nonstates] <- rhs[, nonstates, nonstates] +
-          H_pp +
-          einsum::einsum("iak,aj->ijk", H_xp, D_ns) +
-          einsum::einsum("iaj,ak->ijk", H_xp, D_ns)
+      if (length(P_cols) > 0) {
+        rhs <- rhs + einsum::einsum("iab,aj,bk->ijk", H_xx, D_depP, D_depP)
+        
+        if (length(nonstates_diff)) {
+          D_ns <- Dx_ns
+          rhs[, nonstates_diff, nonstates_diff] <- rhs[, nonstates_diff, nonstates_diff] +
+            H_pp +
+            einsum::einsum("iak,aj->ijk", H_xp, D_ns) +
+            einsum::einsum("iaj,ak->ijk", H_xp, D_ns)
+        }
+        
+        if (length(indep_st_diff)) {
+          D_ind <- Dx_ind
+          if (length(nonstates_diff)) {
+            rhs[, nonstates_diff, indep_st_diff] <- rhs[, nonstates_diff, indep_st_diff] +
+              einsum::einsum("iak,aj->ijk", H_xp, D_ind) +
+              einsum::einsum("iab,aj,bk->ijk", H_xx, Dx_ns, D_ind)
+            
+            rhs[, indep_st_diff, nonstates_diff] <- rhs[, indep_st_diff, nonstates_diff] +
+              einsum::einsum("iak,aj->ijk", H_indp, Dx_ns) +
+              einsum::einsum("iab,aj,bk->ijk", H_xx, D_ind, Dx_ns)
+          }
+          
+          rhs[, indep_st_diff, indep_st_diff] <- rhs[, indep_st_diff, indep_st_diff] +
+            einsum::einsum("iab,aj,bk->ijk", H_xx, D_ind, D_ind)
+          if (!is.null(H_xind)) {
+            rhs[, indep_st_diff, indep_st_diff] <- rhs[, indep_st_diff, indep_st_diff] +
+              einsum::einsum("iak,aj->ijk", H_xind, D_ind) +
+              einsum::einsum("iaj,ak->ijk", H_xind, D_ind)
+          }
+        }
       }
       
-      if (length(indep_st)) {
-        D_ind <- Dx_ind
-        rhs[, nonstates, indep_st] <- rhs[, nonstates, indep_st] +
-          einsum::einsum("iak,aj->ijk", H_xp, D_ind) +
-          einsum::einsum("iab,aj,bk->ijk", H_xx, Dx_ns, D_ind)
-        
-        rhs[, indep_st, nonstates] <- rhs[, indep_st, nonstates] +
-          einsum::einsum("iak,aj->ijk", H_indp, D_ns) +
-          einsum::einsum("iab,aj,bk->ijk", H_xx, D_ind, Dx_ns)
-        
-        rhs[, indep_st, indep_st] <- rhs[, indep_st, indep_st] +
-          einsum::einsum("iab,aj,bk->ijk", H_xx, D_ind, D_ind) +
-          einsum::einsum("iak,aj->ijk", H_xind, D_ind) +
-          einsum::einsum("iaj,ak->ijk", H_xind, D_ind)
+      if (length(P_cols) > 0) {
+        rhs_mat <- matrix(rhs, nrow = nrow(dfdx_dep), ncol = length(P_cols) * length(P_cols))
+        sol_mat <- - solve(dfdx_dep, rhs_mat)
+        d2x_dep <- array(sol_mat, dim = c(length(dep_st), length(P_cols), length(P_cols)),
+                         dimnames = list(dep_st, P_cols, P_cols))
+      } else {
+        d2x_dep <- array(0, dim = c(length(dep_st), 0, 0),
+                         dimnames = list(dep_st, character(0), character(0)))
       }
       
-      rhs_mat <- matrix(rhs, nrow = nrow(dfdx_dep), ncol = length(P_cols) * length(P_cols))
-      sol_mat <- - solve(dfdx_dep, rhs_mat)
-      d2x_dep <- array(sol_mat, dim = c(length(dep_st), length(P_cols), length(P_cols)),
-                       dimnames = list(dep_st, P_cols, P_cols))
-      
-      # Embed into full Hessian over current outputs and incoming cols
+      # Embed into full Hessian over current outputs and incoming cols (filtered)
       H_outer <- array(0, dim = c(length(out_vec), length(cols_nonfixed), length(cols_nonfixed)),
                        dimnames = list(names(out_vec), cols_nonfixed, cols_nonfixed))
       active_P <- intersect(P_cols, cols_nonfixed)
@@ -892,7 +912,7 @@ Pimpl <- function(x,
         # Expand Jacobian with identity rows for pass-through extras
         addJ <- matrix(0, nrow = length(extras), ncol = ncol(J_outer),
                        dimnames = list(extras, colnames(J_outer)))
-        hit  <- intersect(extras, colnames(J_outer))            # only non-fixed appear as columns
+        hit  <- intersect(extras, colnames(J_outer))
         if (length(hit)) addJ[cbind(hit, hit)] <- 1
         J_outer <- rbind(J_outer, addJ)
         
@@ -900,7 +920,7 @@ Pimpl <- function(x,
         if (deriv2) {
           addH <- array(0, dim = c(length(extras), ncol(J_outer), ncol(J_outer)),
                         dimnames = list(extras, colnames(J_outer), colnames(J_outer)))
-          H_outer <- abind::abind(H_outer, addH, along = 1)     # keep [out x in x in]
+          H_outer <- abind::abind(H_outer, addH, along = 1)
         }
       }
     }
@@ -917,15 +937,14 @@ Pimpl <- function(x,
         dP_use  <- dP [colnames(J_outer), , drop = FALSE]
         dP2_use <- dP2[colnames(J_outer), , , drop = FALSE]
         termA   <- einsum::einsum("imn,mj,nk->ijk", H_outer, dP_use, dP_use)
-        termB   <- einsum::einsum("im,mjk->ijk",   myderiv, dP2_use)  # use composed J
+        termB   <- einsum::einsum("im,mjk->ijk",   myderiv, dP2_use)
         myderiv2 <- termA + termB
       } else {
         myderiv2 <- H_outer
       }
     }
     
-    
-    # --- dimension names for derivatives ---
+    # Dimension names for derivatives
     if (deriv && !is.null(myderiv)) {
       rownames(myderiv) <- names(out_vec)
       if (!is.null(dP)) {
@@ -937,27 +956,17 @@ Pimpl <- function(x,
     
     if (deriv2 && !is.null(myderiv2)) {
       if (!is.null(dP)) {
-        dimnames(myderiv2) <- list(
-          names(out_vec),
-          colnames(dP),
-          colnames(dP)
-        )
+        dimnames(myderiv2) <- list(names(out_vec), colnames(dP), colnames(dP))
       } else {
-        dimnames(myderiv2) <- list(
-          names(out_vec),
-          cols_nonfixed,
-          cols_nonfixed
-        )
+        dimnames(myderiv2) <- list(names(out_vec), cols_nonfixed, cols_nonfixed)
       }
     }
-    
     
     # Build final parvec
     res <- as.parvec(out_vec,
                      deriv  = if (deriv)  myderiv  else FALSE,
                      deriv2 = if (deriv2) myderiv2 else FALSE)
     
-    # No extra append here; we already expanded out_vec/J/H above when attach.input=TRUE
     res
   }
   
@@ -970,19 +979,18 @@ Pimpl <- function(x,
 }
 
 
-
 ## Functions to simplify the creation of parameter transformations ----
 
-#' Define parameter transformations by `define()`, `branch()` and `insert()`
+#' Define parameter transformations by \code{define()}, \code{branch()} and \code{insert()}
 #' 
 #' @param trafo named character vector of parametric expressions or object 
-#' of class `eqnvec`
-#' @param expr character of the form `"lhs ~ rhs"` where both `lhs`
-#' and `rhs` can contain a number of symbols for which vaues are passed
-#' by the `...` argument
+#' of class \code{eqnvec}
+#' @param expr character of the form \code{"lhs ~ rhs"} where both \code{lhs}
+#' and \code{rhs} can contain a number of symbols for which vaues are passed
+#' by the \code{...} argument
 #' @param  conditionMatch optional character, Use as regular expression to apply the reparameterization only to conditions containing conditionMatch
 #' @param ... used to pass values for symbols as named arguments
-#' @return object of the same class as trafo or list thereof, if `branch()` has been
+#' @return object of the same class as trafo or list thereof, if \code{branch()} has been
 #' used.
 #' @export
 #' @example inst/examples/define.R

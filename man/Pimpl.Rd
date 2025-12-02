@@ -8,7 +8,7 @@ Pimpl(
   x,
   parameters = NULL,
   deriv = TRUE,
-  deriv2 = FALSE,
+  deriv2 = TRUE,
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
@@ -35,7 +35,7 @@ the implicit function theorem.}
 Implies \code{deriv = TRUE}.}
 
 \item{fixed}{Character vector of parameter names treated as fixed
-(excluded from derivatives).}
+(excluded from symbolic differentiation at compile time).}
 
 \item{keep.root}{Logical. Reuse the previous root as starting guess
 to accelerate convergence.}
@@ -59,7 +59,9 @@ Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
 \value{
 A function
 \code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
-that returns the steady-state parameter vector with attached attributes
+where \code{fixed} is a named numeric vector of parameters to fix at runtime
+(excluded from derivatives but used for evaluation).
+Returns the steady-state parameter vector with attached attributes
 \code{"deriv"} (Jacobian) and \code{"deriv2"} (Hessian, if requested).
 }
 \description{

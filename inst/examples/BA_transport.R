@@ -24,50 +24,13 @@ reactions <- eqnlist() %>%
 #             TCA_cell = "k_import * TCA_buffer - k_export_sinus * TCA_cell - k_export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = F, deriv2 = T, solver = "boost")
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
 # Generate trajectories for the default condition
-x <- Xs(mymodel, condition = NULL)
-compile(x, output = "bamodel_solver", cores = 3) # Compile C/C++ output of odemodel in parallel
-
-
-# For demonstration define parameters (initials and dynamic parameters)
-pars <- c(k_reflux = 0.1, TCA_buffer = 1, TCA_cell = 0, TCA_cana = 0,
-          k_import = 0.2, k_export_sinus = 0.2, k_export_cana = 0.04)
-
-
-# Plot trjectories
-times <- seq(0, 50, len = 300) 
-out <- x(times, pars)
-plot(out) # Note this is a ggplot object
+x <- Xs(mymodel, condition = "closed")
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = T, modelname = "bamodel", attach.input = F)
-## Simulate data -------------------------------------------------------------------------------------------------------------
-
-# Fix parameters to steady state values (calculated on paper / by hand), replace buffer -> TCA_buffer = 0
-pars["TCA_cell"] <- 0.3846154
-pars["TCA_cana"] <- 0.1538462
-pars["TCA_buffer"] <- 0
-pars["s"] <- 1e3
-
-# Simulate trajectories 
-# Evaluate the expression separately
-out <- (g * x)(times, pars, conditions = "closed", deriv2 = F)
-plot(out)
-
-getDerivs(out) %>% plot()
-
-# simulate data for time points
-timesD <- c(0.1, 1, 3, 7, 11, 15, 20, 41)
-outD <- (g * x)(timesD, pars, conditions = "closed", deriv2 = T)
-datasheet <- subset(as.data.frame(outD), time %in% timesD & name %in% names(observables))
-datasheet <- within(datasheet, {
-  sigma <- sqrt(value + 1)
-  value <- rnorm(length(value), value, sigma)
-})
-data <- as.datalist(datasheet)
-plot(out, data)
+g <- Y(observables, f = x, condition = NULL, compile = F, modelname = "bamodel", attach.input = F)
 
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
 innerpars <- getParameters(x,g)
@@ -77,7 +40,7 @@ trafo <- NULL %>%
   insert("x~10^y", x = .currentSymbols, y = toupper(.currentSymbols))
 
 
-# # # Explicit trafo
+# # # Explicit trafo (this is equivalent to the lines above)
 # trafo <- eqnvec(TCA_buffer = "0",
 #                 TCA_cell = "exp(log(10)*TCA_cell)",
 #                 TCA_cana = "exp(log(10)*TCA_cana)",
@@ -87,15 +50,20 @@ trafo <- NULL %>%
 #                 k_reflux = "exp(log(10)*k_reflux)",
 #                 s = "exp(log(10)*s)")
 
-# debugonce("Pexpl")
-p <- P(unclass(trafo), condition = "closed", compile = T, deriv2 = T)
-# Set every parameter to -1 in the log-space
-outerpars <- getParameters(p)
-pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
-plot((g*x*p)(times, pouter),data)
+p <- P(trafo, condition = "closed", compile = F)
 
+
+### Compile the objects
+compile(g, x, p, output = "bamodel", cores = 8) # Compile C/C++ output of odemodel in parallel
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
+data(badata)
+data <- badata %>% subset(condition == "closed") %>% as.datalist()
+outerpars <- getParameters(p)
+pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
+
+p(pouter[!grepl("K_IMPORT", outerpars)], fixed = c(K_IMPORT = -2))
+
 # # One Fit
 obj <- normL2(data, g * x * p)
 obj(pouter, deriv2 = F)
@@ -132,7 +100,7 @@ outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 plot((g*x*p)(times, pouter),data)
 
-
+datasheet <- as.data.frame(data)
 p(pouter, deriv2 = T)
 
 # Objective function

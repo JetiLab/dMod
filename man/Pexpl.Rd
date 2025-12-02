@@ -30,9 +30,6 @@ all symbols in \code{trafo} are used.}
 \item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian as well.
 Implies \code{deriv = TRUE}.}
 
-\item{fixed}{Character vector of parameter names to be treated as fixed
-(no derivatives returned w.r.t. them).}
-
 \item{attach.input}{Logical. If \code{TRUE}, include unchanged input parameters
 in the output vector (identity mapping).}
 
