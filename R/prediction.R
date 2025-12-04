@@ -229,7 +229,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     stop("Events should be passed to odemodel()")
   }
   
-  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
+  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, hini = 0, roottol = 1e-8, maxroot = 1)
   
   ## --- Warn about unknown options
   warn_unknown <- function(user, defaults, label) {
@@ -316,6 +316,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.numeric(optionsOde$rtol),
               as.integer(optionsOde$maxattemps),
               as.integer(optionsOde$maxsteps),
+              as.numeric(optionsOde$hini),
               as.numeric(optionsOde$roottol),
               as.integer(optionsOde$maxroot))
       )
@@ -335,6 +336,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.numeric(optionsSens$rtol),
               as.integer(optionsSens$maxattemps),
               as.integer(optionsSens$maxsteps),
+              as.numeric(optionsSens$hini),
               as.numeric(optionsSens$roottol),
               as.integer(optionsSens$maxroot))
       )
@@ -368,6 +370,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
               as.numeric(optionsSens2$rtol),
               as.integer(optionsSens2$maxattemps),
               as.integer(optionsSens2$maxsteps),
+              as.numeric(optionsSens2$hini),
               as.numeric(optionsSens2$roottol),
               as.integer(optionsSens2$maxroot))
       )
