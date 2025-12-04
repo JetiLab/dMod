@@ -46,6 +46,16 @@
 #' @param positive Logical. Applies to `method = "implicit"` only.
 #' If `TRUE`, the steady-state solver is performed in log-space
 #' (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.
+#' @param parlower Named numeric vector of lower bounds for dependent states.
+#'   Used for multistart initialization on cold starts. Names must match
+#'   dependent state names. States not mentioned use default bounds
+#'   (1e-6 for positive states, -1e6 otherwise).
+#' @param parupper Named numeric vector of upper bounds for dependent states.
+#'   Used for multistart initialization on cold starts. Names must match
+#'   dependent state names. States not mentioned use default bound of 1e6.
+#' @param nstart Integer. Number of random starting points for multistart
+#'   root finding (default 100). Only used on cold starts when `parlower`
+#'   and `parupper` are provided.
 #' @param optionsRootSolve List. Applies to `method = "implicit"` only. List of options passed to [rootSolve::multiroot].
 #' Merged with internal defaults via [modifyList()].
 #' @param attach.input Logical. Attach input parameters to the output if they
@@ -80,6 +90,9 @@ P <- function(x = NULL,
               fixed = NULL,
               keep.root = TRUE, 
               positive = TRUE,
+              parlower     = NULL,
+              parupper     = NULL,
+              nstart       = 100L,
               optionsRootSolve = list(),
               attach.input = FALSE,
               condition = NULL, 
@@ -98,6 +111,9 @@ P <- function(x = NULL,
                    fixed = fixed,
                    keep.root = keep.root,
                    positive = positive,
+                   parlower = parlower,
+                   parupper = parupper,
+                   nstart = nstart,
                    attach.input = attach.input,
                    condition = condition,
                    compile = compile, 
@@ -129,6 +145,9 @@ P <- function(x = NULL,
                               fixed = fixed,
                               keep.root = keep.root,
                               positive = positive,
+                              parlower = parlower,
+                              parupper = parupper,
+                              nstart = nstart,
                               attach.input = attach.input,
                               condition = names(x[i]), 
                               compile = compile, 
@@ -473,8 +492,21 @@ Pexpl <- function(trafo,
 #'   (excluded from symbolic differentiation at compile time).
 #' @param keep.root Logical. Reuse the previous root as starting guess
 #'   to accelerate convergence.
-#' @param positive Logical. If `TRUE`, solve in log-space
-#'   (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states.
+#' @param positive Logical or named logical vector. If `TRUE`, solve in log-space
+#'   (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states
+#'   for all dependent states. If a named logical vector, only the states with
+#'   `TRUE` values are constrained to be positive. Names must match dependent
+#'   state names. States not mentioned default to `FALSE` (unconstrained).
+#' @param parlower Named numeric vector of lower bounds for dependent states.
+#'   Used for multistart initialization on cold starts. Names must match
+#'   dependent state names. States not mentioned use default bounds
+#'   (1e-6 for positive states, -1e6 otherwise).
+#' @param parupper Named numeric vector of upper bounds for dependent states.
+#'   Used for multistart initialization on cold starts. Names must match
+#'   dependent state names. States not mentioned use default bound of 1e6.
+#' @param nstart Integer. Number of random starting points for multistart
+#'   root finding (default 10). Only used on cold starts when `parlower`
+#'   and `parupper` are provided.
 #' @param optionsRootSolve List of options passed to [rootSolve::multiroot].
 #'   Merged with internal defaults via [modifyList()].
 #' @param attach.input Logical. Include unchanged input parameters in the output.
@@ -508,6 +540,9 @@ Pimpl <- function(x,
                   fixed        = NULL,
                   keep.root    = TRUE,
                   positive     = TRUE,
+                  parlower     = NULL,
+                  parupper     = NULL,
+                  nstart       = 10L,
                   optionsRootSolve = list(),
                   attach.input = FALSE,
                   condition    = NULL,
@@ -517,9 +552,34 @@ Pimpl <- function(x,
   
   # Normalize input: accept eqnlist; insert conservation totals if needed
   totals <- character(0)
+  forcing_states <- character(0)
+  
   if (inherits(x, "eqnlist")) {
     eq    <- x
     trafo <- as.eqnvec(eq)
+    
+    # Detect forcing/event states: states with RHS = 0 are always in steady state
+    # and should be treated as parameters (pass-through)
+    trafo_vec <- as.character(trafo)
+    names(trafo_vec) <- names(trafo)
+    
+    for (st in names(trafo_vec)) {
+      rhs <- trafo_vec[st]
+      # Check if RHS is effectively zero: "0", "1*(0)", "-1*(0)+1*(0)", etc.
+      rhs_clean <- gsub("\\s+", "", rhs)
+      rhs_clean <- gsub("^[+-]?[0-9]*\\*?\\(0\\)([+-][0-9]*\\*?\\(0\\))*$", "0", rhs_clean)
+      
+      if (rhs_clean == "0" || rhs_clean == "0.0" || rhs_clean == "") {
+        forcing_states <- c(forcing_states, st)
+      }
+    }
+    
+    # Remove forcing states from trafo - they become parameters
+    if (length(forcing_states) > 0L) {
+      trafo <- trafo[setdiff(names(trafo), forcing_states)]
+      message("Detected forcing/event states (treated as parameters): ", 
+              paste(forcing_states, collapse = ", "))
+    }
     
     cq_df <- conservedQuantities(eq$smatrix)
     n_cq  <- if (!is.null(attr(cq_df, "n"))) attr(cq_df, "n") else 0L
@@ -575,19 +635,73 @@ Pimpl <- function(x,
         }
       }
       
-      # Use user-provided totals if matching count
-      if (!is.null(parameters)) {
-        cand_totals <- setdiff(parameters, nonstates_auto)
-        if (length(cand_totals) == n_cq) totals_created <- cand_totals
-      }
       totals <- totals_created
       
       # Replace residuals by conservation constraints "(sum) - total_i = 0"
-      repl_states <- tail(states_detected, n_cq)
+      # For each conservation relation, replace the ODE of ONE involved species
+      # with the algebraic constraint. We choose the last species in each relation.
+      
+      # Convert to plain character vector for reliable manipulation
+      trafo_vec <- as.character(trafo)
+      names(trafo_vec) <- names(trafo)
+      
+      replaced_states <- character(n_cq)
       for (i in seq_len(n_cq)) {
-        cons_expr <- cq_df[i, 1]
-        trafo[repl_states[i]] <- paste0("(", cons_expr, ") - ", totals[i])
+        cons_expr <- as.character(cq_df[i, 1])
+        symbols_i <- getSymbols(cons_expr)
+        
+        # Select one species from this conservation relation to replace
+        # Filter to those that are actually states, preserving order from symbols_i
+        valid_species <- symbols_i[symbols_i %in% names(trafo_vec)]
+        if (length(valid_species) == 0L) {
+          stop("Conservation relation involves no model states: ", cons_expr)
+        }
+        # Take the last valid species
+        repl_state <- valid_species[length(valid_species)]
+        replaced_states[i] <- repl_state
+        
+        # Replace the ODE with the conservation constraint
+        trafo_vec[repl_state] <- paste0("(", cons_expr, ") - ", totals[i])
       }
+      
+      # If user provided totals in parameters, match them to the correct conservation
+      # relations based on the species they involve
+      if (!is.null(parameters)) {
+        cand_totals <- setdiff(parameters, nonstates_auto)
+        if (length(cand_totals) == n_cq) {
+          # Match user totals to conservation relations by species name pattern
+          matched_totals <- character(n_cq)
+          used <- logical(length(cand_totals))
+          
+          for (i in seq_len(n_cq)) {
+            # Try to match by the replaced state name (e.g., "n_open" -> "totn")
+            state_base <- gsub("_(open|closed|active|inactive|bound|free)$", "", 
+                               replaced_states[i])
+            
+            for (j in seq_along(cand_totals)) {
+              if (used[j]) next
+              if (grepl(state_base, cand_totals[j], ignore.case = TRUE)) {
+                matched_totals[i] <- cand_totals[j]
+                used[j] <- TRUE
+                break
+              }
+            }
+          }
+          
+          # If all matched successfully, use user-provided names
+          if (all(nchar(matched_totals) > 0)) {
+            # Update trafo with matched total names
+            for (i in seq_len(n_cq)) {
+              cons_expr <- as.character(cq_df[i, 1])
+              trafo_vec[replaced_states[i]] <- paste0("(", cons_expr, ") - ", matched_totals[i])
+            }
+            totals <- matched_totals
+          }
+        }
+      }
+      
+      # Convert back to eqnvec
+      trafo <- as.eqnvec(trafo_vec)
       
       # Recompute symbol sets and exclude totals from nonstates
       states_detected <- names(trafo)
@@ -595,11 +709,12 @@ Pimpl <- function(x,
       nonstates_auto  <- setdiff(symbols_all, c(states_detected, totals))
       
       # Report detected conservation relations
-      msg <- paste(sprintf("  • %s = %s", totals, cq_df[[1]]), collapse = "\n")
+      msg <- paste(sprintf("  • %s = %s (replacing %s)", 
+                           totals, cq_df[[1]], replaced_states), collapse = "\n")
       message("Detected conservation relations:\n", msg)
     }
     
-    required_outer <- unique(c(nonstates_auto, totals))
+    required_outer <- unique(c(nonstates_auto, totals, forcing_states))
     if (!is.null(parameters)) {
       miss  <- setdiff(required_outer, parameters)
       extra <- setdiff(parameters, required_outer)
@@ -634,6 +749,15 @@ Pimpl <- function(x,
     stop("Dependent states cannot be compile-time fixed: ",
          paste(intersect(fixed, dep_st), collapse = ", "))
   }
+  
+  # Remove forcing states from 'positive' if present (they are not solved)
+  if (length(forcing_states) > 0L && !is.null(names(positive))) {
+    positive <- positive[setdiff(names(positive), forcing_states)]
+  }
+  
+  # Normalize 'positive' argument to a named logical vector over dep_st
+  pos_mask <- .normalize_positive_mask(positive, dep_st)
+  any_positive <- any(pos_mask)
   
   # Build compiled evaluator for the dependent residuals only
   if (is.null(modelname)) modelname <- "impl_parfn"
@@ -671,7 +795,6 @@ Pimpl <- function(x,
   guess_env$guess <- NULL
   
   # Store compile-time fixed for use in p2p
-  
   compile_fixed <- fixed
   
   # Returned transformation closure
@@ -727,29 +850,80 @@ Pimpl <- function(x,
       c(x_full, r_ns)
     }
     
-    # Solve f_dep(x_dep,·)=0; positivity via z=log(x_dep) if requested
-    if (positive) {
+    # Solve f_dep(x_dep,·)=0 with selective log-transformation for positivity
+    if (any_positive) {
+      # Transform to z-space: z[i] = log(x[i]) for positive states, z[i] = x[i] otherwise
+      x_to_z <- function(x) {
+        z <- x
+        z[pos_mask] <- log(pmax(x[pos_mask], 1e-12))
+        z
+      }
+      z_to_x <- function(z) {
+        x <- z
+        x[pos_mask] <- exp(z[pos_mask])
+        x
+      }
+      
       f_z <- function(z, .) {
-        x_dep <- exp(z)
+        x_dep <- z_to_x(z)
         FEval(NULL, p = pack_full(x_dep),
               attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
       }
-      z0         <- log(pmax(x_dep0, 1e-8))
-      root       <- do.call(rootSolve::multiroot, c(list(f = f_z, start = z0), optsRS))
-      x_dep_star <- exp(root$root)
+      
+      # Multistart if cold start and bounds are provided
+      if (is.null(guess_env$guess) && !is.null(parlower) && !is.null(parupper)) {
+        root <- .multistart_root(f_z, x_dep0, dep_st, pos_mask, parlower, parupper, 
+                                 nstart, optsRS, x_to_z, z_to_x, verbose)
+        x_dep_star <- root$x_star
+      } else {
+        z0   <- x_to_z(x_dep0)
+        root <- .quiet_multiroot(f_z, z0, optsRS)
+        x_dep_star <- z_to_x(root$root)
+      }
+      
+      # Check convergence
+      if (any(is.na(x_dep_star)) || any(is.nan(x_dep_star)) || root$estim.precis > 1e-4) {
+        warning(sprintf(
+          "[Pimpl] Steady-state solver may not have converged (precision: %.2e).\n  Consider providing better initial guesses via the input parameter vector.",
+          root$estim.precis
+        ))
+      }
+      
       if (verbose) {
         cat(sprintf(
           "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
           root$iter, root$estim.precis
         ))
+        if (sum(pos_mask) < length(pos_mask)) {
+          cat(sprintf("  Positivity enforced for: %s\n", 
+                      paste(names(pos_mask)[pos_mask], collapse = ", ")))
+        }
       }
     } else {
+      # No positivity constraints: solve directly in x-space
       f_x <- function(x_dep, .) {
         FEval(NULL, p = pack_full(x_dep),
               attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
       }
-      root       <- do.call(rootSolve::multiroot, c(list(f = f_x, start = x_dep0), optsRS))
-      x_dep_star <- root$root
+      
+      # Multistart if cold start and bounds are provided
+      if (is.null(guess_env$guess) && !is.null(parlower) && !is.null(parupper)) {
+        root <- .multistart_root(f_x, x_dep0, dep_st, pos_mask, parlower, parupper,
+                                 nstart, optsRS, NULL, NULL, verbose)
+        x_dep_star <- root$x_star
+      } else {
+        root <- .quiet_multiroot(f_x, x_dep0, optsRS)
+        x_dep_star <- root$root
+      }
+      
+      # Check convergence
+      if (any(is.na(x_dep_star)) || any(is.nan(x_dep_star)) || root$estim.precis > 1e-4) {
+        warning(sprintf(
+          "[Pimpl] Steady-state solver may not have converged (precision: %.2e).\n  Consider providing better initial guesses via the input parameter vector.",
+          root$estim.precis
+        ))
+      }
+      
       if (verbose) {
         cat(sprintf(
           "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
@@ -799,11 +973,17 @@ Pimpl <- function(x,
     Dx_ind  <- if (ncol(dfdx_indep)) - inv_fxd %*% dfdx_indep
     else matrix(0, nrow = length(dep_st), ncol = 0, dimnames = list(dep_st, character(0)))
     
-    # Prepare the base output vector (solved states + pass-through)
+    # Prepare the base output vector: states + nonstates (excluding auto-generated totals)
     x_full_star <- setNames(numeric(length(states)), states)
     x_full_star[dep_st]   <- x_dep_star
     x_full_star[indep_st] <- x_ind
-    out_vec <- c(x_full_star, r_ns)
+    
+    # Add forcing states (RHS = 0, pass-through from input)
+    forcing_vals <- if (length(forcing_states) > 0L) p[forcing_states] else numeric(0)
+    
+    # Add nonstates to output, but exclude totals and forcing_states (forcing_states added separately above)
+    nonstates_output <- setdiff(nonstates, c(totals, forcing_states))
+    out_vec <- c(x_full_star, forcing_vals, r_ns[nonstates_output])
     
     # Columns for derivatives: exclude both compile-time and runtime fixed
     cols_nonfixed <- setdiff(names(pars), c(compile_fixed, runtime_fixed_names))
@@ -976,6 +1156,159 @@ Pimpl <- function(x,
   attr(p2p, "modelname")  <- modelname
   
   parfn(p2p, parameters, condition)
+}
+
+
+#' Normalize positivity constraint specification
+#'
+#' Internal helper to convert the `positive` argument into a named logical
+#' vector over all dependent states.
+#'
+#' @param positive Logical scalar or named logical vector.
+#' @param dep_st Character vector of dependent state names.
+#' @return Named logical vector of length `length(dep_st)`.
+#' @keywords internal
+.normalize_positive_mask <- function(positive, dep_st) {
+  
+  
+  if (is.logical(positive) && length(positive) == 1L && is.null(names(positive))) {
+    # Scalar TRUE/FALSE: apply to all dependent states
+    return(setNames(rep(positive, length(dep_st)), dep_st))
+  }
+  
+  if (is.logical(positive) && !is.null(names(positive))) {
+    # Named logical vector: validate names and build mask
+    unknown <- setdiff(names(positive), dep_st)
+    if (length(unknown) > 0L) {
+      warning("Unknown state names in 'positive' (ignored): ", 
+              paste(unknown, collapse = ", "))
+    }
+    
+    # Default to FALSE for states not mentioned
+    pos_mask <- setNames(rep(FALSE, length(dep_st)), dep_st)
+    overlap <- intersect(names(positive), dep_st)
+    pos_mask[overlap] <- positive[overlap]
+    return(pos_mask)
+  }
+  
+  stop("'positive' must be TRUE, FALSE, or a named logical vector ",
+       "with names matching dependent states: ",
+       paste(dep_st, collapse = ", "))
+}
+
+
+#' Multistart root finding for cold starts
+#'
+#' Internal helper that performs multiple root-finding attempts with uniformly
+#' sampled starting points within given bounds. Returns the best solution found.
+#'
+#' @param f Residual function to solve.
+#' @param x_dep0 Initial guess (used as fallback and for structure).
+#' @param dep_st Character vector of dependent state names.
+#' @param pos_mask Named logical vector indicating which states have positivity constraints.
+#' @param parlower Named numeric vector of lower bounds.
+#' @param parupper Named numeric vector of upper bounds.
+#' @param nstart Number of random starting points to try.
+#' @param optsRS Options for rootSolve::multiroot.
+#' @param x_to_z Optional transformation function (for positive constraints).
+#' @param z_to_x Optional inverse transformation function.
+#' @param verbose Logical; print progress information.
+#' @return List with elements: x_star (best solution), estim.precis, iter.
+#' @keywords internal
+.multistart_root <- function(f, x_dep0, dep_st, pos_mask, parlower, parupper,
+                             nstart, optsRS, x_to_z, z_to_x, verbose) {
+  
+  
+  # Extract bounds for dependent states only
+  lower <- x_dep0
+  upper <- x_dep0
+  
+  
+  for (nm in dep_st) {
+    if (nm %in% names(parlower)) lower[nm] <- parlower[nm]
+    else lower[nm] <- if (pos_mask[nm]) 1e-6 else -1e6
+    
+    if (nm %in% names(parupper)) upper[nm] <- parupper[nm]
+    else upper[nm] <- if (pos_mask[nm]) 1e6 else 1e6
+  }
+  
+  best_root   <- NULL
+  best_precis <- Inf
+  use_transform <- !is.null(x_to_z) && !is.null(z_to_x)
+  
+  if (verbose) {
+    cat(sprintf("[Pimpl] Multistart with %d random initial points\n", nstart))
+  }
+  
+  for (i in seq_len(nstart)) {
+    # Sample uniformly within bounds
+    x_start <- setNames(runif(length(dep_st), lower, upper), dep_st)
+    
+    # Transform to z-space if needed
+    start_val <- if (use_transform) x_to_z(x_start) else x_start
+    
+    # Attempt root finding with full output suppression
+    root <- tryCatch(
+      .quiet_multiroot(f, start_val, optsRS),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(root) && !any(is.na(root$root)) && !any(is.nan(root$root))) {
+      if (root$estim.precis < best_precis) {
+        best_precis <- root$estim.precis
+        best_root   <- root
+        
+        if (verbose) {
+          cat(sprintf("  [%d] precision: %.2e (new best)\n", i, root$estim.precis))
+        }
+        
+        # Early exit if converged well
+        if (best_precis < 1e-8) break
+      }
+    }
+  }
+  
+  # Fallback to original guess if multistart failed completely
+  if (is.null(best_root)) {
+    if (verbose) cat("  Multistart failed, using original guess\n")
+    start_val <- if (use_transform) x_to_z(x_dep0) else x_dep0
+    best_root <- .quiet_multiroot(f, start_val, optsRS)
+  }
+  
+  # Return in consistent format
+  x_star <- if (use_transform) z_to_x(best_root$root) else best_root$root
+  
+  list(
+    x_star      = setNames(x_star, dep_st),
+    estim.precis = best_root$estim.precis,
+    iter        = best_root$iter,
+    root        = best_root$root
+  )
+}
+
+
+#' Quietly run multiroot suppressing all output
+#'
+#' Internal helper that runs rootSolve::multiroot while suppressing
+#' all warnings, messages, and stdout output (including Fortran messages).
+#'
+#' @param f Residual function.
+#' @param start Initial guess vector.
+#' @param optsRS Options for rootSolve::multiroot.
+#' @return Result from multiroot.
+#' @keywords internal
+.quiet_multiroot <- function(f, start, optsRS) {
+  # Temporarily redirect stdout to /dev/null to suppress Fortran messages
+  null_con <- file(if (.Platform$OS.type == "windows") "NUL" else "/dev/null", open = "w")
+  sink(null_con)
+  on.exit({
+    sink()
+    close(null_con)
+  }, add = TRUE)
+  
+  suppressWarnings(suppressMessages(
+    do.call(rootSolve::multiroot, c(list(f = f, start = start), optsRS))
+  ))
 }
 
 

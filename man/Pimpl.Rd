@@ -12,6 +12,9 @@ Pimpl(
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  parlower = NULL,
+  parupper = NULL,
+  nstart = 10L,
   optionsRootSolve = list(),
   attach.input = FALSE,
   condition = NULL,
@@ -40,8 +43,24 @@ Implies \code{deriv = TRUE}.}
 \item{keep.root}{Logical. Reuse the previous root as starting guess
 to accelerate convergence.}
 
-\item{positive}{Logical. If \code{TRUE}, solve in log-space
-(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states.}
+\item{positive}{Logical or named logical vector. If \code{TRUE}, solve in log-space
+(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states
+for all dependent states. If a named logical vector, only the states with
+\code{TRUE} values are constrained to be positive. Names must match dependent
+state names. States not mentioned default to \code{FALSE} (unconstrained).}
+
+\item{parlower}{Named numeric vector of lower bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bounds
+(1e-6 for positive states, -1e6 otherwise).}
+
+\item{parupper}{Named numeric vector of upper bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bound of 1e6.}
+
+\item{nstart}{Integer. Number of random starting points for multistart
+root finding (default 10). Only used on cold starts when \code{parlower}
+and \code{parupper} are provided.}
 
 \item{optionsRootSolve}{List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
 Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}

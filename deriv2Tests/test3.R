@@ -15,29 +15,30 @@ f <- eqnvec() %>%
   addReaction("B", "C", "k2*B", "Production of C")
 
 # Define observables and error model
-observables <- eqnvec(B_obs = "B + offset_B")
+observables <- eqnvec(B_obs = "B + off_B")
 errors <- eqnvec(B_obs = "sigma_rel*B_obs")
 
 # Generate dMod objects
-model <- odemodel(f, modelname = "errtest", compile = FALSE, solver = "boost")
+model <- odemodel(f, modelname = "errtest", compile = F, solver = "boost")
 x     <- Xs(model)
 g     <- Y(observables, x, 
-           compile = FALSE, modelname = "obsfn")
+           compile = F, modelname = "obsfn")
 e     <- Y(errors, g, attach.input = FALSE,
-           compile = FALSE, modelname = "errfn")
+           compile = F, modelname = "errfn")
 
 # Generate parameter transformation
 innerpars <- getParameters(model, g, e)
 covariates <- data.frame(Aini = c("C1", "C2"), row.names = c("C.1", "C.2"))
 
-p <- 
-  eqnvec() %>%
+trafo <- eqnvec() %>% 
   define("x~x", x = innerpars) %>%
   define("x~0", x = c("B", "C")) %>%
   branch(table = covariates) %>%
   insert("A~Aini", Aini = Aini) %>%
   insert("x~exp(x)", x = .currentSymbols) %>%
-  P(modelname = "parfn", compile = FALSE)
+  {.}
+
+p <- P(trafo, modelname = "parfn", compile = F)
 
 compile(g, x, e, p, output = "errtest_total", cores = 8)
 #compile(g, x, e, p, cores = 4)
@@ -61,11 +62,13 @@ plotData(data)
 ## Fit data with error model
 obj <- normL2(data, g*x*p, e)
 myfit <- trust(obj, ptrue, rinit = 1, rmax = 10, printIter = TRUE)
-fits <- mstrust(obj, center = ptrue, sd = 3, fits = 100, cores = 10, printIter = F, traceFile = "trace.csv", studyname = "msrun1")
+fits <- mstrust(obj, center = ptrue, sd = 3, fits = 100, cores = 20, studyname = "msrun1")
 
 outframe <- fits %>% as.parframe()
 plotValues(outframe)
 bestfit <- as.parvec(outframe)
+
+obj(bestfit)
 
 bestprediction <- (g*x*p)(times, bestfit, deriv = F)
 pred <- subset(as.data.frame(bestprediction, errfn = e), name == "B_obs")
@@ -81,5 +84,8 @@ ggplot(data = datasheet, aes(time, value, color = condition)) +
 profiles <- profile(obj, 
                     bestfit, names(bestfit), 
                     limits = c(-5, 5), 
-                    cores = length(bestfit))
-plotProfile(profiles, mode == "data")
+                    cores = length(bestfit),
+                    method = "optimize",
+                    stepControl = list(stop = "neg2ll"))
+
+plotProfile(profiles, mode %in% c("data", "neg2ll"))

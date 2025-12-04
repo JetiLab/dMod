@@ -13,6 +13,9 @@ P(
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  parlower = NULL,
+  parupper = NULL,
+  nstart = 100L,
   optionsRootSolve = list(),
   attach.input = FALSE,
   condition = NULL,
@@ -47,6 +50,19 @@ for faster convergence.}
 \item{positive}{Logical. Applies to \code{method = "implicit"} only.
 If \code{TRUE}, the steady-state solver is performed in log-space
 (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.}
+
+\item{parlower}{Named numeric vector of lower bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bounds
+(1e-6 for positive states, -1e6 otherwise).}
+
+\item{parupper}{Named numeric vector of upper bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bound of 1e6.}
+
+\item{nstart}{Integer. Number of random starting points for multistart
+root finding (default 100). Only used on cold starts when \code{parlower}
+and \code{parupper} are provided.}
 
 \item{optionsRootSolve}{List. Applies to \code{method = "implicit"} only. List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
 Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}

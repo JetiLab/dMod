@@ -131,10 +131,10 @@ profiles_optimize <- profile(obj, bestfit, whichPar = names(bestfit), method = "
 # plotProfile(profiles)
 plotProfile(profiles_integrate, mode %in% c("data", "prior"))
 plotProfile(profiles_optimize, mode %in% c("data", "prior"))
-plotPaths(profiles, whichPar = "TCA_CANA")
-plotPaths(profiles, whichPar = "K_EXPORT_CANA")
-plotPaths(profiles, whichPar = "K_REFLUX_OPEN")
-plotPaths(profiles, whichPar = "S") # The triple S, TCE_CELL, TCA_CANA compensate by structure of the model
+# plotPaths(profiles, whichPar = "TCA_CANA")
+# plotPaths(profiles, whichPar = "K_EXPORT_CANA")
+# plotPaths(profiles, whichPar = "K_REFLUX_OPEN")
+# plotPaths(profiles, whichPar = "S") # The triple S, TCE_CELL, TCA_CANA compensate by structure of the model
 
 
 # Tighten model assumptions with steady state constraint
