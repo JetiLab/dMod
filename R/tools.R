@@ -485,9 +485,9 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   # -- include and compiler flags -----------------------------------------------
   include_flags <- c(paste0("-I", shQuote(system.file("include", package = "CppODE"))))
   cxxflags <- if (Sys.info()[["sysname"]] == "Windows") {
-    "-std=c++17 -O3 -DNDEBUG"
+    "-std=c++20 -O3 -DNDEBUG"
   } else {
-    "-std=c++17 -O3 -DNDEBUG -fPIC"
+    "-std=c++20 -O3 -DNDEBUG -fPIC"
   }
   
   Sys.setenv(

@@ -9,20 +9,20 @@
 #' 
 #' `P()` can operate in two modes:
 #' 
-#' - **Explicit mode** (`method = "explicit"`, see [Pexpl]):  
-#'   Inner parameters are directly computed from symbolic expressions,  
+#' - **Explicit mode** (`method = "explicit"`, see [Pexpl]):
+#'   Inner parameters are directly computed from symbolic expressions,
 #'   for example
-#'   \deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}})}  
-#'   A common application of the explicit mode is the log-transformation  
-#'   \deqn{p_{\text{outer}} \mapsto \exp(p_{\text{outer}})}  
+#'   \deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}})}
+#'   A common application of the explicit mode is the log-transformation
+#'   \deqn{p_{\text{outer}} \mapsto \exp(p_{\text{outer}})}
 #'   which ensures positive parameters.
 #'
-#' - **Implicit mode** (`method = "implicit"`, see [Pimpl]):  
+#' - **Implicit mode** (`method = "implicit"`, see [Pimpl]):
 #'   Typically used to infer initial values \eqn{p_{\text{ini}}} satisfying the
-#'   steady-state condition  
-#'   \eqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0}.  
-#'   This yields an overall **partially implicit mapping**  
-#'   \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}})}  
+#'   steady-state condition
+#'   \eqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0}.
+#'   This yields an overall **partially implicit mapping**
+#'   \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}})}
 #'   where \eqn{f} usually represents the right-hand side (RHS) of an ODE model.
 #' 
 #' Both transformation types can be combined with other mappings via arithmetic
@@ -43,9 +43,11 @@
 #' @param keep.root Logical. Applies to `method = "implicit"` only.
 #' If `TRUE`, reuse the root from the previous call as a warm-start guess
 #' for faster convergence.
-#' @param positive Logical. Applies to `method = "implicit"` only.
+#' @param positive Logical or named logical vector. Applies to `method = "implicit"` only.
 #' If `TRUE`, the steady-state solver is performed in log-space
 #' (\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.
+#' If a named logical vector, only the states with `TRUE` values are constrained
+#' to be positive.
 #' @param parlower Named numeric vector of lower bounds for dependent states.
 #'   Used for multistart initialization on cold starts. Names must match
 #'   dependent state names. States not mentioned use default bounds
@@ -56,8 +58,15 @@
 #' @param nstart Integer. Number of random starting points for multistart
 #'   root finding (default 100). Only used on cold starts when `parlower`
 #'   and `parupper` are provided.
-#' @param optionsRootSolve List. Applies to `method = "implicit"` only. List of options passed to [rootSolve::multiroot].
-#' Merged with internal defaults via [modifyList()].
+#' @param optionsRootSolve List. Applies to `method = "implicit"` only.
+#'   Options passed to [nleqslv::nleqslv]. Recognized entries include:
+#'   - `method`: solver method, either `"Newton"` or `"Broyden"` (default `"Newton"`)
+#'   - `global`: globalization strategy, one of `"dbldog"` (double dogleg, default),
+#'     `"pwldog"` (Powell dogleg), `"qline"` (quadratic line search), 
+#'     `"gline"` (geometric line search), `"none"` (pure local method)
+#'   - `control`: list with `ftol` (function tolerance, default `1e-10`),
+#'     `xtol` (step tolerance, default `1e-10`), `maxit` (max iterations, default `200`)
+#'   - Top-level `ftol`, `xtol`, `maxit` are also accepted for convenience.
 #' @param attach.input Logical. Attach input parameters to the output if they
 #' are not overwritten by the transformation (identity mapping).
 #' @param condition Character. Condition label for which the transformation is
@@ -71,8 +80,8 @@
 #'
 #' @return
 #' An object of class [parfn], representing the parameter transformation.
-#' The returned function  
-#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`  
+#' The returned function
+#' `p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)`
 #' computes inner parameters and attaches derivatives as attributes
 #' `"deriv"` and `"deriv2"` when requested.
 #'
@@ -114,6 +123,7 @@ P <- function(x = NULL,
                    parlower = parlower,
                    parupper = parupper,
                    nstart = nstart,
+                   optionsRootSolve = optionsRootSolve,
                    attach.input = attach.input,
                    condition = condition,
                    compile = compile, 
@@ -148,8 +158,9 @@ P <- function(x = NULL,
                               parlower = parlower,
                               parupper = parupper,
                               nstart = nstart,
+                              optionsRootSolve = optionsRootSolve,
                               attach.input = attach.input,
-                              condition = names(x[i]), 
+                              condition = names(x[i]),
                               compile = compile, 
                               modelname = modelname, 
                               verbose = verbose))
@@ -251,17 +262,19 @@ Pexpl <- function(trafo,
   # ---------------------------------------------------------------------------
   # Build compiled (or fallback R) evaluator for transformation
   # ---------------------------------------------------------------------------
-  PEval <- CppODE::funCpp(
-    unclass(trafo),
-    variables  = NULL,
-    parameters = parameters,
-    fixed      = fixed,
-    compile    = compile,
-    modelname  = modelname,
-    verbose    = verbose,
-    convenient = FALSE,
-    deriv      = deriv,
-    deriv2     = deriv2
+  PEval <- suppressWarnings(
+    CppODE::funCpp(
+      unclass(trafo),
+      variables  = NULL,
+      parameters = parameters,
+      fixed      = fixed,
+      compile    = compile,
+      modelname  = modelname,
+      verbose    = verbose,
+      convenient = FALSE,
+      deriv      = deriv,
+      deriv2     = deriv2
+    )
   )
   
   # ---------------------------------------------------------------------------
@@ -382,7 +395,8 @@ Pexpl <- function(trafo,
 #'
 #' \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}}).}
 #'
-#' The steady-state is obtained numerically using [rootSolve::multiroot].
+#' The steady-state is obtained numerically using [nleqslv::nleqslv] with
+#' analytical Jacobians derived via symbolic differentiation.
 #' If `positive = TRUE`, the system is solved in log-space,
 #' \eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}, to ensure positivity of steady states.
 #'
@@ -464,14 +478,10 @@ Pexpl <- function(trafo,
 #' All detected conservation relations and their associated total parameters
 #' are printed to the console when `Pimpl()` is called.
 #'
-#' ## Root solver options
+#' ## Solver options
 #'
-#' The nonlinear system is solved with [rootSolve::multiroot]. Solver settings can
-#' be customized through the named list `optionsRootSolve`. Recognized entries include:
-#' 
-#' - `atol`: absolute tolerance (default `1e-8`)  
-#' - `rtol`: relative tolerance (default `1e-6`)  
-#' - `maxiter`: maximum number of iterations (default `1000`)  
+#' The nonlinear system is solved with [nleqslv::nleqslv] using analytical
+#' Jacobians. See `optionsRootSolve` parameter for customization.
 #'
 #' ## Composition
 #'
@@ -507,8 +517,15 @@ Pexpl <- function(trafo,
 #' @param nstart Integer. Number of random starting points for multistart
 #'   root finding (default 10). Only used on cold starts when `parlower`
 #'   and `parupper` are provided.
-#' @param optionsRootSolve List of options passed to [rootSolve::multiroot].
-#'   Merged with internal defaults via [modifyList()].
+#' @param optionsRootSolve List of options passed to [nleqslv::nleqslv].
+#'   Merged with internal defaults via [modifyList()]. Recognized entries include:
+#'   - `method`: solver method, either `"Newton"` or `"Broyden"` (default `"Newton"`)
+#'   - `global`: globalization strategy, one of `"dbldog"` (double dogleg, default),
+#'     `"pwldog"` (Powell dogleg), `"qline"` (quadratic line search), 
+#'     `"gline"` (geometric line search), `"none"` (pure local method)
+#'   - `control`: list with `ftol` (function tolerance, default `1e-10`),
+#'     `xtol` (step tolerance, default `1e-10`), `maxit` (max iterations, default `200`)
+#'   - Top-level `ftol`, `xtol`, `maxit` are also accepted for convenience.
 #' @param attach.input Logical. Include unchanged input parameters in the output.
 #' @param condition Character. Condition label for which the transformation is generated.
 #' @param compile Logical. Compile generated residual functions via [funCpp].
@@ -525,12 +542,12 @@ Pexpl <- function(trafo,
 #'
 #' @seealso
 #' [Pexpl] for explicit transformations,  
-#' [rootSolve::multiroot] for numerical steady-state solving,  
+#' [nleqslv::nleqslv] for numerical steady-state solving,  
 #' [P] for the unified high-level interface.
 #'
 #' @importFrom CppODE funCpp
 #' @importFrom einsum einsum
-#' @importFrom rootSolve multiroot
+#' @importFrom nleqslv nleqslv
 #' @importFrom abind abind
 #' @export
 Pimpl <- function(x,
@@ -665,26 +682,44 @@ Pimpl <- function(x,
       }
       
       # If user provided totals in parameters, match them to the correct conservation
-      # relations based on the species they involve
+      # relations based on overlap between species names and total names
       if (!is.null(parameters)) {
         cand_totals <- setdiff(parameters, nonstates_auto)
         if (length(cand_totals) == n_cq) {
-          # Match user totals to conservation relations by species name pattern
+          # Match user totals to conservation relations by finding overlaps
+          # e.g., species {ERK, pERK, ppERK} should match "totERK"
           matched_totals <- character(n_cq)
           used <- logical(length(cand_totals))
           
           for (i in seq_len(n_cq)) {
-            # Try to match by the replaced state name (e.g., "n_open" -> "totn")
-            state_base <- gsub("_(open|closed|active|inactive|bound|free)$", "", 
-                               replaced_states[i])
+            cons_expr <- as.character(cq_df[i, 1])
+            species_i <- getSymbols(cons_expr)
+            
+            # For each candidate total, check if any species name overlaps with it
+            best_match <- NULL
+            best_overlap <- 0
             
             for (j in seq_along(cand_totals)) {
               if (used[j]) next
-              if (grepl(state_base, cand_totals[j], ignore.case = TRUE)) {
-                matched_totals[i] <- cand_totals[j]
-                used[j] <- TRUE
-                break
+              total_name <- cand_totals[j]
+              # Remove common prefixes like "tot", "total", "Total" for comparison
+              total_base <- gsub("^[Tt]ot(al)?", "", total_name)
+              
+              # Check overlap with each species in the conservation relation
+              for (sp in species_i) {
+                # Check if species contains the total base or vice versa
+                # e.g., "ERK" in "totERK", or "ERK" in "pERK"
+                overlap <- .string_overlap(sp, total_base)
+                if (overlap > best_overlap) {
+                  best_overlap <- overlap
+                  best_match <- j
+                }
               }
+            }
+            
+            if (!is.null(best_match) && best_overlap > 0) {
+              matched_totals[i] <- cand_totals[best_match]
+              used[best_match] <- TRUE
             }
           }
           
@@ -768,27 +803,43 @@ Pimpl <- function(x,
   all_params <- c(states, nonstates)
   diff_params <- setdiff(all_params, fixed)
   
-  FEval <- CppODE::funCpp(
-    as.eqnvec(trafo[dep_st]),
-    variables  = NULL,
-    parameters = all_params,
-    fixed      = fixed,
-    compile    = compile,
-    modelname  = modelname,
-    verbose    = verbose,
-    convenient = FALSE,
-    deriv      = isTRUE(deriv) || isTRUE(deriv2),
-    deriv2     = isTRUE(deriv2)
+  FEval <- suppressWarnings(
+    CppODE::funCpp(
+      as.eqnvec(trafo[dep_st]),
+      variables  = NULL,
+      parameters = all_params,
+      fixed      = fixed,
+      compile    = compile,
+      modelname  = modelname,
+      verbose    = verbose,
+      convenient = FALSE,
+      deriv      = TRUE,  # Always need Jacobian for nleqslv
+      deriv2     = isTRUE(deriv2)
+    )
   )
   
-  
-  # RootSolve default options (merged with user list)
-  defaultsRootSolve <- list(
-    maxiter  = 1000,
-    atol     = 1e-8,
-    rtol     = 1e-6
+  # nleqslv default options (merged with user list)
+  defaultsSolver <- list(
+    method = "Newton",
+    global = "dbldog",
+    control = list(
+      ftol   = 1e-10,
+      xtol   = 1e-10,
+      maxit  = 200
+    )
   )
-  optsRS <- modifyList(defaultsRootSolve, optionsRootSolve)
+  
+  # Merge user options
+  optsSolver <- defaultsSolver
+  if (!is.null(optionsRootSolve$method)) optsSolver$method <- optionsRootSolve$method
+  if (!is.null(optionsRootSolve$global)) optsSolver$global <- optionsRootSolve$global
+  if (!is.null(optionsRootSolve$control)) {
+    optsSolver$control <- modifyList(optsSolver$control, optionsRootSolve$control)
+  }
+  # Also allow top-level ftol, xtol, maxit for convenience
+  if (!is.null(optionsRootSolve$ftol)) optsSolver$control$ftol <- optionsRootSolve$ftol
+  if (!is.null(optionsRootSolve$xtol)) optsSolver$control$xtol <- optionsRootSolve$xtol
+  if (!is.null(optionsRootSolve$maxit)) optsSolver$control$maxit <- optionsRootSolve$maxit
   
   # Warm-start state
   guess_env <- new.env(parent = emptyenv())
@@ -850,7 +901,12 @@ Pimpl <- function(x,
       c(x_full, r_ns)
     }
     
-    # Solve f_dep(x_dep,·)=0 with selective log-transformation for positivity
+    # Define residual and Jacobian functions for nleqslv
+    # These need access to FEval and pack_full
+    
+    # Get column indices for dependent states in the Jacobian
+    dep_st_idx <- match(dep_st, diff_params)
+    
     if (any_positive) {
       # Transform to z-space: z[i] = log(x[i]) for positive states, z[i] = x[i] otherwise
       x_to_z <- function(x) {
@@ -860,39 +916,65 @@ Pimpl <- function(x,
       }
       z_to_x <- function(z) {
         x <- z
-        x[pos_mask] <- exp(z[pos_mask])
+        # Clamp z to avoid overflow in exp(): exp(709) ≈ 8e307, exp(710) = Inf
+        z_clamped <- pmax(pmin(z[pos_mask], 700), -700)
+        x[pos_mask] <- exp(z_clamped)
         x
       }
       
-      f_z <- function(z, .) {
+      # Residual in z-space
+      f_z <- function(z) {
         x_dep <- z_to_x(z)
-        FEval(NULL, p = pack_full(x_dep),
-              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
+        tryCatch(
+          FEval(NULL, p = pack_full(x_dep),
+                attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = FALSE)$out[1, ],
+          error = function(e) rep(NaN, length(z))
+        )
+      }
+      
+      # Jacobian in z-space: J_z = J_x * diag(dx/dz)
+      # For positive states: dx/dz = exp(z) = x
+      # For unconstrained states: dx/dz = 1
+      jac_z <- function(z) {
+        x_dep <- z_to_x(z)
+        E <- tryCatch(
+          FEval(NULL, p = pack_full(x_dep),
+                attach.input = FALSE, deriv = TRUE, deriv2 = FALSE, verbose = FALSE),
+          error = function(e) NULL
+        )
+        if (is.null(E)) return(NULL)
+        J_full <- E$jacobian[, , 1, drop = TRUE]
+        J_x <- J_full[, dep_st_idx, drop = FALSE]
+        
+        # Chain rule: multiply columns by dx/dz
+        dxdz <- ifelse(pos_mask, x_dep, 1)
+        sweep(J_x, 2, dxdz, `*`)
       }
       
       # Multistart if cold start and bounds are provided
       if (is.null(guess_env$guess) && !is.null(parlower) && !is.null(parupper)) {
-        root <- .multistart_root(f_z, x_dep0, dep_st, pos_mask, parlower, parupper, 
-                                 nstart, optsRS, x_to_z, z_to_x, verbose)
+        root <- .multistart_nleqslv(f_z, jac_z, x_dep0, dep_st, pos_mask, 
+                                    parlower, parupper, nstart, optsSolver,
+                                    x_to_z, z_to_x, verbose)
         x_dep_star <- root$x_star
       } else {
-        z0   <- x_to_z(x_dep0)
-        root <- .quiet_multiroot(f_z, z0, optsRS)
-        x_dep_star <- z_to_x(root$root)
+        z0 <- x_to_z(x_dep0)
+        root <- .quiet_nleqslv(f_z, jac_z, z0, optsSolver)
+        x_dep_star <- z_to_x(root$x)
       }
       
       # Check convergence
-      if (any(is.na(x_dep_star)) || any(is.nan(x_dep_star)) || root$estim.precis > 1e-4) {
-        warning(sprintf(
-          "[Pimpl] Steady-state solver may not have converged (precision: %.2e).\n  Consider providing better initial guesses via the input parameter vector.",
-          root$estim.precis
+      if (!root$converged || any(is.na(x_dep_star)) || any(is.nan(x_dep_star))) {
+        stop(sprintf(
+          "[Pimpl] Steady-state solver did not converge (termcd: %d, fval: %.2e).\n  %s\n  Consider providing better initial guesses via the input parameter vector or using multistart (parlower/parupper).",
+          root$termcd, max(abs(root$fvec)), .nleqslv_message(root$termcd)
         ))
       }
       
       if (verbose) {
         cat(sprintf(
-          "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
-          root$iter, root$estim.precis
+          "[Pimpl] nleqslv converged in %d iterations (max|f|: %.2e, termcd: %d)\n",
+          root$iter, max(abs(root$fvec)), root$termcd
         ))
         if (sum(pos_mask) < length(pos_mask)) {
           cat(sprintf("  Positivity enforced for: %s\n", 
@@ -901,33 +983,48 @@ Pimpl <- function(x,
       }
     } else {
       # No positivity constraints: solve directly in x-space
-      f_x <- function(x_dep, .) {
-        FEval(NULL, p = pack_full(x_dep),
-              attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = verbose)$out[1, ]
+      f_x <- function(x_dep) {
+        tryCatch(
+          FEval(NULL, p = pack_full(x_dep),
+                attach.input = FALSE, deriv = FALSE, deriv2 = FALSE, verbose = FALSE)$out[1, ],
+          error = function(e) rep(NaN, length(x_dep))
+        )
+      }
+      
+      jac_x <- function(x_dep) {
+        E <- tryCatch(
+          FEval(NULL, p = pack_full(x_dep),
+                attach.input = FALSE, deriv = TRUE, deriv2 = FALSE, verbose = FALSE),
+          error = function(e) NULL
+        )
+        if (is.null(E)) return(NULL)
+        J_full <- E$jacobian[, , 1, drop = TRUE]
+        J_full[, dep_st_idx, drop = FALSE]
       }
       
       # Multistart if cold start and bounds are provided
       if (is.null(guess_env$guess) && !is.null(parlower) && !is.null(parupper)) {
-        root <- .multistart_root(f_x, x_dep0, dep_st, pos_mask, parlower, parupper,
-                                 nstart, optsRS, NULL, NULL, verbose)
+        root <- .multistart_nleqslv(f_x, jac_x, x_dep0, dep_st, pos_mask,
+                                    parlower, parupper, nstart, optsSolver,
+                                    NULL, NULL, verbose)
         x_dep_star <- root$x_star
       } else {
-        root <- .quiet_multiroot(f_x, x_dep0, optsRS)
-        x_dep_star <- root$root
+        root <- .quiet_nleqslv(f_x, jac_x, x_dep0, optsSolver)
+        x_dep_star <- root$x
       }
       
       # Check convergence
-      if (any(is.na(x_dep_star)) || any(is.nan(x_dep_star)) || root$estim.precis > 1e-4) {
-        warning(sprintf(
-          "[Pimpl] Steady-state solver may not have converged (precision: %.2e).\n  Consider providing better initial guesses via the input parameter vector.",
-          root$estim.precis
+      if (!root$converged || any(is.na(x_dep_star)) || any(is.nan(x_dep_star))) {
+        stop(sprintf(
+          "[Pimpl] Steady-state solver did not converge (termcd: %d, fval: %.2e).\n  %s\n  Consider providing better initial guesses via the input parameter vector or using multistart (parlower/parupper).",
+          root$termcd, max(abs(root$fvec)), .nleqslv_message(root$termcd)
         ))
       }
       
       if (verbose) {
         cat(sprintf(
-          "[Pimpl] multiroot converged in %d iterations (estimated precision %.2e)\n",
-          root$iter, root$estim.precis
+          "[Pimpl] nleqslv converged in %d iterations (max|f|: %.2e, termcd: %d)\n",
+          root$iter, max(abs(root$fvec)), root$termcd
         ))
       }
     }
@@ -967,7 +1064,18 @@ Pimpl <- function(x,
     }
     
     # First-order IFT in x-space
+    # Check condition number before inverting
+    rcond_val <- tryCatch(rcond(dfdx_dep), error = function(e) 0)
+    
+    if (rcond_val < 1e-12) {
+      stop("[Pimpl] Jacobian df/dx is singular or near-singular at the solution (rcond = ",
+           format(rcond_val, digits = 3), "). ",
+           "The steady-state problem may be ill-posed or the solution is not a regular root. ",
+           "Consider providing better initial guesses or checking model structure.")
+    }
+    
     inv_fxd <- solve(dfdx_dep)
+    
     Dx_ns   <- if (ncol(dfdp_ns)) - inv_fxd %*% dfdp_ns 
     else matrix(0, nrow = length(dep_st), ncol = 0, dimnames = list(dep_st, character(0)))
     Dx_ind  <- if (ncol(dfdx_indep)) - inv_fxd %*% dfdx_indep
@@ -1064,7 +1172,7 @@ Pimpl <- function(x,
       
       if (length(P_cols) > 0) {
         rhs_mat <- matrix(rhs, nrow = nrow(dfdx_dep), ncol = length(P_cols) * length(P_cols))
-        sol_mat <- - solve(dfdx_dep, rhs_mat)
+        sol_mat <- - inv_fxd %*% rhs_mat
         d2x_dep <- array(sol_mat, dim = c(length(dep_st), length(P_cols), length(P_cols)),
                          dimnames = list(dep_st, P_cols, P_cols))
       } else {
@@ -1197,32 +1305,31 @@ Pimpl <- function(x,
 }
 
 
-#' Multistart root finding for cold starts
+#' Multistart root finding using nleqslv
 #'
 #' Internal helper that performs multiple root-finding attempts with uniformly
 #' sampled starting points within given bounds. Returns the best solution found.
 #'
-#' @param f Residual function to solve.
+#' @param fn Residual function to solve.
+#' @param jac Jacobian function.
 #' @param x_dep0 Initial guess (used as fallback and for structure).
 #' @param dep_st Character vector of dependent state names.
 #' @param pos_mask Named logical vector indicating which states have positivity constraints.
 #' @param parlower Named numeric vector of lower bounds.
 #' @param parupper Named numeric vector of upper bounds.
 #' @param nstart Number of random starting points to try.
-#' @param optsRS Options for rootSolve::multiroot.
+#' @param optsSolver Options for nleqslv.
 #' @param x_to_z Optional transformation function (for positive constraints).
 #' @param z_to_x Optional inverse transformation function.
 #' @param verbose Logical; print progress information.
-#' @return List with elements: x_star (best solution), estim.precis, iter.
+#' @return List with elements: x_star (best solution), converged, termcd, fvec, iter.
 #' @keywords internal
-.multistart_root <- function(f, x_dep0, dep_st, pos_mask, parlower, parupper,
-                             nstart, optsRS, x_to_z, z_to_x, verbose) {
-  
+.multistart_nleqslv <- function(fn, jac, x_dep0, dep_st, pos_mask, parlower, parupper,
+                                nstart, optsSolver, x_to_z, z_to_x, verbose) {
   
   # Extract bounds for dependent states only
   lower <- x_dep0
   upper <- x_dep0
-  
   
   for (nm in dep_st) {
     if (nm %in% names(parlower)) lower[nm] <- parlower[nm]
@@ -1233,7 +1340,7 @@ Pimpl <- function(x,
   }
   
   best_root   <- NULL
-  best_precis <- Inf
+  best_fval   <- Inf
   use_transform <- !is.null(x_to_z) && !is.null(z_to_x)
   
   if (verbose) {
@@ -1247,23 +1354,25 @@ Pimpl <- function(x,
     # Transform to z-space if needed
     start_val <- if (use_transform) x_to_z(x_start) else x_start
     
-    # Attempt root finding with full output suppression
+    # Attempt root finding
     root <- tryCatch(
-      .quiet_multiroot(f, start_val, optsRS),
+      .quiet_nleqslv(fn, jac, start_val, optsSolver),
       error = function(e) NULL
     )
     
-    if (!is.null(root) && !any(is.na(root$root)) && !any(is.nan(root$root))) {
-      if (root$estim.precis < best_precis) {
-        best_precis <- root$estim.precis
-        best_root   <- root
+    if (!is.null(root) && !any(is.na(root$x)) && !any(is.nan(root$x))) {
+      max_fval <- max(abs(root$fvec))
+      if (max_fval < best_fval) {
+        best_fval <- max_fval
+        best_root <- root
         
         if (verbose) {
-          cat(sprintf("  [%d] precision: %.2e (new best)\n", i, root$estim.precis))
+          cat(sprintf("  [%d] max|f|: %.2e (new best, termcd: %d)\n", 
+                      i, max_fval, root$termcd))
         }
         
         # Early exit if converged well
-        if (best_precis < 1e-8) break
+        if (best_fval < 1e-10) break
       }
     }
   }
@@ -1272,43 +1381,110 @@ Pimpl <- function(x,
   if (is.null(best_root)) {
     if (verbose) cat("  Multistart failed, using original guess\n")
     start_val <- if (use_transform) x_to_z(x_dep0) else x_dep0
-    best_root <- .quiet_multiroot(f, start_val, optsRS)
+    best_root <- .quiet_nleqslv(fn, jac, start_val, optsSolver)
   }
   
   # Return in consistent format
-  x_star <- if (use_transform) z_to_x(best_root$root) else best_root$root
+  x_star <- if (use_transform) z_to_x(best_root$x) else best_root$x
   
   list(
-    x_star      = setNames(x_star, dep_st),
-    estim.precis = best_root$estim.precis,
-    iter        = best_root$iter,
-    root        = best_root$root
+    x_star    = setNames(x_star, dep_st),
+    x         = best_root$x,
+    converged = best_root$converged,
+    termcd    = best_root$termcd,
+    fvec      = best_root$fvec,
+    iter      = best_root$iter
   )
 }
 
 
-#' Quietly run multiroot suppressing all output
+#' Quietly run nleqslv suppressing all output
 #'
-#' Internal helper that runs rootSolve::multiroot while suppressing
-#' all warnings, messages, and stdout output (including Fortran messages).
+#' Internal helper that runs nleqslv::nleqslv while suppressing
+#' all warnings, messages, and stdout output.
 #'
-#' @param f Residual function.
+#' @param fn Residual function.
+#' @param jac Jacobian function.
 #' @param start Initial guess vector.
-#' @param optsRS Options for rootSolve::multiroot.
-#' @return Result from multiroot.
+#' @param optsSolver Options for nleqslv.
+#' @return Result from nleqslv with added 'converged' field.
 #' @keywords internal
-.quiet_multiroot <- function(f, start, optsRS) {
-  # Temporarily redirect stdout to /dev/null to suppress Fortran messages
-  null_con <- file(if (.Platform$OS.type == "windows") "NUL" else "/dev/null", open = "w")
-  sink(null_con)
-  on.exit({
-    sink()
-    close(null_con)
-  }, add = TRUE)
-  
-  suppressWarnings(suppressMessages(
-    do.call(rootSolve::multiroot, c(list(f = f, start = start), optsRS))
+.quiet_nleqslv <- function(fn, jac, start, optsSolver) {
+  result <- suppressWarnings(suppressMessages(
+    nleqslv::nleqslv(
+      x       = start,
+      fn      = fn,
+      jac     = jac,
+      method  = optsSolver$method,
+      global  = optsSolver$global,
+      control = optsSolver$control
+    )
   ))
+  
+  
+  # Add convenience field for convergence check
+  # termcd == 1 means convergence
+  result$converged <- (result$termcd == 1)
+  
+  result
+}
+
+
+#' Get human-readable message for nleqslv termination code
+#'
+#' @param termcd Integer termination code from nleqslv.
+#' @return Character string describing the termination reason.
+#' @keywords internal
+.nleqslv_message <- function(termcd) {
+  switch(as.character(termcd),
+         "1" = "Convergence achieved",
+         "2" = "x-values within tolerance, but not converged",
+         "3" = "No acceptable step found during line search",
+         "4" = "Iteration limit exceeded",
+         "5" = "Jacobian is singular",
+         "6" = "Jacobian is ill-conditioned",
+         "-10" = "User interrupt",
+         "Unknown termination code"
+  )
+}
+
+
+#' Compute string overlap between two strings
+#'
+#' Internal helper that finds the longest common substring between two strings.
+#' Used for fuzzy matching of species names to total parameter names.
+#'
+#' @param a First string.
+#' @param b Second string.
+#' @return Integer length of the longest common substring.
+#' @keywords internal
+.string_overlap <- function(a, b) {
+  if (nchar(a) == 0 || nchar(b) == 0) return(0L)
+  
+  # Case-insensitive comparison
+  a <- tolower(a)
+  b <- tolower(b)
+  
+  # Check direct containment first (most common case)
+  if (grepl(a, b, fixed = TRUE)) return(nchar(a))
+  if (grepl(b, a, fixed = TRUE)) return(nchar(b))
+  
+  
+  # Find longest common substring
+  max_len <- 0L
+  len_a <- nchar(a)
+  len_b <- nchar(b)
+  
+  for (i in seq_len(len_a)) {
+    for (j in i:len_a) {
+      sub <- substr(a, i, j)
+      if (nchar(sub) > max_len && grepl(sub, b, fixed = TRUE)) {
+        max_len <- nchar(sub)
+      }
+    }
+  }
+  
+  max_len
 }
 
 

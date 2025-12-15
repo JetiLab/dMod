@@ -62,8 +62,17 @@ dependent state names. States not mentioned use default bound of 1e6.}
 root finding (default 10). Only used on cold starts when \code{parlower}
 and \code{parupper} are provided.}
 
-\item{optionsRootSolve}{List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
-Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
+\item{optionsRootSolve}{List of options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}.
+Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}. Recognized entries include:
+\itemize{
+\item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})
+\item \code{global}: globalization strategy, one of \code{"dbldog"} (double dogleg, default),
+\code{"pwldog"} (Powell dogleg), \code{"qline"} (quadratic line search),
+\code{"gline"} (geometric line search), \code{"none"} (pure local method)
+\item \code{control}: list with \code{ftol} (function tolerance, default \code{1e-10}),
+\code{xtol} (step tolerance, default \code{1e-10}), \code{maxit} (max iterations, default \code{200})
+\item Top-level \code{ftol}, \code{xtol}, \code{maxit} are also accepted for convenience.
+}}
 
 \item{attach.input}{Logical. Include unchanged input parameters in the output.}
 
@@ -100,7 +109,8 @@ yielding an overall \strong{partially implicit mapping}
 
 \deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}}).}
 
-The steady-state is obtained numerically using \link[rootSolve:multiroot]{rootSolve::multiroot}.
+The steady-state is obtained numerically using \link[nleqslv:nleqslv]{nleqslv::nleqslv} with
+analytical Jacobians derived via symbolic differentiation.
 If \code{positive = TRUE}, the system is solved in log-space,
 \eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}, to ensure positivity of steady states.
 \subsection{Derivatives}{
@@ -183,15 +193,10 @@ All detected conservation relations and their associated total parameters
 are printed to the console when \code{Pimpl()} is called.
 }
 
-\subsection{Root solver options}{
+\subsection{Solver options}{
 
-The nonlinear system is solved with \link[rootSolve:multiroot]{rootSolve::multiroot}. Solver settings can
-be customized through the named list \code{optionsRootSolve}. Recognized entries include:
-\itemize{
-\item \code{atol}: absolute tolerance (default \code{1e-8})
-\item \code{rtol}: relative tolerance (default \code{1e-6})
-\item \code{maxiter}: maximum number of iterations (default \code{1000})
-}
+The nonlinear system is solved with \link[nleqslv:nleqslv]{nleqslv::nleqslv} using analytical
+Jacobians. See \code{optionsRootSolve} parameter for customization.
 }
 
 \subsection{Composition}{
@@ -203,6 +208,6 @@ propagated when chained via \link{parfn}.
 }
 \seealso{
 \link{Pexpl} for explicit transformations,
-\link[rootSolve:multiroot]{rootSolve::multiroot} for numerical steady-state solving,
+\link[nleqslv:nleqslv]{nleqslv::nleqslv} for numerical steady-state solving,
 \link{P} for the unified high-level interface.
 }

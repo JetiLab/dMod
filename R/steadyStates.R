@@ -30,10 +30,11 @@
 #'   
 #' @export
 #' @importFrom utils write.table
+#' @importFrom CppODE ensurePythonEnv
 #' @example inst/examples/steadystates.R
 steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T", resolve = TRUE) {
   
-  require(reticulate)
+  CppODE::ensurePythonEnv(envname = "dMod")
   
   # Check if model is an equation list
   if (inherits(model, "eqnlist")) {
@@ -47,7 +48,7 @@ steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenC
   
   
   # Calculate steady states.
-  source_python(system.file("code/AlyssaPetit_ver1.1.py", package = "dMod"))
+  reticulate::source_python(system.file("code/AlyssaPetit_ver1.1.py", package = "dMod"))
   m_ss <- Alyssa(model, as.list(forcings), as.list(givenCQs), as.list(neglect), sparsifyLevel, outputFormat, testSteady)
   
   # Write steady states to disk.

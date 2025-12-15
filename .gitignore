@@ -1,13 +1,21 @@
-.Rproj.user
+# R / RStudio
+.Rproj.user/
 .Rhistory
 .RData
 .Rbuildignore
+
+# Git / Editor
 .gitignore.swp
+
+# Working directories
+/wd/
+/deriv2Tests/
+
+# Files starting with .f
 .f*
-CompiledObjects
-Test
 
 # Compiled objects
 *.c
 *.o
 *.so
+

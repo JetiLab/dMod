@@ -47,9 +47,11 @@ derivatives returned with respect to them).}
 If \code{TRUE}, reuse the root from the previous call as a warm-start guess
 for faster convergence.}
 
-\item{positive}{Logical. Applies to \code{method = "implicit"} only.
+\item{positive}{Logical or named logical vector. Applies to \code{method = "implicit"} only.
 If \code{TRUE}, the steady-state solver is performed in log-space
-(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.}
+(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.
+If a named logical vector, only the states with \code{TRUE} values are constrained
+to be positive.}
 
 \item{parlower}{Named numeric vector of lower bounds for dependent states.
 Used for multistart initialization on cold starts. Names must match
@@ -64,8 +66,17 @@ dependent state names. States not mentioned use default bound of 1e6.}
 root finding (default 100). Only used on cold starts when \code{parlower}
 and \code{parupper} are provided.}
 
-\item{optionsRootSolve}{List. Applies to \code{method = "implicit"} only. List of options passed to \link[rootSolve:multiroot]{rootSolve::multiroot}.
-Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}.}
+\item{optionsRootSolve}{List. Applies to \code{method = "implicit"} only.
+Options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}. Recognized entries include:
+\itemize{
+\item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})
+\item \code{global}: globalization strategy, one of \code{"dbldog"} (double dogleg, default),
+\code{"pwldog"} (Powell dogleg), \code{"qline"} (quadratic line search),
+\code{"gline"} (geometric line search), \code{"none"} (pure local method)
+\item \code{control}: list with \code{ftol} (function tolerance, default \code{1e-10}),
+\code{xtol} (step tolerance, default \code{1e-10}), \code{maxit} (max iterations, default \code{200})
+\item Top-level \code{ftol}, \code{xtol}, \code{maxit} are also accepted for convenience.
+}}
 
 \item{attach.input}{Logical. Attach input parameters to the output if they
 are not overwritten by the transformation (identity mapping).}
