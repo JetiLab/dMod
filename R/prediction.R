@@ -748,7 +748,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     
     attach.input <- controls$attach.input
     
-    outEval <- gEval(out[, obsStates], 
+    outEval <- gEval(out[, obsStates, drop = FALSE], 
                      pars[obsParams], 
                      deriv = deriv, 
                      deriv2 = deriv2)
