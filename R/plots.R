@@ -447,63 +447,95 @@ plotPars <- function(x,...) {
 
 
 #' Plot residuals for a fitlist
-#' 
-#' @param parframe Object of class `parframe`, e.g. returned by [mstrust]
-#' @param x Prediction function returning named list of data.frames with names as `data`.
-#' @param data Named list of data.frames, i.e. with columns `name`, `time`, 
-#' `value` and `sigma`.
-#' @param split List of characters specifying how to summarise the residuals by `sqrt(res_i^2)`, 
-#' `split[1]` used for x-axis, `split[2]` for grouping (color), and any additional for `facet_wrap()`
-#' @param ... Additional arguments for x
-#' @param errmodel object of type prdfn, the error model function.
-#' 
-#' @return A plot object of class `ggplot` with data.frame as attribute `attr(P,"out")`.
+#'
+#' @description
+#' Creates a plot of residuals from model fits, with flexible options for
+#' grouping and faceting. Residuals can be summarized across different
+#' dimensions (time, condition, observable, fit index).
+#'
+#' @param parframe Object of class \code{parframe}, e.g. returned by \link{mstrust}.
+#' @param x Prediction function returning named list of data.frames with names 
+#'   matching \code{data}.
+#' @param data A \code{datalist} object, i.e. named list of data.frames with 
+#'   columns \code{name}, \code{time}, \code{value}, and \code{sigma}.
+#' @param split Character vector specifying how to summarize and display residuals.
+#'   \itemize{
+#'     \item \code{split[1]}: Variable for x-axis
+#'     \item \code{split[2]}: Variable for grouping (color/line), defaults to \code{split[1]}
+#'     \item \code{split[3+]}: Additional variables for \code{facet_wrap()}
+#'   }
+#' @param errmodel Optional error model function of type \code{prdfn}. If provided,
+#'   residuals include the log-likelihood contribution from sigma.
+#' @param ... Additional arguments passed to the prediction function \code{x}.
+#'
+#' @return A \code{ggplot} object with the summarized residual data frame
+#'   attached as attribute \code{"out"}.
+#'
 #' @examples
 #' \dontrun{
-#'  # time axis:
-#'  plotResiduals(myfitlist, g*x*p, data, 
-#'     c("time","index","condition","name"), 
-#'     conditions = myconditions[1:4])
-#'  # condition axis (residuals summed over time for each observable and condition):
-#'  plotResiduals(myfitlist, g*x*p, data,  c("condition","name","index"))
+#' # Time on x-axis, faceted by condition and name
+#' plotResiduals(myfitlist, g * x * p, data, 
+#'               c("time", "index", "condition", "name"), 
+#'               conditions = myconditions[1:4])
+#'
+#' # Condition on x-axis, residuals summed over time
+#' plotResiduals(myfitlist, g * x * p, data, c("condition", "name", "index"))
 #' }
+#'
 #' @export
-#' @importFrom plyr ddply summarise
-plotResiduals <- function(parframe, x, data, split = "condition", errmodel = NULL, ...){
-  timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
-  if(!("index" %in% colnames(parframe)))
-    parframe$index <- 1:nrow(parframe)
+#' @importFrom dplyr group_by summarise across
+#' @importFrom rlang data_sym syms
+plotResiduals <- function(parframe, x, data, split = "condition", errmodel = NULL, ...) {
   
-  out <- do.call(rbind,lapply(1:nrow(parframe), function(j){
-    pred <- x(timesD, as.parvec(parframe,j), deriv = FALSE, ...)
+  timesD <- sort(unique(c(0, unlist(lapply(data, function(d) d$time)))))
+  
+  if (!("index" %in% colnames(parframe))) {
+    parframe$index <- seq_len(nrow(parframe))
+  }
+  
+  # --- Compute residuals for all fits and conditions ---
+  out <- do.call(rbind, lapply(seq_len(nrow(parframe)), function(j) {
+    pred <- x(timesD, as.parvec(parframe, j), deriv = FALSE, ...)
     
-    out_con <- do.call(rbind,lapply(names(pred), function(con){
+    out_con <- do.call(rbind, lapply(names(pred), function(con) {
       err <- NULL
       if (!is.null(errmodel)) {
         err <- errmodel(out = pred[[con]], pars = getParameters(pred[[con]]), conditions = con)
       }
-      out <- res(data[[con]], pred[[con]], err[[con]]) 
-      return(cbind(out,condition = con))
-    })
-    )
+      out <- res(data[[con]], pred[[con]], err[[con]])
+      cbind(out, condition = con)
+    }))
     
-    out_par <- cbind(index = as.character(parframe[j,"index"]), out_con)
-    return(out_par)
-  })
-  )
+    cbind(index = as.character(parframe[j, "index"]), out_con)
+  }))
+  
+  # --- Summarize residuals ---
+  out <- dplyr::group_by(out, across(all_of(split)))
+  
   if (!is.null(errmodel)) {
-    out <- plyr::ddply(out, split, summarise, res = sum(weighted.residual^2 + log(sigma^2))) 
-  } else{
-    out <- plyr::ddply(out, split, summarise, res = sum(weighted.residual^2)) 
-  }
-  groupvar <- split[1]
-  if(length(split) > 1){
-    groupvar <- split[2]
+    out <- dplyr::summarise(out, res = sum(weighted.residual^2 + log(sigma^2)), .groups = "drop")
+  } else {
+    out <- dplyr::summarise(out, res = sum(weighted.residual^2), .groups = "drop")
   }
   
-  P <- ggplot2::ggplot(out, aes_string(x = split[1], y = "res", color = groupvar, group = groupvar)) + theme_dMod() + geom_point() + geom_line()
-  if(length(split) > 2)
-    P <- P + facet_wrap(split[3:length(split)]) 
-  attr(P,"out") <- out
-  return(P)
+  out <- as.data.frame(out)
+  
+  # --- Build aesthetics ---
+  groupvar <- if (length(split) > 1) split[2] else split[1]
+  
+  p <- ggplot(out, aes(x = !!rlang::data_sym(split[1]), 
+                       y = res, 
+                       color = !!rlang::data_sym(groupvar), 
+                       group = !!rlang::data_sym(groupvar))) + 
+    theme_dMod() + 
+    geom_point() + 
+    geom_line()
+  
+  if (length(split) > 2) {
+    facet_vars <- rlang::syms(split[3:length(split)])
+    p <- p + facet_wrap(vars(!!!facet_vars))
+  }
+  
+  attr(p, "out") <- out
+  p
 }

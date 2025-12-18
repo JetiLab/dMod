@@ -12,7 +12,7 @@ Y(
   condition = NULL,
   attach.input = TRUE,
   deriv = TRUE,
-  deriv2 = TRUE,
+  deriv2 = FALSE,
   compile = FALSE,
   modelname = NULL,
   verbose = FALSE

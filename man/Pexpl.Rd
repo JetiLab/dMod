@@ -8,7 +8,7 @@ Pexpl(
   trafo,
   parameters = NULL,
   deriv = TRUE,
-  deriv2 = TRUE,
+  deriv2 = FALSE,
   fixed = NULL,
   attach.input = FALSE,
   condition = NULL,

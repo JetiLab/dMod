@@ -14,42 +14,46 @@ normL2(
 )
 }
 \arguments{
-\item{data}{object of class \link{datalist}}
+\item{data}{Object of class \link{datalist}.}
 
-\item{x}{object of class \link{prdfn}}
+\item{x}{Object of class \link{prdfn}.}
 
-\item{errmodel}{object of class \link{obsfn}. \code{errmodel} does not need to be defined for all conditions.}
+\item{errmodel}{Optional object of class \link{obsfn}. The error model does not
+need to be defined for all conditions.}
 
-\item{times}{numeric vector, additional time points where the prediction function is
-evaluated. If NULL, time points are extracted from the datalist solely. If the prediction
-function makes use of events, hand over event \code{times} here.}
+\item{times}{Numeric vector of additional time points where the prediction
+function is evaluated. If NULL, time points are extracted from the data.
+If the prediction function uses events, event times should be provided here.}
 
-\item{attr.name}{character. The constraint value is additionally returned in an
-attribute with this name}
+\item{attr.name}{Character string. The objective value is additionally returned
+as an attribute with this name.}
 
-\item{use.bessel}{logical. If TRUE and an error model is present, applies Bessel correction
-to account for the bias in maximum likelihood estimation of variance parameters.
-The correction factor is sqrt(n/(n-p)) where n is the total number of data points and
-p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel
-is provided, FALSE otherwise.}
+\item{use.bessel}{Logical. If TRUE and an error model is present, applies a
+global Bessel correction to variance estimates to account for finite-sample
+bias. Default is TRUE if an error model is provided, FALSE otherwise.}
 }
 \value{
-Object of class \code{objfn}, i.e. a function
-\code{obj(..., fixed, deriv, conditions, env)} that returns an objective list,
+An object of class \code{objfn}, i.e. a function
+\code{obj(pars, fixed, deriv, deriv2, conditions, env, cores)} returning an
 \link{objlist}.
 }
 \description{
-For parameter estimation and optimization, an objective function
-is needed. \code{normL2} returns an objective function for the L2 norm of
-data and model prediction. The resulting objective function can be used for
-optimization with the trust optimizer, see \link{mstrust}.
+For parameter estimation and optimization, an objective function is needed.
+\code{normL2} returns an objective function based on the (negative log-likelihood)
+L2 norm between data and model prediction. The resulting objective function
+can be used for optimization with the trust optimizer, see \link{mstrust}.
 }
 \details{
-Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
+Objective functions can be combined using the \code{+} operator, see \link{sumobjfn}.
 
-The Bessel correction addresses the downward bias in maximum likelihood estimates of
-variance parameters. When use.bessel = TRUE, the correction is applied globally across
-all conditions based on the total number of data points and structural parameters.
+The Bessel correction is applied globally across all conditions and is given by
+\deqn{\sqrt{n / (n - p)}}
+where \eqn{n} is the total number of data points and \eqn{p} the number of
+structural (non-error-model) parameters.
+
+Parallel evaluation over conditions is supported via the \code{cores} argument
+of the returned objective function. Parallelization is only applied if
+\code{cores > 1}. A value of \code{cores <= 0} is not allowed.
 }
 \examples{
 ## Generate a prediction function

@@ -9,14 +9,14 @@ P(
   method = c("explicit", "implicit"),
   parameters = NULL,
   deriv = TRUE,
-  deriv2 = TRUE,
+  deriv2 = FALSE,
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
   parlower = NULL,
   parupper = NULL,
   nstart = 100L,
-  optionsRootSolve = list(),
+  optionsSolver = list(),
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -66,7 +66,7 @@ dependent state names. States not mentioned use default bound of 1e6.}
 root finding (default 100). Only used on cold starts when \code{parlower}
 and \code{parupper} are provided.}
 
-\item{optionsRootSolve}{List. Applies to \code{method = "implicit"} only.
+\item{optionsSolver}{List. Applies to \code{method = "implicit"} only.
 Options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}. Recognized entries include:
 \itemize{
 \item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})

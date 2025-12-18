@@ -147,64 +147,96 @@ subset.datalist <- function(x, ...){
   return(out)
 }
 
-#' Plot a list data points
+#' Plot observed data
 #'
-#' @param x Named list of data.frames as being used in [res], i.e. with columns `name`, `time`,
-#' `value` and `sigma`.
-#' @param ... Further arguments going to `dplyr::filter`.
-#' @param scales The scales argument of `facet_wrap` or `facet_grid`, i.e. `"free"`, `"fixed"`,
-#' `"free_x"` or `"free_y"`
-#' @param facet Either `"wrap"` or `"grid"`
-#' @details The data.frame being plotted has columns `time`, `value`, `sigma`,
-#' `name` and `condition`.
+#' @description
+#' Creates a plot of observed data with error bars and below limit of 
+#' quantification (BLoQ) indicators. Supports flexible faceting and 
+#' coordinate transformations.
 #'
+#' @param data A \code{datalist} object containing observed values with columns
+#'   \code{name}, \code{time}, \code{value}, and \code{sigma}.
+#' @param ... Filter expressions passed to \code{dplyr::filter} for subsetting
+#'   the data.
+#' @param scales Scale specification for facets, passed to facet functions.
+#'   One of \code{"free"}, \code{"fixed"}, \code{"free_x"}, or \code{"free_y"}.
+#'   Default is \code{"free"}.
+#' @param facet Faceting style. One of:
+#'   \itemize{
+#'     \item \code{"wrap"}: Facet by name, color by condition (default)
+#'     \item \code{"grid"}: Facet grid with name as rows, condition as columns
+#'     \item \code{"wrap_plain"}: Facet wrap by name and condition combined
+#'   }
+#' @param transform Optional transformation function applied to coordinates
+#'   via \code{coordTransform}.
 #'
-#' @return A plot object of class `ggplot`.
-#' @export
-plot.datalist <- function(x, ..., scales = "free", facet = "wrap") {
-
-  data <- x
-  if (is.null(names(data))) names(data) <- paste0("C", 1:length(data))
-  plotCombined.prdlist(prediction = NULL, data = data, ..., scales = scales, facet = facet)
-
-}
-
+#' @return A \code{ggplot} object with an additional \code{"data"} attribute
+#'   containing the processed data frame.
+#'
+#' @examples
+#' \dontrun{
+#' plotData(mydata, time < 100)
+#' plotData(mydata, facet = "grid")
+#' }
+#'
 #' @export
 #' @rdname plotData
 #' @importFrom dplyr filter
-plotData.datalist <- function(data, ..., scales = "free", facet = "wrap", transform = NULL) {
-
-  rownames_to_condition <- function(covtable) {
-    out <- cbind(condition = rownames(covtable), covtable, stringsAsFactors = F)
-    out <- out[!duplicated(names(out))]
-    return(out)}
-  covtable <- rownames_to_condition(covariates(data))
-
+plotData.datalist <- function(data, scales = "free", 
+                              facet = c("wrap", "grid", "wrap_plain"), 
+                              transform = NULL, ...) {
+  
+  facet <- match.arg(facet)
+  
+  # --- Prepare covariate table ---
+  covtable <- covariates(data)
+  covtable <- cbind(condition = rownames(covtable), covtable)
+  covtable <- covtable[!duplicated(names(covtable))]
+  
+  # --- Prepare data ---
   data <- lbind(data)
-  data <- base::merge(data, covtable, by = "condition", all.x = T)
-  data <- as.data.frame(dplyr::filter(data, ...), stringsAsFactors = F)
+  data <- base::merge(data, covtable, by = "condition", all.x = TRUE)
+  data <- as.data.frame(dplyr::filter(data, ...))
   data$bloq <- ifelse(data$value <= data$lloq, "yes", "no")
-
+  
   if (!is.null(transform)) data <- coordTransform(data, transform)
-
-  if (facet == "wrap")
-    p <- ggplot(data, aes(x = time, y = value, ymin = value - sigma,
-                          ymax = value + sigma, group = condition, color = condition, pch = bloq)) + 
-    facet_wrap(~name, scales = scales)
-  if (facet == "grid")
-    p <- ggplot(data, aes(x = time, y = value, ymin = value - sigma,
-                          ymax = value + sigma, pch = bloq)) +  
-    facet_grid(name ~ condition, scales = scales)
-
-  p <- p + geom_point() + geom_errorbar(width = 0) +
+  
+  # --- Construct plot ---
+  p <- ggplot(data, aes(x = time, y = value, 
+                        ymin = value - sigma, ymax = value + sigma, 
+                        pch = bloq))
+  
+  if (facet == "wrap") {
+    p <- p + 
+      aes(group = condition, color = condition) +
+      facet_wrap(~name, scales = scales)
+  } else if (facet == "grid") {
+    p <- p + facet_grid(name ~ condition, scales = scales)
+  } else {
+    p <- p + facet_wrap(~name * condition, scales = scales)
+  }
+  
+  p <- p + 
+    geom_point() + 
+    geom_errorbar(width = 0) +
     scale_shape_manual(name = "BLoQ", values = c(yes = 4, no = 19))
-
-  if (all(data$bloq %in% "no"))
+  
+  if (all(data$bloq == "no")) {
     p <- p + guides(shape = "none")
-
+  }
+  
   attr(p, "data") <- data
-  return(p)
+  p
+}
 
+
+#' @describeIn plotData S3 plot method for datalist objects
+#' @param x A \code{datalist} object.
+#' @export
+plot.datalist <- function(x, scales = "free", 
+                          facet = c("wrap", "grid", "wrap_plain"), 
+                          transform = NULL, ...) {
+  plotData.datalist(data = x, scales = scales, facet = facet, transform = transform, ...)
 }
 
 

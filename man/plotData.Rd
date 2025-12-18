@@ -3,13 +3,28 @@
 \name{plotData.tbl_df}
 \alias{plotData.tbl_df}
 \alias{plotData.datalist}
+\alias{plot.datalist}
 \alias{plotData}
 \alias{plotData.data.frame}
-\title{Plot a list data points}
+\title{Plot observed data}
 \usage{
 \method{plotData}{tbl_df}(dMod.frame, hypothesis = 1, ...)
 
-\method{plotData}{datalist}(data, ..., scales = "free", facet = "wrap", transform = NULL)
+\method{plotData}{datalist}(
+  data,
+  scales = "free",
+  facet = c("wrap", "grid", "wrap_plain"),
+  transform = NULL,
+  ...
+)
+
+\method{plot}{datalist}(
+  x,
+  scales = "free",
+  facet = c("wrap", "grid", "wrap_plain"),
+  transform = NULL,
+  ...
+)
 
 plotData(data, ...)
 
@@ -27,18 +42,35 @@ plotData(data, ...)
 \item{facet}{Either \code{"wrap"} or \code{"grid"}}
 
 \item{transform}{list of transformation for the states, see \link{coordTransform}.}
+
+\item{x}{A \code{datalist} object.}
 }
 \value{
+A \code{ggplot} object with an additional \code{"data"} attribute
+containing the processed data frame.
+
 A plot object of class \code{ggplot}.
 }
 \description{
-Plot a list data points
+Creates a plot of observed data with error bars and below limit of
+quantification (BLoQ) indicators. Supports flexible faceting and
+coordinate transformations.
 }
 \details{
 The data.frame being plotted has columns \code{time}, \code{value}, \code{sigma},
 \code{name} and \code{condition}.
 }
+\section{Functions}{
+\itemize{
+\item \code{plot(datalist)}: S3 plot method for datalist objects
+
+}}
 \examples{
+\dontrun{
+plotData(mydata, time < 100)
+plotData(mydata, facet = "grid")
+}
+
     
     ## Observation function
     fn <- eqnvec(

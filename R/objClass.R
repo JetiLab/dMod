@@ -93,130 +93,203 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 
 
 #' L2 norm between data and model prediction
-#' 
-#' @description For parameter estimation and optimization, an objective function
-#' is needed. `normL2` returns an objective function for the L2 norm of
-#' data and model prediction. The resulting objective function can be used for
-#' optimization with the trust optimizer, see [mstrust].
-#' 
-#' @param data object of class [datalist]
-#' @param x object of class [prdfn]
-#' @param errmodel object of class [obsfn]. `errmodel` does not need to be defined for all conditions.
-#' @param times numeric vector, additional time points where the prediction function is 
-#' evaluated. If NULL, time points are extracted from the datalist solely. If the prediction
-#' function makes use of events, hand over event `times` here.
-#' @param attr.name character. The constraint value is additionally returned in an 
-#' attribute with this name
-#' @param use.bessel logical. If TRUE and an error model is present, applies Bessel correction
-#' to account for the bias in maximum likelihood estimation of variance parameters. 
-#' The correction factor is sqrt(n/(n-p)) where n is the total number of data points and 
-#' p is the number of structural (non-error-model) parameters. Default is TRUE if errmodel 
-#' is provided, FALSE otherwise.
-#' 
-#' @return Object of class `objfn`, i.e. a function 
-#' `obj(..., fixed, deriv, conditions, env)` that returns an objective list,
+#'
+#' @description
+#' For parameter estimation and optimization, an objective function is needed.
+#' `normL2` returns an objective function based on the (negative log-likelihood)
+#' L2 norm between data and model prediction. The resulting objective function
+#' can be used for optimization with the trust optimizer, see [mstrust].
+#'
+#' @param data Object of class [datalist].
+#' @param x Object of class [prdfn].
+#' @param errmodel Optional object of class [obsfn]. The error model does not
+#'   need to be defined for all conditions.
+#' @param times Numeric vector of additional time points where the prediction
+#'   function is evaluated. If NULL, time points are extracted from the data.
+#'   If the prediction function uses events, event times should be provided here.
+#' @param attr.name Character string. The objective value is additionally returned
+#'   as an attribute with this name.
+#' @param use.bessel Logical. If TRUE and an error model is present, applies a
+#'   global Bessel correction to variance estimates to account for finite-sample
+#'   bias. Default is TRUE if an error model is provided, FALSE otherwise.
+#'
+#' @return
+#' An object of class `objfn`, i.e. a function
+#' `obj(pars, fixed, deriv, deriv2, conditions, env, cores)` returning an
 #' [objlist].
-#' @details Objective functions can be combined by the "+" operator, see [sumobjfn].
-#' 
-#' The Bessel correction addresses the downward bias in maximum likelihood estimates of 
-#' variance parameters. When use.bessel = TRUE, the correction is applied globally across 
-#' all conditions based on the total number of data points and structural parameters.
-#' 
+#'
+#' @details
+#' Objective functions can be combined using the `+` operator, see [sumobjfn].
+#'
+#' The Bessel correction is applied globally across all conditions and is given by
+#' \deqn{\sqrt{n / (n - p)}}
+#' where \eqn{n} is the total number of data points and \eqn{p} the number of
+#' structural (non-error-model) parameters.
+#'
+#' Parallel evaluation over conditions is supported via the `cores` argument
+#' of the returned objective function. Parallelization is only applied if
+#' `cores > 1`. A value of `cores <= 0` is not allowed.
+#'
 #' @example inst/examples/normL2.R
 #' @export
-normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data",
+normL2 <- function(data, x, errmodel = NULL, times = NULL,
+                   attr.name = "data",
                    use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)) {
   
+  ## --- time grid ------------------------------------------------------------
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
-  if (!is.null(times)) timesD <- sort(union(times, timesD))
-  
-  x.conditions <- names(attr(x, "mappings"))
-  data.conditions <- names(data)
-  if (!all(data.conditions %in% x.conditions)) 
-    stop("The prediction function does not provide predictions for all conditions in the data.")
-  e.conditions <- names(attr(errmodel, "mappings"))
-  
-  # might be necessary to "store" errmodel in the objective function (-> runbg)
-  force(errmodel)
-  
-  # use bessel correction for error estimates bessel.correction = sqrt(n.data / (n.data - n.par.structural)), n.par.structural = # non error params 
-  if(use.bessel && !is.null(errmodel)) {
-    parnames <- union(getParameters(x), getParameters(errmodel))
-    parnames.err <- setdiff(getSymbols(unlist(getEquations(errmodel))), names(unlist(getEquations(errmodel))))
-    bessel.correction <- sqrt(sum(sapply(data, nrow)) / (sum(sapply(data, nrow)) - length(parnames) + length(parnames.err)))
-  } else {
-    bessel.correction = 1
+  if (!is.null(times)) {
+    timesD <- sort(union(times, timesD))
   }
   
-  controls <- list(times = timesD, 
-                   attr.name = attr.name, 
-                   conditions = intersect(x.conditions, data.conditions),
-                   bessel.correction = bessel.correction)
+  ## --- conditions -----------------------------------------------------------
+  x.conditions <- names(attr(x, "mappings"))
+  data.conditions <- names(data)
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, deriv2 = FALSE, conditions = controls$conditions, env = NULL) {
+  if (!all(data.conditions %in% x.conditions)) {
+    stop("The prediction function does not provide predictions for all conditions in the data.")
+  }
+  
+  e.conditions <- if (!is.null(errmodel))
+    names(attr(errmodel, "mappings"))
+  else
+    NULL
+  
+  ## Ensure errmodel is captured in closure (e.g. for runbg)
+  force(errmodel)
+  
+  ## --- Bessel correction ----------------------------------------------------
+  if (use.bessel && !is.null(errmodel)) {
+    
+    n.data <- sum(sapply(data, nrow))
+    
+    par.structural <- union(
+      getParameters(x),
+      getParameters(errmodel)
+    )
+    
+    par.err <- setdiff(
+      getSymbols(unlist(getEquations(errmodel))),
+      names(unlist(getEquations(errmodel)))
+    )
+    
+    p <- length(par.structural) - length(par.err)
+    
+    bessel.correction <- sqrt(n.data / (n.data - p))
+    
+  } else {
+    bessel.correction <- 1
+  }
+  
+  controls <- list(
+    times = timesD,
+    attr.name = attr.name,
+    conditions = intersect(x.conditions, data.conditions),
+    bessel.correction = bessel.correction
+  )
+  
+  ## ========================================================================
+  ## Objective function
+  ## ========================================================================
+  myfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
+                   conditions = controls$conditions,
+                   env = NULL, cores = 1) {
+    
+    if (!is.numeric(cores) || cores <= 0) {
+      stop("`cores` must be a positive integer (cores >= 1).")
+    }
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pouter <- arglist[[1]]
     
-    # Import from controls
-    timesD <- controls$times
-    attr.name <- controls$attr.name
-    bessel.correction <- controls$bessel.correction
-    
-    # Create new environment if necessary
-    if (is.null(env)) env <- new.env()
-    
-    # Prediction for all conditions at once
-    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, 
-                    deriv2 = deriv2, conditions = conditions)
-    
-    # Extract parameters only once if identical
-    pars_pred <- if (length(prediction) > 0) getParameters(prediction[[1]]) else NULL
-    
-    # Check if error model is needed at all
-    use_errmodel <- !is.null(errmodel) && (is.null(e.conditions) || any(conditions %in% e.conditions))
-    
-    # Main loop
-    if (use_errmodel) {
-      out.data <- lapply(conditions, function(cn) {
-        # Only compute if condition is in e.conditions
-        if (is.null(e.conditions) || cn %in% e.conditions) {
-          err <- errmodel(out = prediction[[cn]], pars = pars_pred, conditions = cn)
-        } else {
-          err <- NULL
-        }
-        nll(res(data[[cn]], prediction[[cn]], err[[cn]]), 
-            pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
-      })
-    } else {
-      # Faster path without error model
-      out.data <- lapply(conditions, function(cn) {
-        nll(res(data[[cn]], prediction[[cn]], NULL), 
-            pars = pouter, deriv = deriv, bessel.correction = bessel.correction)
-      })
+    if (is.null(env)) {
+      env <- new.env()
     }
     
+    ## Prediction for all conditions at once
+    prediction <- x(
+      times = controls$times,
+      pars = pouter,
+      fixed = fixed,
+      deriv = deriv,
+      deriv2 = deriv2,
+      conditions = conditions
+    )
+    
+    pars_pred <- if (length(prediction) > 0)
+      getParameters(prediction[[1]])
+    else
+      NULL
+    
+    use_errmodel <- !is.null(errmodel) &&
+      (is.null(e.conditions) || any(conditions %in% e.conditions))
+    
+    ## --- condition-wise evaluation -----------------------------------------
+    eval_condition <- function(cn) {
+      
+      if (use_errmodel && (is.null(e.conditions) || cn %in% e.conditions)) {
+        
+        err <- errmodel(
+          out = prediction[[cn]],
+          pars = pars_pred,
+          conditions = cn
+        )
+        
+        err_cn <- if (!is.null(err) && !is.null(err[[cn]]))
+          err[[cn]]
+        else
+          NULL
+        
+      } else {
+        err_cn <- NULL
+      }
+      
+      nll(
+        res(data[[cn]], prediction[[cn]], err_cn),
+        pars = pouter,
+        deriv = deriv,
+        bessel.correction = controls$bessel.correction
+      )
+    }
+    
+    ## --- apply over conditions ---------------------------------------------
+    if (cores == 1) {
+      
+      out.data <- lapply(conditions, eval_condition)
+      
+    } else if (.Platform$OS.type != "windows") {
+      
+      out.data <- parallel::mclapply(
+        conditions, eval_condition, mc.cores = cores
+      )
+      
+    } else {
+      
+      cl <- parallel::makeCluster(cores)
+      on.exit(parallel::stopCluster(cl))
+      out.data <- parallel::parLapply(cl, conditions, eval_condition)
+    }
+    
+    ## --- aggregate ----------------------------------------------------------
     out.data <- Reduce("+", out.data)
     
-    # Return
     out <- out.data
     attr(out, controls$attr.name) <- out.data$value
-    
-    if (!is.null(env)) {
-      assign("prediction", prediction, envir = env)
-    }
-    
+    assign("prediction", prediction, envir = env)
     attr(out, "env") <- env
-    return(out)
+    
+    out
   }
+  
   class(myfn) <- c("objfn", "fn")
   attr(myfn, "conditions") <- data.conditions
   attr(myfn, "parameters") <- attr(x, "parameters")
   attr(myfn, "modelname") <- modelname(x, errmodel)
-  return(myfn)
   
+  myfn
 }
+
 
 #' Soft L2 constraint on parameters
 #' 
@@ -678,8 +751,17 @@ nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
   deriv2.err.bloq <- if (!is.null(deriv2.err)) deriv2.err[is.bloq, , , drop = FALSE] else NULL
   deriv2.err.aloq <- if (!is.null(deriv2.err)) deriv2.err[!is.bloq, , , drop = FALSE] else NULL
   
+  mywrss <- {
+    gr <- if (deriv) setNames(numeric(length(pars)), names(pars)) else NULL
+    he <- if (deriv) matrix(
+      0, length(pars), length(pars),
+      dimnames = list(names(pars), names(pars))
+    ) else NULL
+    
+    objlist(value = 0, gradient = gr, hessian = he)
+  }
+  
   # Apply nll
-  mywrss <- init_empty_objlist(pars, deriv = deriv)
   nll_ALOQ_result <- NULL
   
   if (!all(is.bloq)) {
@@ -703,9 +785,9 @@ nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
   
   # Extract and store attributes
   chisquare <- attr(nll_ALOQ_result, "chisquare")
-  neg2ll <- attr(nll_ALOQ_result, "neg2ll")
+  nll <- attr(nll_ALOQ_result, "nll")
   attr(mywrss, "chisquare") <- if (length(chisquare)) chisquare else 0
-  attr(mywrss, "neg2ll") <- if (length(neg2ll)) neg2ll else 0 
+  attr(mywrss, "nll") <- if (length(nll)) nll else 0 
   
   mywrss
 }
@@ -864,7 +946,7 @@ nll_ALOQ <- function(nout,
   
   out <- objlist(value = obj, gradient = grad, hessian = hessian)
   attr(out, "chisquare") <- chisquare_ml
-  attr(out, "neg2ll") <- neg2ll_ml
+  attr(out, "nll") <- neg2ll_ml
   attr(out, "besselcorrected") <- use_bessel
   out
 }

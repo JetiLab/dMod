@@ -1,21 +1,21 @@
 #' Profile-likelihood (PL) computation
 #' 
-#' @param obj Objective function `obj(pars, fixed, ...)` returning a list with "value",
+#' @param obj Objective function \code{obj(pars, fixed, ...)} returning a list with "value",
 #' "gradient" and "hessian". If attribute "valueData" and/or "valuePrior are returned they are attached to the return value.
 #' @param pars Parameter vector corresponding to the log-liklihood optimum.
 #' @param whichPar Numeric or character vector. The parameters for which the profile is computed.
 #' @param alpha Numeric, the significance level based on the chisquare distribution with df=1
 #' @param limits Numeric vector of length 2, the lower and upper deviance from the original 
-#' value of `pars[whichPar]`
-#' @param method Character, either `"integrate"` or `"optimize"`. This is a short-cut for
+#' value of \code{pars[whichPar]}
+#' @param method Character, either \code{"integrate"} or \code{"optimize"}. This is a short-cut for
 #' setting stepControl, algoControl and optControl by hand.
 #' @param stepControl List of arguments controlling the step adaption. Defaults to integration set-up, i.e.
-#' `list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 100)`
+#' \code{list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 100)}
 #' @param algoControl List of arguments controlling the fast PL algorithm. defaults to
-#' `list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)`
-#' @param optControl List of arguments controlling the `trust()` optimizer. Defaults to
-#' `list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))`.
-#' See [trust] for more details.
+#' \code{list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)}
+#' @param optControl List of arguments controlling the \code{trust()} optimizer. Defaults to
+#' \code{list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))}.
+#' See \link{trust} for more details.
 #' @param verbose Logical, print verbose messages.
 #' @param cores number of cores used when computing profiles for several
 #' parameters.
@@ -25,29 +25,23 @@
 #' @details Computation of the profile likelihood is based on the method of Lagrangian multipliers
 #' and Euler integration of the corresponding differential equation of the profile likelihood paths.
 #' 
-#' `algoControl`: Since the Hessian which is needed for the differential equation is frequently misspecified, 
-#' the error in integration needs to be compensated by a correction factor `gamma`. Instead of the
+#' \code{algoControl}: Since the Hessian which is needed for the differential equation is frequently misspecified, 
+#' the error in integration needs to be compensated by a correction factor \code{gamma}. Instead of the
 #' Hessian, an identity matrix can be used. To guarantee that the profile likelihood path stays on
 #' the true path, each point proposed by the differential equation can be used as starting point for
-#' an optimization run when `reoptimize = TRUE`. The correction factor `gamma` is adapted
-#' based on the amount of actual correction. If this exceeds the value `correction`, `gamma` is
+#' an optimization run when \code{reoptimize = TRUE}. The correction factor \code{gamma} is adapted
+#' based on the amount of actual correction. If this exceeds the value \code{correction}, \code{gamma} is
 #' reduced. In some cases, the Hessian becomes singular. This leads to problems when inverting the
 #' Hessian. To avoid this problem, the pseudoinverse is computed by removing all singular values lower
-#' than `reg`.
+#' than \code{reg}.
 #' 
-#' `stepControl`: The Euler integration starts with `stepsize`. In each step the predicted change
-#' of the objective function is compared with the actual change. If this is larger than `atol`, the
-#' stepsize is reduced. For small deviations, either compared the abolute tolerance `atol` or the
-#' relative tolerance `rtol`, the stepsize may be increased. `max` and `min` are upper and lower
-#' bounds for `stepsize`. `limit` is the maximum number of steps that are take for the profile computation.
-#' `stop` is a character, usually "value" or "data", for which the significance level `alpha`
+#' \code{stepControl}: The Euler integration starts with \code{stepsize}. In each step the predicted change
+#' of the objective function is compared with the actual change. If this is larger than \code{atol}, the
+#' stepsize is reduced. For small deviations, either compared the abolute tolerance \code{atol} or the
+#' relative tolerance \code{rtol}, the stepsize may be increased. \code{max} and \code{min} are upper and lower
+#' bounds for \code{stepsize}. \code{limit} is the maximum number of steps that are take for the profile computation.
+#' \code{stop} is a character, usually "value" or "data", for which the significance level \code{alpha}
 #' is evaluated.
-#' 
-#' `optControl`: Controls the reoptimization process. 
-#' Use `fits` to specify the number of fits per reoptimization (default: 1). 
-#' If `fits` > 1, `mstrust` is used; otherwise, `trust` is applied.
-#' You can adjust the standard deviation of the normal sampling distribution with the `sd` argument (default: 0.1).
-#' The `start1stfromCenter` argument determines whether the first fit should start from the center (default: TRUE).
 #' 
 #' @return Named list of length one. The name is the parameter name. The list enty is a
 #' matrix with columns "value" (the objective value), "constraint" (deviation of the profiled paramter from
@@ -69,9 +63,6 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   # Ensure that obj is defined in this environment such that it is copied to the parallel workers
   force(obj)
   
-  # sanitize "side" argument, must be either "left", "right" or "both"
-  side <- match.arg(side)
-  
   # Guarantee that pars is named numeric without deriv attribute
   dotArgs <- list(...)
   sanePars <- sanitizePars(pars, dotArgs$fixed)
@@ -81,17 +72,23 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   
   # Initialize control parameters depending on method
   method  <- match.arg(method)
+  side <- match.arg(side)
+  
+  
   if (method == "integrate") {
     sControl <- list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 500, stop = "value")
     aControl <- list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), fits=1, sd=0.1, start1stfromCenter = TRUE)
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = 1e-6, mterm = 1e-6)
   }
   if (method == "optimize") {
     sControl <- list(stepsize = 1e-2, min = 1e-4, max = Inf, atol = 1e-1, rtol = 1e-1, limit = 100, stop = "value")
     aControl <- list(gamma = 0, W = "identity", reoptimize = TRUE, correction = 1, reg = 0)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), fits=1, sd=0.1, start1stfromCenter = TRUE)
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = 1e-6, mterm = 1e-6)
   }
   
+  # Check if on Windows
+  cores <- min(length(whichPar), cores)
+  cores <- sanitizeCores(cores)
   
   # Substitute user-set control parameters
   if (!is.null(stepControl)) sControl[match(names(stepControl), names(sControl))] <- stepControl
@@ -105,10 +102,6 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
     dir.create(interResFolder,showWarnings = FALSE)
   }
   
-  
-  # Check if on Windows
-  cores <- min(length(whichPar)*oControl[["fits"]], cores)
-  cores <- sanitizeCores(cores)
   
   # Start cluster if on windows
   if (cores > 1) {
@@ -153,6 +146,7 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                           .options.multicore = list(preschedule = FALSE)) %mydo% {
                             
                             loadDLL(obj)
+                            
                             
                             whichPar.name <- names(pars)[whichIndex]
                             
@@ -280,25 +274,13 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                                              oControl[names(oControl)!="rinit"],
                                              dotArgs[names(dotArgs) != "fixed"])
                                 
-                                if(oControl[["fits"]] > 1){
-                                  arglist <- c(arglist, list(studyname = paste("profilems", whichPar.name, collapse = "_"), cores = floor(cores / length(whichPar))))
-                                  names(arglist)[names(arglist) == "parinit"] <- "center"
-                                  outmulti <- try(do.call(mstrust, arglist), silent = FALSE)
-                                  if(!inherits(outmulti, "try-error")) {
-                                    mybestfit <- outmulti %>% as.parframe() %>% as.parvec()
-                                    y.try[names(mybestfit)] <- as.vector(mybestfit)  
-                                  } else {
-                                    warning("Multistart Optimization not successful. Profile may be erroneous.")
-                                  }
-                                } else {
-                                  myfit <- try(do.call(trust, arglist), silent=FALSE)
-                                  if(!inherits(myfit, "try-error")) {
-                                    y.try[names(myfit$argument)] <- as.vector(myfit$argument)  
-                                  } else {
-                                    warning("Optimization not successful. Profile may be erroneous.")
-                                  }
-                                }
                                 
+                                myfit <- try(do.call(trust, arglist), silent=FALSE)
+                                if(!inherits(myfit, "try-error")) {
+                                  y.try[names(myfit$argument)] <- as.vector(myfit$argument)  
+                                } else {
+                                  warning("Optimization not successful. Profile may be erroneous.")
+                                }
                                 
                               }
                               
@@ -564,6 +546,8 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   
   
 }
+
+
 
 #' Progress bar
 #' 
@@ -979,6 +963,10 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
         argstrust$parinit <- center + do.call(samplefun, argssample)  
       }
     }
+    
+    # Invalidate warm-start caches (e.g. in Pimpl) so each fit uses its own 
+    # initial values instead of inheriting solutions from previous fits
+    options(.dMod.fit_token = paste0("fit_", i, "_", as.numeric(Sys.time())))
     
     # Check if traceFile is requested. In that case combine tracefile, with logfolder and fit number
     if (!is.null(argstrust[["traceFile"]])) {

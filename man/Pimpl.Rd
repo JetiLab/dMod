@@ -8,14 +8,14 @@ Pimpl(
   x,
   parameters = NULL,
   deriv = TRUE,
-  deriv2 = TRUE,
+  deriv2 = FALSE,
   fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
   parlower = NULL,
   parupper = NULL,
   nstart = 10L,
-  optionsRootSolve = list(),
+  optionsSolver = list(),
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -62,7 +62,7 @@ dependent state names. States not mentioned use default bound of 1e6.}
 root finding (default 10). Only used on cold starts when \code{parlower}
 and \code{parupper} are provided.}
 
-\item{optionsRootSolve}{List of options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}.
+\item{optionsSolver}{List of options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}.
 Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}. Recognized entries include:
 \itemize{
 \item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})
@@ -196,7 +196,7 @@ are printed to the console when \code{Pimpl()} is called.
 \subsection{Solver options}{
 
 The nonlinear system is solved with \link[nleqslv:nleqslv]{nleqslv::nleqslv} using analytical
-Jacobians. See \code{optionsRootSolve} parameter for customization.
+Jacobians. See \code{optionsSolver} parameter for customization.
 }
 
 \subsection{Composition}{

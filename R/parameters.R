@@ -58,7 +58,7 @@
 #' @param nstart Integer. Number of random starting points for multistart
 #'   root finding (default 100). Only used on cold starts when `parlower`
 #'   and `parupper` are provided.
-#' @param optionsRootSolve List. Applies to `method = "implicit"` only.
+#' @param optionsSolver List. Applies to `method = "implicit"` only.
 #'   Options passed to [nleqslv::nleqslv]. Recognized entries include:
 #'   - `method`: solver method, either `"Newton"` or `"Broyden"` (default `"Newton"`)
 #'   - `global`: globalization strategy, one of `"dbldog"` (double dogleg, default),
@@ -95,14 +95,14 @@ P <- function(x = NULL,
               method = c("explicit", "implicit"), 
               parameters=NULL, 
               deriv = TRUE,
-              deriv2 = TRUE,
+              deriv2 = FALSE,
               fixed = NULL,
               keep.root = TRUE, 
               positive = TRUE,
               parlower     = NULL,
               parupper     = NULL,
               nstart       = 100L,
-              optionsRootSolve = list(),
+              optionsSolver = list(),
               attach.input = FALSE,
               condition = NULL, 
               compile = FALSE, 
@@ -123,7 +123,7 @@ P <- function(x = NULL,
                    parlower = parlower,
                    parupper = parupper,
                    nstart = nstart,
-                   optionsRootSolve = optionsRootSolve,
+                   optionsSolver = optionsSolver,
                    attach.input = attach.input,
                    condition = condition,
                    compile = compile, 
@@ -158,7 +158,7 @@ P <- function(x = NULL,
                               parlower = parlower,
                               parupper = parupper,
                               nstart = nstart,
-                              optionsRootSolve = optionsRootSolve,
+                              optionsSolver = optionsSolver,
                               attach.input = attach.input,
                               condition = names(x[i]),
                               compile = compile, 
@@ -235,7 +235,7 @@ P <- function(x = NULL,
 Pexpl <- function(trafo,
                   parameters = NULL,
                   deriv = TRUE,
-                  deriv2 = TRUE,
+                  deriv2 = FALSE,
                   fixed = NULL,
                   attach.input = FALSE,
                   condition = NULL,
@@ -481,7 +481,7 @@ Pexpl <- function(trafo,
 #' ## Solver options
 #'
 #' The nonlinear system is solved with [nleqslv::nleqslv] using analytical
-#' Jacobians. See `optionsRootSolve` parameter for customization.
+#' Jacobians. See `optionsSolver` parameter for customization.
 #'
 #' ## Composition
 #'
@@ -517,7 +517,7 @@ Pexpl <- function(trafo,
 #' @param nstart Integer. Number of random starting points for multistart
 #'   root finding (default 10). Only used on cold starts when `parlower`
 #'   and `parupper` are provided.
-#' @param optionsRootSolve List of options passed to [nleqslv::nleqslv].
+#' @param optionsSolver List of options passed to [nleqslv::nleqslv].
 #'   Merged with internal defaults via [modifyList()]. Recognized entries include:
 #'   - `method`: solver method, either `"Newton"` or `"Broyden"` (default `"Newton"`)
 #'   - `global`: globalization strategy, one of `"dbldog"` (double dogleg, default),
@@ -553,14 +553,14 @@ Pexpl <- function(trafo,
 Pimpl <- function(x,
                   parameters   = NULL,
                   deriv        = TRUE,
-                  deriv2       = TRUE,
+                  deriv2       = FALSE,
                   fixed        = NULL,
                   keep.root    = TRUE,
                   positive     = TRUE,
                   parlower     = NULL,
                   parupper     = NULL,
                   nstart       = 10L,
-                  optionsRootSolve = list(),
+                  optionsSolver = list(),
                   attach.input = FALSE,
                   condition    = NULL,
                   compile      = FALSE,
@@ -771,6 +771,10 @@ Pimpl <- function(x,
   # Partition symbols: states vs outer parameters
   states    <- names(trafo)
   nonstates <- setdiff(getSymbols(trafo), states)
+  # Set parameters if not provided (for eqnvec input)
+  if (is.null(parameters)) {
+    parameters <- nonstates
+  }
   
   # Allow some states to be independent by listing them in `parameters`
   indep_st <- intersect(states, if (is.null(parameters)) character(0) else parameters)
@@ -823,23 +827,23 @@ Pimpl <- function(x,
     method = "Newton",
     global = "dbldog",
     control = list(
-      ftol   = 1e-10,
-      xtol   = 1e-10,
-      maxit  = 200
+      ftol   = 1e-6,
+      xtol   = 1e-6,
+      maxit  = 1000
     )
   )
   
   # Merge user options
   optsSolver <- defaultsSolver
-  if (!is.null(optionsRootSolve$method)) optsSolver$method <- optionsRootSolve$method
-  if (!is.null(optionsRootSolve$global)) optsSolver$global <- optionsRootSolve$global
-  if (!is.null(optionsRootSolve$control)) {
-    optsSolver$control <- modifyList(optsSolver$control, optionsRootSolve$control)
+  if (!is.null(optionsSolver$method)) optsSolver$method <- optionsSolver$method
+  if (!is.null(optionsSolver$global)) optsSolver$global <- optionsSolver$global
+  if (!is.null(optionsSolver$control)) {
+    optsSolver$control <- modifyList(optsSolver$control, optionsSolver$control)
   }
   # Also allow top-level ftol, xtol, maxit for convenience
-  if (!is.null(optionsRootSolve$ftol)) optsSolver$control$ftol <- optionsRootSolve$ftol
-  if (!is.null(optionsRootSolve$xtol)) optsSolver$control$xtol <- optionsRootSolve$xtol
-  if (!is.null(optionsRootSolve$maxit)) optsSolver$control$maxit <- optionsRootSolve$maxit
+  if (!is.null(optionsSolver$ftol)) optsSolver$control$ftol <- optionsSolver$ftol
+  if (!is.null(optionsSolver$xtol)) optsSolver$control$xtol <- optionsSolver$xtol
+  if (!is.null(optionsSolver$maxit)) optsSolver$control$maxit <- optionsSolver$maxit
   
   # Warm-start state
   guess_env <- new.env(parent = emptyenv())
@@ -850,6 +854,14 @@ Pimpl <- function(x,
   
   # Returned transformation closure
   p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE) {
+    
+    # Cold-Start bei neuem Fit-Kontext (z.B. mstrust)
+    current_token <- getOption(".dMod.fit_token", default = NULL)
+    if (!is.null(current_token) && !identical(guess_env$token, current_token)) {
+      if (verbose) cat("[Pimpl] New fit context detected, resetting warm-start\n")
+      guess_env$guess <- NULL
+      guess_env$token <- current_token
+    }
     
     if (deriv2 && !deriv) {
       warning("deriv2 = TRUE requires deriv = TRUE; enabling deriv = TRUE.")
@@ -1488,19 +1500,75 @@ Pimpl <- function(x,
 }
 
 
-## Functions to simplify the creation of parameter transformations ----
-
-#' Define parameter transformations by \code{define()}, \code{branch()} and \code{insert()}
-#' 
-#' @param trafo named character vector of parametric expressions or object 
-#' of class \code{eqnvec}
-#' @param expr character of the form \code{"lhs ~ rhs"} where both \code{lhs}
-#' and \code{rhs} can contain a number of symbols for which vaues are passed
-#' by the \code{...} argument
-#' @param  conditionMatch optional character, Use as regular expression to apply the reparameterization only to conditions containing conditionMatch
-#' @param ... used to pass values for symbols as named arguments
-#' @return object of the same class as trafo or list thereof, if \code{branch()} has been
-#' used.
+#' Construct parameter transformations
+#'
+#' Helper functions to construct and modify symbolic parameter transformations
+#' used by prediction functions such as [P()] and [Xs()].
+#'
+#' The functions [define()], [insert()] and [branch()] operate exclusively on
+#' the symbolic level. They are used to build transformation objects that
+#' describe how *outer parameters* are expressed in terms of *inner parameters*
+#' or constants.
+#'
+#' No model evaluation, sensitivity calculation or parameter checking is
+#' performed by these functions. The resulting transformations are interpreted
+#' later when prediction or objective functions are constructed.
+#'
+#' \describe{
+#'   \item{define}{
+#'     Reset or redefine a transformation rule by explicitly specifying a new
+#'     right-hand side.
+#'   }
+#'   \item{insert}{
+#'     Insert symbolic substitutions into existing transformation rules without
+#'     resetting them.
+#'   }
+#'   \item{branch}{
+#'     Duplicate a transformation for multiple conditions and optionally apply
+#'     condition-specific substitutions.
+#'   }
+#' }
+#'
+#' When transformations are branched, a condition table is stored as metadata
+#' (attribute \code{"tree"}) and may be used to restrict subsequent calls to
+#' [define()] or [insert()] to specific conditions.
+#'
+#' @param trafo
+#'   A named character vector, an object of class \code{eqnvec}, or a list
+#'   thereof representing parameter transformations.
+#'
+#' @param expr
+#'   Character string of the form \code{"lhs ~ rhs"} defining a symbolic
+#'   transformation or substitution.
+#'
+#' @param table
+#'   Optional data frame specifying condition-specific substitutions. Rownames
+#'   identify conditions; columns correspond to parameter names.
+#'
+#' @param conditions
+#'   Character vector of condition names. If supplied, overrides
+#'   \code{rownames(table)}.
+#'
+#' @param apply
+#'   Character string specifying whether and how entries of \code{table} are
+#'   applied when branching:
+#'   \describe{
+#'     \item{"nothing"}{Only duplicate the transformation (default).}
+#'     \item{"insert"}{Apply entries via [insert()].}
+#'     \item{"define"}{Apply entries via [define()].}
+#'   }
+#'
+#' @param conditionMatch
+#'   Optional character string (regular expression). If provided, the operation
+#'   is applied only to conditions whose names match this expression.
+#'
+#' @param ...
+#'   Named values used to substitute symbols occurring in \code{expr}.
+#'
+#' @return
+#' An object of the same type as \code{trafo}, possibly expanded to a list if
+#' branching has been applied.
+#'
 #' @export
 #' @example inst/examples/define.R
 define <- function(trafo, expr, ..., conditionMatch = NULL) {
@@ -1628,31 +1696,62 @@ insert <- function(trafo, expr, ..., conditionMatch = NULL) {
 }
 
 
-
-
-
 #' @export
 #' @rdname define
-#' @param table table of covariates as data frame. Rownames are used as unique identifier,
-#' usually called "conditions", and columns represent covariates associated with these conditions.
-#' @param conditions character vector with condition names. Overwrites the rownames of table.
-branch <- function(trafo, table = NULL, conditions = rownames(table)) {
+branch <- function(
+    trafo,
+    table = NULL,
+    conditions = rownames(table),
+    apply = c("nothing", "insert", "define")) {
   
-  if (is.null(table) & is.null(conditions)) 
+  
+  apply <- match.arg(apply)
+  
+  # --- trivial case ----------------------------------------------------------
+  if (is.null(table) && is.null(conditions))
     return(trafo)
   
-  if (is.null(conditions)) conditions <- paste0("C", 1:nrow(table))
-  if (is.null(table)) table <- data.frame(condition = conditions, row.names = conditions)
+  # --- normalize inputs ------------------------------------------------------
+  if (is.null(conditions))
+    conditions <- paste0("C", seq_len(nrow(table)))
   
-  out <- lapply(conditions, function(x) trafo)
-  names(out) <- conditions
+  if (is.null(table))
+    table <- data.frame(condition = conditions, row.names = conditions)
   
   rownames(table) <- conditions
+  
+  # --- branch trafo -----------------------------------------------------------
+  out <- setNames(lapply(conditions, function(x) trafo), conditions)
   attr(out, "tree") <- table
   
-  return(out)  
+  # --- optional application of table -----------------------------------------
+  if (apply == "nothing")
+    return(out)
   
+  for (cn in conditions) {
+    row <- table[cn, , drop = FALSE]
+    
+    for (par in colnames(row)) {
+      val <- row[[par]]
+      
+      if (is.na(val))
+        next
+      
+      expr <- paste0(par, " ~ ", val)
+      
+      if (apply == "insert") {
+        out <- insert(out, expr, conditionMatch = cn)
+      }
+      
+      if (apply == "define") {
+        out <- define(out, expr, conditionMatch = cn)
+      }
+    }
+  }
+  
+  out
 }
+
 
 
 #' Reparameterization

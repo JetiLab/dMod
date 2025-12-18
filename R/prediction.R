@@ -675,7 +675,7 @@ Xd <- function(data, condition = NULL) {
 #' @importFrom abind abind
 #' @export
 Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
-              attach.input = TRUE, deriv = TRUE, deriv2 = TRUE,
+              attach.input = TRUE, deriv = TRUE, deriv2 = FALSE,
               compile = FALSE, modelname = NULL, verbose = FALSE) {
   
   if (deriv2 && !deriv) {
