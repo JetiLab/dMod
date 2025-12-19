@@ -287,8 +287,10 @@ Pexpl <- function(trafo,
       deriv <- TRUE
     }
     
+    pars <- c(pars, fixed)
+    
     # Evaluate inner parameters (fixed handled by funCpp at runtime)
-    outPEval <- PEval(NULL, pars, fixed = fixed, attach.input = attach.input,
+    outPEval <- PEval(NULL, pars, fixed = names(fixed), attach.input = attach.input,
                       deriv = deriv, deriv2 = deriv2, verbose = verbose)
     
     pinner <- setNames(as.numeric(outPEval$out), colnames(outPEval$out))
