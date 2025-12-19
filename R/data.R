@@ -145,6 +145,15 @@ res <- function(data, out, err = NULL) {
 NULL
 
 
+
+#' Time-course data for the Bile-Acid demonstration model
+#'
+#' @name badata
+#' @docType data
+#' @keywords data
+NULL
+
+
 # Match with numeric tolerance 
 match.num <- function(x, y, tol = 1e-8) {
   
