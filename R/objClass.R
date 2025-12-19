@@ -463,8 +463,6 @@ constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
 }
 
 
-
-
 #' L2 objective function for validation data point
 #' 
 #' @param name character, the name of the prediction, e.g. a state name.
@@ -482,7 +480,7 @@ constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
 #' and its derivatives with respect to p.
 #' @examples
 #' prediction <- list(a = matrix(c(0, 1), nrow = 1, dimnames = list(NULL, c("time", "A"))))
-#' derivs <- matrix(c(0, 1, 0.1), nrow = 1, dimnames = list(NULL, c("time", "A.A", "A.k1")))
+#' derivs <- array(c(1, 0.1), dim = c(1, 1, 2), dimnames = list(NULL, "A", c("A", "k1")))
 #' attr(prediction$a, "deriv") <- derivs
 #' p0 <- c(A = 1, k1 = 2)
 #' 
@@ -500,7 +498,7 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
   )
   
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = NULL, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
     
     # Import from controls
     mu <- controls$mu
@@ -529,37 +527,127 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
     # Divide parameter into data point and rest
     datapar <- setdiff(names(mu), names(fixed))
     parapar <- setdiff(names(pouter), c(datapar, names(fixed)))
+    n_pouter <- length(pouter)
     
     
     # Get predictions and derivatives at time point
-    time.index <- which(prediction[[condition]][,"time"] == time)
+    time.index <- which(prediction[[condition]][, "time"] == time)
     if (length(time.index) == 0) 
       stop("datapointL2() requests time point for which no prediction is available. Please add missing time point by the times argument in normL2()")
-    withDeriv <- !is.null(attr(prediction[[condition]], "deriv"))
-    pred <- prediction[[condition]][time.index, ]
-    deriv <- NULL
-    if (withDeriv)
-      deriv <- attr(prediction[[condition]], "deriv")[time.index, ]
     
-    # Reduce to name = mu
-    pred <- pred[mu]
+    # Get prediction value - check if column exists
+    pred <- tryCatch(
+      prediction[[condition]][time.index, mu],
+      error = function(e) {
+        available_states <- setdiff(colnames(prediction[[condition]]), "time")
+        stop(sprintf(
+          "datapointL2() cannot find state '%s' in prediction.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+          mu, 
+          paste(available_states, collapse = ", "),
+          mu
+        ), call. = FALSE)
+      }
+    )
+    
+    # Get first derivatives (deriv is 3D array [time, name, param])
+    deriv_array <- attr(prediction[[condition]], "deriv")
+    withDeriv <- !is.null(deriv_array)
+    dxdp <- NULL
     if (withDeriv) {
-      mu.para <- intersect(paste(mu, parapar, sep = "."), names(deriv))
-      deriv <- deriv[mu.para]
+      # Extract derivatives: deriv_array[time.index, mu, ]
+      dxdp_full <- tryCatch(
+        deriv_array[time.index, mu, , drop = TRUE],
+        error = function(e) {
+          available_states <- if (!is.null(dimnames(deriv_array)[[2]])) 
+            dimnames(deriv_array)[[2]] 
+          else 
+            "unknown"
+          stop(sprintf(
+            "datapointL2() cannot find derivatives for state '%s'.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+            mu, 
+            paste(available_states, collapse = ", "),
+            mu
+          ), call. = FALSE)
+        }
+      )
+      
+      # Only extract parameters that actually exist in the derivatives
+      if (length(parapar) > 0) {
+        available_parapar <- intersect(parapar, names(dxdp_full))
+        dxdp <- numeric(length(parapar))
+        names(dxdp) <- parapar
+        if (length(available_parapar) > 0) {
+          dxdp[available_parapar] <- dxdp_full[available_parapar]
+        }
+        # Parameters not in dxdp_full remain 0 (not NA)
+      } else {
+        dxdp <- numeric(0)
+      }
     }
     
-    # Compute prior value and derivatives
+    # Get second derivatives (deriv2 is 4D array [time, name, param, param])
+    deriv2_array <- attr(prediction[[condition]], "deriv2")
+    withDeriv2 <- !is.null(deriv2_array) && deriv2
+    d2xdp2 <- NULL
+    if (withDeriv2 && length(parapar) > 0) {
+      # Extract second derivatives: deriv2_array[time.index, mu, , ]
+      d2xdp2_full <- tryCatch(
+        deriv2_array[time.index, mu, , , drop = TRUE],
+        error = function(e) {
+          available_states <- if (!is.null(dimnames(deriv2_array)[[2]])) 
+            dimnames(deriv2_array)[[2]] 
+          else 
+            "unknown"
+          stop(sprintf(
+            "datapointL2() cannot find second derivatives for state '%s'.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+            mu, 
+            paste(available_states, collapse = ", "),
+            mu
+          ), call. = FALSE)
+        }
+      )
+      
+      # Only extract parameters that actually exist in the second derivatives
+      available_parapar <- intersect(parapar, rownames(d2xdp2_full))
+      d2xdp2 <- matrix(0, length(parapar), length(parapar), 
+                       dimnames = list(parapar, parapar))
+      if (length(available_parapar) > 0) {
+        d2xdp2[available_parapar, available_parapar] <- 
+          d2xdp2_full[available_parapar, available_parapar, drop = FALSE]
+      }
+      # Parameters not in d2xdp2_full get 0 entries (not NA)
+    }
+    
+    # Compute residual and objective value
     res <- as.numeric(pred - c(fixed, pouter)[names(mu)])
-    val <- as.numeric((res/sigma) ^ 2)
+    sigma2_inv <- 1/(sigma * sigma)
+    val <- res * res * sigma2_inv
+    
+    # Initialize gradient and hessian
     gr <- NULL
     hs <- NULL
     
-    if (withDeriv) {
-      dres.dp <- structure(rep(0, length(pouter)), names = names(pouter))
-      if (length(parapar) > 0) dres.dp[parapar] <- as.numeric(deriv)
-      if (length(datapar) > 0) dres.dp[datapar] <- -1
-      gr <- 2*res*dres.dp/sigma ^ 2
-      hs <- 2*outer(dres.dp, dres.dp, "*")/sigma ^ 2; colnames(hs) <- rownames(hs) <- names(pouter)
+    if (deriv && withDeriv) {
+      # Derivative of residual with respect to parameters
+      dres.dp <- numeric(n_pouter)
+      names(dres.dp) <- names(pouter)
+      if (length(parapar) > 0) 
+        dres.dp[parapar] <- dxdp
+      if (length(datapar) > 0) 
+        dres.dp[datapar] <- -1
+      
+      # Gradient: d(val)/dp = 2 * res * dres.dp / sigma^2
+      gr <- 2 * res * sigma2_inv * dres.dp
+      
+      # Hessian: d2(val)/dp2 = 2 * dres.dp %*% t(dres.dp) / sigma^2 + 2 * res * d2res.dp2 / sigma^2
+      # Use tcrossprod for efficiency (C-based BLAS operation)
+      hs <- 2 * sigma2_inv * tcrossprod(dres.dp)
+      colnames(hs) <- rownames(hs) <- names(pouter)
+      
+      # Add second derivative contribution if available
+      if (withDeriv2 && length(parapar) > 0) {
+        hs[parapar, parapar] <- hs[parapar, parapar] + 2 * res * sigma2_inv * d2xdp2
+      }
     }
     
     out <- objlist(value = val, gradient = gr, hessian = hs)
@@ -583,6 +671,7 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
   
   
 }
+
 
 #' L2 objective function for prior value
 #' 
