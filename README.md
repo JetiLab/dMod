@@ -4,30 +4,28 @@ The dMod package is a framework that provides functions to generate ODEs of reac
 
 ## System requirements
 
-dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up ODE models as compiled C code (deSolve) or C++ code (Sundials). This means that **C and C++ compilers** are required on the system. On Linux, the compilers are installed by default. Windows users need to install [RTools](https://cran.r-project.org/bin/windows/Rtools/).
+dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up ODE models as compiled C code (deSolve) or [CppODE](https://github.com/simonbeyer1/CppODE) to autogenerate C++ code (Boost.Odeint). This means that **C and C++ compilers** are required on the system. On Linux, the compilers are installed by default. Windows users need to install [RTools](https://cran.r-project.org/bin/windows/Rtools/).
 
 For **parallelization**, dMod uses `mclapply()` on Linux and Mac. For Windows, parallelization is implemented via the `foreach` package using `%dopar%`.
 
-To **install dMod from the git repository**, it is convenient to use RStudio. Create a "New Project" -> "Version Control" -> "Git". Use the address `https://github.com/dkaschek/dMod` and create project. Next, go to menu "Build" -> "Build and Reload". Once theses steps are completed, it should be possible to run the following example. 
+To **install dMod from the git repository**, it is convenient to use RStudio. Create a "New Project" -\> "Version Control" -\> "Git". Use the address `https://github.com/dkaschek/dMod` and create project. Next, go to menu "Build" -\> "Build and Reload". Once theses steps are completed, it should be possible to run the following example.
 
-When installing dMod from github, you use the development version of dMod. Further packages might be needed to install. In particular, please make sure that if you install dMod from github, also [cOde](https://github.com/dkaschek/cOde) is installed from github.
+When installing dMod from github, you use the development version of dMod. Further packages might be needed to install. In particular, please make sure that if you install dMod from github, also [cOde](https://github.com/dkaschek/cOde) and [CppODE](https://github.com/simonbeyer1/CppODE) are installed from github.
 
 If **PEtab support** is wanted, libSBML will be required in addition. Installation and usage instructions can be found in the wiki under [Support for PEtab](https://github.com/dkaschek/dMod/wiki/Support-for-PEtab)
-
-
 
 ## Simple example: enzyme kinetics
 
 ### Load required packages
 
-```r
+``` r
 library(dMod)
 library(ggplot2)
 ```
 
 ### Generate an ODE model of enzyme kinetics with enzyme degradation
 
-```r
+``` r
 # Reactions
 f <- NULL
 f <- addReaction(f, 
@@ -60,7 +58,7 @@ x <- Xs(model)
 
 ### Define observables and generate observation function `g`
 
-```r
+``` r
 observables <- eqnvec(
   product = "Prod", 
   substrate = "(Sub + Compl)", 
@@ -73,7 +71,7 @@ g <- Y(observables, x, compile = TRUE, modelname = "obsfn", attach.input = FALSE
 
 ### Define parameter transformation for two experimental conditions
 
-```r
+``` r
 # Get all parameters
 innerpars <- getParameters(g*x)
 # Identity transformation
@@ -97,7 +95,7 @@ p <- p + P(trafo2, condition = "withDegradation")
 
 ### Initialize parameters and make prediction
 
-```r
+``` r
 # Initialize with randomly chosen parameters
 set.seed(1)
 outerpars <- getParameters(p)
@@ -112,7 +110,7 @@ plot((g*x*p)(times, pouter))
 
 ### Define data to be fitted by the model
 
-```r
+``` r
 data <- datalist(
   noDegradation = data.frame(
     name = c("product", "product", "product", "substrate", "substrate", "substrate"),
@@ -134,7 +132,7 @@ plot(data) + geom_line()
 
 ![](README_files/figure-html/data-1.png)<!-- -->
 
-```r
+``` r
 plot((g*x*p)(times, pouter), data)
 ```
 
@@ -142,7 +140,7 @@ plot((g*x*p)(times, pouter), data)
 
 ### Define an objective function to be minimized and run minimization by `trust()`
 
-```r
+``` r
 # Define prior values for parameters
 prior <- structure(rep(0, length(pouter)), names = names(pouter))
 
@@ -157,10 +155,9 @@ plot((g*x*p)(times, myfit$argument), data)
 
 ![](README_files/figure-html/trust-1.png)<!-- -->
 
-
 ### Compute the profile likelihood to analyze parameter identifiability
 
-```r
+``` r
 # Compute the profile likelihood around the optimum
 bestfit <- myfit$argument
 profiles <- profile(obj, bestfit, names(bestfit), limits = c(-10, 10), cores = 4)
@@ -170,8 +167,3 @@ plotProfile(profiles)
 ```
 
 ![](README_files/figure-html/profiles-1.png)<!-- -->
-
-
-
-
-
