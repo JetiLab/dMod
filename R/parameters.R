@@ -315,9 +315,9 @@ Pexpl <- function(trafo,
     has_upstream <- !is.null(dP)
     
     if (deriv && !is.null(outPEval$jacobian)) {
-      J_outer <- outPEval$jacobian[, , 1, drop = FALSE]
-      dim(J_outer) <- dim(J_outer)[1:2]
-      dimnames(J_outer) <- dimnames(outPEval$jacobian)[1:2]
+      J_outer <- outPEval$jacobian[1, , , drop = FALSE]
+      dim(J_outer) <- dim(J_outer)[2:3]
+      dimnames(J_outer) <- dimnames(outPEval$jacobian)[2:3]
       
       if (has_upstream) {
         # Chain rule: J_inner = J_outer %*% dP
@@ -330,9 +330,9 @@ Pexpl <- function(trafo,
     }
     
     if (deriv2 && !is.null(outPEval$hessian)) {
-      H_outer <- outPEval$hessian[, , , 1, drop = FALSE]
-      dim(H_outer) <- dim(H_outer)[1:3]
-      dimnames(H_outer) <- dimnames(outPEval$hessian)[1:3]
+      H_outer <- outPEval$hessian[1, , , , drop = FALSE]
+      dim(H_outer) <- dim(H_outer)[2:4]
+      dimnames(H_outer) <- dimnames(outPEval$hessian)[2:4]
       
       if (has_upstream && !is.null(dP2)) {
         # Chain rule for Hessian
@@ -957,7 +957,7 @@ Pimpl <- function(x,
           error = function(e) NULL
         )
         if (is.null(E)) return(NULL)
-        J_full <- E$jacobian[, , 1, drop = TRUE]
+        J_full <- E$jacobian[1, , , drop = TRUE]
         J_x <- J_full[, dep_st_idx, drop = FALSE]
         
         # Chain rule: multiply columns by dx/dz
@@ -1012,7 +1012,7 @@ Pimpl <- function(x,
           error = function(e) NULL
         )
         if (is.null(E)) return(NULL)
-        J_full <- E$jacobian[, , 1, drop = TRUE]
+        J_full <- E$jacobian[1, , , drop = TRUE]
         J_full[, dep_st_idx, drop = FALSE]
       }
       
@@ -1052,7 +1052,7 @@ Pimpl <- function(x,
                attach.input = FALSE, deriv = TRUE, deriv2 = deriv2, verbose = verbose)
     
     # FEval Jacobian is w.r.t. diff_params (compile-time fixed already excluded)
-    J <- E$jacobian[,,1, drop = TRUE]
+    J <- E$jacobian[1,,, drop = TRUE]
     all_cols <- diff_params
     
     # Block partition df/d(·) - indices relative to diff_params
@@ -1130,7 +1130,7 @@ Pimpl <- function(x,
     # Second-order IFT (x-space)
     H_outer <- NULL
     if (deriv2) {
-      H <- E$hessian[,,,1, drop = TRUE]
+      H <- E$hessian[1,,,, drop = TRUE]
       
       idx_xdep <- match(dep_st_diff, all_cols)
       idx_xind <- if (length(indep_st_diff)) match(indep_st_diff, all_cols) else integer(0)

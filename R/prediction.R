@@ -350,7 +350,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       # Apply parameter transformation to the derivatives (chain rule)
       variables <- intersect(variables, names)
       
-      mysensitivities <- outSens$sens1[ , variables, ]
+      mysensitivities <- outSens$sens1[, variables, , drop = FALSE]
       dP <- attr(pars, "deriv")
       if (!is.null(dP)) {
         dPsub <- dP[controls$dimnames_sens$sens, ]
@@ -386,8 +386,8 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       # Apply parameter transformation to the derivatives (chain rule)
       variables <- intersect(variables, names)
       
-      mysensitivities  <- outSens2$sens1[, variables, ]
-      mysensitivities2 <- outSens2$sens2[, variables, , ]
+      mysensitivities  <- outSens2$sens1[, variables, , drop = FALSE]
+      mysensitivities2 <- outSens2$sens2[, variables, , , drop = FALSE]
       
       # Extract parameter derivatives (first and second order)
       dP  <- attr(pars, "deriv",  exact = TRUE)
@@ -739,6 +739,9 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
   controls <- list(attach.input = attach.input)
   
   # --- Core observation mapping function ---
+  # Note on array dimensions from funCpp (new convention):
+  #   Jacobian: [n_obs, n_out, n_symbols]
+  #   Hessian:  [n_obs, n_out, n_sym1, n_sym2]
   X2Y <- function(out, pars, deriv = TRUE, deriv2 = FALSE, env = parent.frame()) {
     
     if (deriv2 && !deriv) {
@@ -762,12 +765,13 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     if (deriv && !deriv2) {
       
       # --- Direct first derivatives from g ---
-      # dGdX[j,a,i] = ∂g_j/∂x_a
-      # dGdP[j,b,i] = ∂g_j/∂p_b
+      # New convention: Jacobian is [i, j, a] where i=obs, j=output, a=symbol
+      # dGdX[i,j,a] = ∂g_j/∂x_a at observation i
+      # dGdP[i,j,b] = ∂g_j/∂p_b at observation i
       # dX[i,a,k]   = ∂x_a/∂θ_k
       # dP[b,k]     = ∂p_b/∂θ_k
-      dGdX <- outEval$jacobian[, obsStates, , drop = FALSE]
-      dGdP <- outEval$jacobian[, obsParams, , drop = FALSE]
+      dGdX <- outEval$jacobian[, , obsStates, drop = FALSE]
+      dGdP <- outEval$jacobian[, , obsParams, drop = FALSE]
       dX   <- attr(out,  "deriv")
       dP   <- attr(pars, "deriv")
       
@@ -781,8 +785,8 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ---------------------------------------------------------------------
       # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + (∂g_j/∂p_b)(∂p_b/∂θ_k)
       if (!is.null(dX) && !is.null(dP)) {
-        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
-        term12 <- einsum::einsum("jbi,bk->ijk",  dGdP, dPsub)
+        term11 <- einsum::einsum("ija,iak->ijk", dGdX, dXsub)
+        term12 <- einsum::einsum("ijb,bk->ijk",  dGdP, dPsub)
         myderivs <- term11 + term12
         outer_pars <- colnames(dP)
       }
@@ -792,12 +796,13 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ---------------------------------------------------------------------
       # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + ∂g_j/∂p_local
       if (!is.null(dX) && is.null(dP)) {
-        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        term11 <- einsum::einsum("ija,iak->ijk", dGdX, dXsub)
         dyn_params   <- intersect(obsParams, dimnames(dX)[[3]])
         local_params <- setdiff(obsParams, dyn_params)
         
         if (length(local_params) > 0) {
-          term12 <- aperm(dGdP[, local_params, , drop = FALSE], c(3, 1, 2))
+          # dGdP is already [i, j, b] - just subset for local_params
+          term12 <- dGdP[, , local_params, drop = FALSE]
           myderivs <- abind::abind(term11, term12, along = 3)
           outer_pars <- c(dimnames(dX)[[3]], local_params)
         } else {
@@ -811,7 +816,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ---------------------------------------------------------------------
       # ∂g_j/∂θ_k = (∂g_j/∂p_b)(∂p_b/∂θ_k)
       if (is.null(dX) && !is.null(dP)) {
-        myderivs <- einsum::einsum("jbi,bk->ijk", dGdP, dPsub)
+        myderivs <- einsum::einsum("ijb,bk->ijk", dGdP, dPsub)
         outer_pars <- colnames(dP)
       }
       
@@ -820,7 +825,8 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ---------------------------------------------------------------------
       # ∂g_j/∂θ_k = ∂g_j/∂p_b  (direct dependence on local parameters)
       if (is.null(dX) && is.null(dP)) {
-        myderivs <- aperm(dGdP, c(3, 1, 2))
+        # dGdP is already [i, j, b] - no aperm needed
+        myderivs <- dGdP
         outer_pars <- obsParams
       }
       
@@ -850,15 +856,18 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
     } else if (deriv && deriv2) {
       
       # --- Direct first and second derivatives from g ---
-      # dGdX[j,a,i] = ∂g_j/∂x_a,   dGdP[j,b,i] = ∂g_j/∂p_b
-      # dG2dX2[j,a,b,i] = ∂²g_j/∂x_a∂x_b,   dG2dXdP[j,a,b,i] = ∂²g_j/∂x_a∂p_b
-      # dG2dPdX[j,b,a,i] = ∂²g_j/∂p_b∂x_a,  dG2dP2[j,b,c,i] = ∂²g_j/∂p_b∂p_c
-      dGdX <- outEval$jacobian[, obsStates, , drop = FALSE]
-      dGdP <- outEval$jacobian[, obsParams, , drop = FALSE]
-      dG2dX2  <- outEval$hessian[, obsStates,  obsStates,  , drop = FALSE]
-      dG2dXdP <- outEval$hessian[, obsStates,  obsParams, , drop = FALSE]
-      dG2dPdX <- outEval$hessian[, obsParams, obsStates,  , drop = FALSE]
-      dG2dP2  <- outEval$hessian[, obsParams, obsParams, , drop = FALSE]
+      # New convention: 
+      #   Jacobian: [i, j, a] where i=obs, j=output, a=symbol
+      #   Hessian:  [i, j, a, b] where i=obs, j=output, a,b=symbols
+      # dGdX[i,j,a] = ∂g_j/∂x_a,   dGdP[i,j,b] = ∂g_j/∂p_b
+      # dG2dX2[i,j,a,b] = ∂²g_j/∂x_a∂x_b,   dG2dXdP[i,j,a,b] = ∂²g_j/∂x_a∂p_b
+      # dG2dPdX[i,j,b,a] = ∂²g_j/∂p_b∂x_a,  dG2dP2[i,j,b,c] = ∂²g_j/∂p_b∂p_c
+      dGdX <- outEval$jacobian[, , obsStates, drop = FALSE]
+      dGdP <- outEval$jacobian[, , obsParams, drop = FALSE]
+      dG2dX2  <- outEval$hessian[, , obsStates,  obsStates,  drop = FALSE]
+      dG2dXdP <- outEval$hessian[, , obsStates,  obsParams, drop = FALSE]
+      dG2dPdX <- outEval$hessian[, , obsParams, obsStates,  drop = FALSE]
+      dG2dP2  <- outEval$hessian[, , obsParams, obsParams, drop = FALSE]
       
       # dX[i,a,k] = ∂x_a/∂θ_k,   dP[b,k] = ∂p_b/∂θ_k
       # dX2[i,a,k,l] = ∂²x_a/∂θ_k∂θ_l,   dP2[b,k,l] = ∂²p_b/∂θ_k∂θ_l
@@ -880,17 +889,17 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + (∂g_j/∂p_b)(∂p_b/∂θ_k)
       # ∂²g_j/∂θ_k∂θ_l = (1)+(2)+(3)+(4)+(5)+(6)
       if (!is.null(dX) && !is.null(dP)) {
-        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
-        term12 <- einsum::einsum("jbi,bk->ijk",  dGdP, dPsub)
+        term11 <- einsum::einsum("ija,iak->ijk", dGdX, dXsub)
+        term12 <- einsum::einsum("ijb,bk->ijk",  dGdP, dPsub)
         myderivs <- term11 + term12
         outer_pars <- colnames(dP)
         
-        term21 <- einsum::einsum("jabi,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
-        term22 <- einsum::einsum("jabi,iak,bl->ijkl",  dG2dXdP, dXsub, dPsub)
-        term23 <- einsum::einsum("jbai,bk,ial->ijkl",  dG2dPdX, dPsub, dXsub)
-        term24 <- einsum::einsum("jbci,bk,cl->ijkl",   dG2dP2,  dPsub, dPsub)
-        term25 <- einsum::einsum("jai,iakl->ijkl",     dGdX,    dX2sub)
-        term26 <- einsum::einsum("jbi,bkl->ijkl",      dGdP,    dP2sub)
+        term21 <- einsum::einsum("ijab,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
+        term22 <- einsum::einsum("ijab,iak,bl->ijkl",  dG2dXdP, dXsub, dPsub)
+        term23 <- einsum::einsum("ijba,bk,ial->ijkl",  dG2dPdX, dPsub, dXsub)
+        term24 <- einsum::einsum("ijbc,bk,cl->ijkl",   dG2dP2,  dPsub, dPsub)
+        term25 <- einsum::einsum("ija,iakl->ijkl",     dGdX,    dX2sub)
+        term26 <- einsum::einsum("ijb,bkl->ijkl",      dGdP,    dP2sub)
         
         myderivs2 <- Reduce(`+`, list(term21, term22, term23, term24, term25, term26))
         outer_pars2 <- outer_pars
@@ -902,12 +911,13 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ∂g_j/∂θ_k = (∂g_j/∂x_a)(∂x_a/∂θ_k) + ∂g_j/∂p_local
       # ∂²g_j/∂θ_k∂θ_l = block Hessian [dyn θ | local obs-θ]
       if (!is.null(dX) && is.null(dP)) {
-        term11 <- einsum::einsum("jai,iak->ijk", dGdX, dXsub)
+        term11 <- einsum::einsum("ija,iak->ijk", dGdX, dXsub)
         dyn_params   <- dimnames(dX)[[3]]
         local_params <- setdiff(obsParams, dyn_params)
         
         if (length(local_params) > 0) {
-          term12 <- aperm(dGdP[, local_params, , drop = FALSE], c(3,1,2))
+          # dGdP is already [i, j, b] - just subset
+          term12 <- dGdP[, , local_params, drop = FALSE]
           myderivs <- abind::abind(term11, term12, along = 3)
           outer_pars <- c(dyn_params, local_params)
         } else {
@@ -915,23 +925,24 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
           outer_pars <- dyn_params
         }
         
-        n_i <- dim(dGdX)[3]; n_j <- length(observables)
+        n_i <- dim(dGdX)[1]; n_j <- length(observables)
         Kx <- length(dyn_params); Kl <- length(local_params); Ktot <- Kx + Kl
         myderivs2 <- array(0, dim = c(n_i, n_j, Ktot, Ktot))
         
         # xx-block: (1)+(5)
-        term21 <- einsum::einsum("jabi,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
-        term25 <- einsum::einsum("jai,iakl->ijkl",     dGdX,    dX2sub)
+        term21 <- einsum::einsum("ijab,iak,ibl->ijkl", dG2dX2, dXsub, dXsub)
+        term25 <- einsum::einsum("ija,iakl->ijkl",     dGdX,    dX2sub)
         myderivs2[, , 1:Kx, 1:Kx] <- term21 + term25
         
         # x–p_local, p_local–x, p_local–p_local
         if (Kl > 0) {
-          myderivs2[, , 1:Kx, Kx+seq_len(Kl)] <- einsum::einsum("jabi,iak->ijkb",
-                                                                dG2dXdP[, obsStates, local_params, , drop = FALSE], dXsub)
-          myderivs2[, , Kx+seq_len(Kl), 1:Kx] <- einsum::einsum("jbai,ial->ijbl",
-                                                                dG2dPdX[, local_params, obsStates, , drop = FALSE], dXsub)
+          myderivs2[, , 1:Kx, Kx+seq_len(Kl)] <- einsum::einsum("ijab,iak->ijkb",
+                                                                dG2dXdP[, , obsStates, local_params, drop = FALSE], dXsub)
+          myderivs2[, , Kx+seq_len(Kl), 1:Kx] <- einsum::einsum("ijba,ial->ijbl",
+                                                                dG2dPdX[, , local_params, obsStates, drop = FALSE], dXsub)
+          # dG2dP2 is already [i, j, b, c] - no aperm needed
           myderivs2[, , Kx+seq_len(Kl), Kx+seq_len(Kl)] <-
-            aperm(dG2dP2[, local_params, local_params, , drop = FALSE], c(4,1,2,3))
+            dG2dP2[, , local_params, local_params, drop = FALSE]
         }
         outer_pars2 <- outer_pars
       }
@@ -942,10 +953,10 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ∂g_j/∂θ_k = (∂g_j/∂p_b)(∂p_b/∂θ_k)
       # ∂²g_j/∂θ_k∂θ_l = (4)+(6)
       if (is.null(dX) && !is.null(dP)) {
-        myderivs <- einsum::einsum("jbi,bk->ijk", dGdP, dPsub)
+        myderivs <- einsum::einsum("ijb,bk->ijk", dGdP, dPsub)
         outer_pars <- colnames(dP)
-        term24 <- einsum::einsum("jbci,bk,cl->ijkl", dG2dP2, dPsub, dPsub)
-        term26 <- einsum::einsum("jbi,bkl->ijkl",    dGdP,   dP2sub)
+        term24 <- einsum::einsum("ijbc,bk,cl->ijkl", dG2dP2, dPsub, dPsub)
+        term26 <- einsum::einsum("ijb,bkl->ijkl",    dGdP,   dP2sub)
         myderivs2 <- term24 + term26
         outer_pars2 <- outer_pars
       }
@@ -955,8 +966,9 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
       # ---------------------------------------------------------------------
       # ∂g_j/∂θ_k = ∂g_j/∂p_local,  ∂²g_j/∂θ_k∂θ_l = ∂²g_j/∂p_b∂p_c
       if (is.null(dX) && is.null(dP)) {
-        myderivs  <- aperm(dGdP, c(3,1,2))
-        myderivs2 <- aperm(dG2dP2, c(4,1,2,3))
+        # Already [i, j, b] and [i, j, b, c] - no aperm needed
+        myderivs  <- dGdP
+        myderivs2 <- dG2dP2
         outer_pars <- obsParams
         outer_pars2 <- obsParams
       }
@@ -1016,7 +1028,6 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
   
   obsfn(X2Y, parameters, condition)
 }
-
 
  
 # #' Generate a prediction function that returns times

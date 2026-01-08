@@ -1,4 +1,3 @@
-
 #' Compare two objects and return differences
 #' 
 #' Works eigher on a list or on two arguments. In case of a list,
@@ -417,173 +416,168 @@ expand.grid.alt <- function(seq1, seq2) {
 #' Compiles one or more objects of class `parfn`, `obsfn`, or `prdfn` into
 #' shared libraries (`.so` or `.dll`).
 #'
-#' If `output` is `NULL`, each detected C/C++ source file is compiled and
-#' linked into its own shared object.
-#'
-#' If `output` is provided, all detected source files are compiled
-#' (optionally in parallel if multiple files are present and `cores > 1`)
-#' into object files (`.o`) and then linked together into a single shared
-#' library with the specified name.
-#'
-#' If no additional compiler flags are supplied via `args`, the compilation
-#' defaults to using `-O3` for optimization.
-#'
 #' @param ... One or more objects of class `parfn`, `obsfn`, or `prdfn`.
-#'   The corresponding C/C++ source files (e.g., `model.c`, `model.cpp`,
-#'   `model_deriv.c`) are automatically detected based on the model name.
-#'
-#' @param output Optional character string. If supplied, all compiled object
-#'   files are linked into a single shared library named
-#'   `paste0(output, .Platform$dynlib.ext)`. If omitted, each source file is
-#'   built into a separate shared library.
-#'
-#' @param args Optional character string containing additional flags passed
-#'   to `R CMD SHLIB` during compilation and linking (e.g., `"-leinspline"`).
-#'   If `NULL` or empty, the compiler is invoked with `-O3`.
-#'
-#' @param verbose Logical. If `TRUE`, compiler and linker output is printed
-#'   to the R console.
-#'
-#' @param cores Integer. Number of CPU cores used for parallel compilation
-#'   of individual source files into object files. Parallel compilation is
-#'   supported on all major operating systems.
+#'   The corresponding C/C++ source files are automatically detected.
+#' @param output Optional base name for the combined shared object.
+#' @param args Optional compiler or linker arguments (e.g. `"-lm"`).
+#' @param verbose Logical; if `TRUE`, show compiler output.
+#' @param cores Number of parallel compilation jobs (ignored on Windows).
 #'
 #' @details
-#' Compilation proceeds in two stages. First, each C/C++ source file is
-#' compiled into an object file (`.o`), using parallel processing if enabled.
-#' Second, the object files are linked into one or multiple shared libraries,
-#' depending on whether `output` is specified. Any previously loaded shared
-#' objects with matching names are automatically unloaded before linking.
-#' The resulting shared libraries are loaded into the current R session upon
-#' successful compilation.
+#' Boost headers are provided via the BH package (declared in
+#' `LinkingTo: BH`) and no system-installed Boost libraries are required.
 #'
-#' @return
-#' Invisibly returns `TRUE` if compilation succeeds.
+#' @return Invisibly returns `TRUE` if compilation succeeds.
 #'
+#' @import BH
 #' @export
 compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE) {
-  objects   <- list(...)
+  objects <- list(...)
   obj.names <- as.character(substitute(list(...)))[-1]
   
-  # --- collect all source files ------------------------------------------------
-  files <- NULL
+  
+  # --- collect all source files ---
+  files <- character()
   for (i in seq_along(objects)) {
     if (inherits(objects[[i]], c("obsfn", "parfn", "prdfn"))) {
-      filename  <- modelname(objects[[i]])
-      filename  <- outer(filename, c("", "_deriv", "_s", "_s2", "_sdcv", "_dfdx", "_dfdp"), paste0)
-      files.obj <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
-      files.obj <- files.obj[file.exists(files.obj)]
-      files     <- union(files, files.obj)
+      filename <- modelname(objects[[i]])
+      filename <- outer(filename, c("", "_deriv", "_s", "_s2", "_sdcv", "_dfdx", "_dfdp"), paste0)
+      candidates <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
+      candidates <- candidates[file.exists(candidates)]
+      files <- union(files, candidates)
     }
   }
+  
+  .so <- .Platform$dynlib.ext
   
   if (length(files) == 0)
     stop("No source files found for compilation (no .c or .cpp files).")
   
-  .so <- .Platform$dynlib.ext
+  roots <- vapply(files, function(f) sub("\\.[^.]+$", "", f), character(1))
   
-  # -- include and compiler flags -----------------------------------------------
-  include_flags <- c(paste0("-I", shQuote(system.file("include", package = "CppODE"))))
-  cxxflags <- if (Sys.info()[["sysname"]] == "Windows") {
-    "-std=c++20 -O3 -DNDEBUG"
-  } else {
-    "-std=c++20 -O3 -DNDEBUG -fPIC"
+  # --- Clean up old compiled files ---
+  for (root in roots) {
+    so_file <- paste0(root, .so)
+    o_file <- paste0(root, ".o")
+    try(dyn.unload(so_file), silent = TRUE)
+    if (file.exists(so_file)) {
+      if (verbose) message("Removing old: ", so_file)
+      unlink(so_file)
+    }
+    if (file.exists(o_file)) {
+      if (verbose) message("Removing old: ", o_file)
+      unlink(o_file)
+    }
   }
   
-  Sys.setenv(
-    PKG_CPPFLAGS = paste(include_flags, collapse = " "),
-    PKG_CXXFLAGS = cxxflags
+  # --- Compiler flags ---
+  if (Sys.info()[["sysname"]] == "Windows") cores <- 1
+  
+  include_flags <- paste(
+    paste0("-I", system.file("include", package = "CppODE")),
+    paste0("-I", system.file("include", package = "BH"))
   )
   
-  # -- set automatic optimization flags -----------------------------------------
-  optflags <- if (is.null(args) || !nzchar(args)) "-O3" else args
-  
-  # --- set up parallel backend if needed ---------------------------------------
-  if (cores > 1) {
-    if (Sys.info()[["sysname"]] == "Windows") {
-      cl <- parallel::makeCluster(cores)
-      doParallel::registerDoParallel(cl)
-      parallel::clusterCall(cl, function(x) .libPaths(x), .libPaths())
-    } else {
-      doParallel::registerDoParallel(cores = cores)
-    }
-    `%mydo%` <- foreach::`%dopar%`
+  cxxflags <- if (Sys.info()[["sysname"]] == "Windows") {
+    "-std=c++20 -O2 -DNDEBUG -w"
   } else {
-    `%mydo%` <- foreach::`%do%`
+    "-std=c++20 -O2 -DNDEBUG -fPIC -fno-var-tracking-assignments -w"
   }
   
-  # --- compile to object files in parallel -------------------------------------
-  obj_files <- sub("\\.(c|cpp)$", ".o", files, ignore.case = TRUE)
-  Rbin <- shQuote(file.path(R.home("bin"), "R"))
-  
-  foreach::foreach(i = seq_along(files)) %mydo% {
-    src <- shQuote(files[i])
-    obj <- obj_files[i]
+  # --- Helper: compile without loading ---
+  compile_one <- function(file, root) {
+    old_cppflags <- Sys.getenv("PKG_CPPFLAGS", unset = NA)
+    old_cxxflags <- Sys.getenv("PKG_CXXFLAGS", unset = NA)
     
-    if (file.exists(obj)) file.remove(obj)
-    
-    cmd <- paste(
-      Rbin, "CMD SHLIB -c",
-      src,
-      optflags
+    Sys.setenv(
+      PKG_CPPFLAGS = include_flags,
+      PKG_CXXFLAGS = cxxflags
     )
     
-    system(cmd, intern = !verbose)
+    on.exit({
+      if (is.na(old_cppflags)) Sys.unsetenv("PKG_CPPFLAGS") else Sys.setenv(PKG_CPPFLAGS = old_cppflags)
+      if (is.na(old_cxxflags)) Sys.unsetenv("PKG_CXXFLAGS") else Sys.setenv(PKG_CXXFLAGS = old_cxxflags)
+    })
+    
+    cmd <- paste0(R.home("bin"), "/R CMD SHLIB ", shQuote(file), " ", args)
+    result <- system(cmd, intern = !verbose)
+    
+    if (!file.exists(paste0(root, .so))) {
+      stop("Compilation failed for ", file)
+    }
+    
+    invisible(root)
   }
   
-  if (cores > 1 && Sys.info()[["sysname"]] == "Windows") {
-    parallel::stopCluster(cl)
-  }
-  
-  # --- unload previously loaded libs -------------------------------------------
-  all_roots <- unique(sub("\\.(c|cpp)$", "", basename(files), ignore.case = TRUE))
-  for (r in all_roots) {
-    try(dyn.unload(paste0(r, .so)), silent = TRUE)
-  }
-  if (!is.null(output)) {
-    try(dyn.unload(paste0(output, .so)), silent = TRUE)
-  }
-  
-  # --- case 1: output = NULL → separate shared libs -----------------------------
   if (is.null(output)) {
+    if (verbose) message("Compiling ", length(files), " model(s)...")
     
-    for (i in seq_along(files)) {
-      root  <- all_roots[i]
-      ofile <- paste0(root, .so)
-      
-      cmd <- paste(
-        Rbin, "CMD SHLIB",
-        shQuote(obj_files[i]),
-        "-o", shQuote(ofile),
-        optflags
-      )
-      
-      system(cmd, intern = !verbose)
-      dyn.load(ofile)
+    # Compile in parallel (without loading)
+    parallel::mclapply(seq_along(files), function(i) {
+      compile_one(files[i], roots[i])
+    }, mc.cores = cores, mc.silent = !verbose)
+    
+    # Load sequentially in correct order: base models first, then derived
+    # This ensures initmod etc. are available when sensitivity models load
+    base_roots <- roots[!grepl("_(s2?|deriv|sdcv|dfdx|dfdp)$", roots)]
+    derived_roots <- roots[grepl("_(s2?|deriv|sdcv|dfdx|dfdp)$", roots)]
+    
+    for (root in c(base_roots, derived_roots)) {
+      dyn.load(paste0(root, .so))
+      if (verbose) message("\u2713 Loaded ", root, .so)
     }
     
   } else {
-    # --- case 2: output provided → link all into one library --------------------
+    # --- Combine all into one shared object ---
+    output <- sub("\\.so$", "", output)
+    output_so <- paste0(output, .so)
+    output_o <- paste0(output, ".o")
     
-    for (i in seq_along(objects)) {
-      eval(parse(text = sprintf("modelname(%s) <<- '%s'", obj.names[i], output)))
+    try(dyn.unload(output_so), silent = TRUE)
+    if (file.exists(output_so)) {
+      if (verbose) message("Removing old: ", output_so)
+      unlink(output_so)
+    }
+    if (file.exists(output_o)) {
+      if (verbose) message("Removing old: ", output_o)
+      unlink(output_o)
     }
     
-    cmd <- paste(
-      Rbin, "CMD SHLIB",
-      paste(shQuote(obj_files), collapse = " "),
-      "-o", shQuote(paste0(output, .so)),
-      optflags
+    old_cppflags <- Sys.getenv("PKG_CPPFLAGS", unset = NA)
+    old_cxxflags <- Sys.getenv("PKG_CXXFLAGS", unset = NA)
+    
+    Sys.setenv(
+      PKG_CPPFLAGS = include_flags,
+      PKG_CXXFLAGS = cxxflags
     )
     
-    system(cmd, intern = !verbose)
-    dyn.load(paste0(output, .so))
+    on.exit({
+      if (is.na(old_cppflags)) Sys.unsetenv("PKG_CPPFLAGS") else Sys.setenv(PKG_CPPFLAGS = old_cppflags)
+      if (is.na(old_cxxflags)) Sys.unsetenv("PKG_CXXFLAGS") else Sys.setenv(PKG_CXXFLAGS = old_cxxflags)
+    })
+    
+    cmd <- paste0(
+      R.home("bin"), "/R CMD SHLIB ",
+      paste(shQuote(files), collapse = " "),
+      " -o ", shQuote(output_so), " ",
+      args
+    )
+    if (verbose)
+      message("Linking into shared library: ", output, .so)
+    
+    result <- system(cmd, intern = !verbose)
+    
+    if (!file.exists(output_so)) {
+      stop("Compilation failed for combined output")
+    }
+    
+    dyn.load(output_so)
+    if (verbose)
+      message("\u2713 Loaded ", output, .so)
   }
   
   invisible(TRUE)
 }
-
-
 
 
 #' Determine loaded DLLs available in working directory

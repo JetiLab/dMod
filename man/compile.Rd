@@ -8,24 +8,15 @@ compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
 \item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.
-The corresponding C/C++ source files (e.g., \code{model.c}, \code{model.cpp},
-\code{model_deriv.c}) are automatically detected based on the model name.}
+The corresponding C/C++ source files are automatically detected.}
 
-\item{output}{Optional character string. If supplied, all compiled object
-files are linked into a single shared library named
-\code{paste0(output, .Platform$dynlib.ext)}. If omitted, each source file is
-built into a separate shared library.}
+\item{output}{Optional base name for the combined shared object.}
 
-\item{args}{Optional character string containing additional flags passed
-to \verb{R CMD SHLIB} during compilation and linking (e.g., \code{"-leinspline"}).
-If \code{NULL} or empty, the compiler is invoked with \code{-O3}.}
+\item{args}{Optional compiler or linker arguments (e.g. \code{"-lm"}).}
 
-\item{cores}{Integer. Number of CPU cores used for parallel compilation
-of individual source files into object files. Parallel compilation is
-supported on all major operating systems.}
+\item{cores}{Number of parallel compilation jobs (ignored on Windows).}
 
-\item{verbose}{Logical. If \code{TRUE}, compiler and linker output is printed
-to the R console.}
+\item{verbose}{Logical; if \code{TRUE}, show compiler output.}
 }
 \value{
 Invisibly returns \code{TRUE} if compilation succeeds.
@@ -33,24 +24,8 @@ Invisibly returns \code{TRUE} if compilation succeeds.
 \description{
 Compiles one or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn} into
 shared libraries (\code{.so} or \code{.dll}).
-
-If \code{output} is \code{NULL}, each detected C/C++ source file is compiled and
-linked into its own shared object.
-
-If \code{output} is provided, all detected source files are compiled
-(optionally in parallel if multiple files are present and \code{cores > 1})
-into object files (\code{.o}) and then linked together into a single shared
-library with the specified name.
-
-If no additional compiler flags are supplied via \code{args}, the compilation
-defaults to using \code{-O3} for optimization.
 }
 \details{
-Compilation proceeds in two stages. First, each C/C++ source file is
-compiled into an object file (\code{.o}), using parallel processing if enabled.
-Second, the object files are linked into one or multiple shared libraries,
-depending on whether \code{output} is specified. Any previously loaded shared
-objects with matching names are automatically unloaded before linking.
-The resulting shared libraries are loaded into the current R session upon
-successful compilation.
+Boost headers are provided via the BH package (declared in
+\code{LinkingTo: BH}) and no system-installed Boost libraries are required.
 }
