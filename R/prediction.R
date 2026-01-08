@@ -24,13 +24,7 @@
 #' differentiation. The result is saved in the attributed "deriv", 
 #' i.e. in this case the attibutes "deriv" and "sensitivities" do not coincide. 
 #' @export
-Xs <- function(odemodel, ...) {
-  UseMethod("Xs", odemodel)
-}
-
-#' @export
-#' @import deSolve
-Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condition = NULL, optionsOde=list(method = "lsoda"), optionsSens=list(method = "lsodes"), fcontrol = NULL) {
+Xs <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condition = NULL, optionsOde=list(method = "lsoda"), optionsSens=list(method = "lsodes"), fcontrol = NULL) {
   
   func <- odemodel$func
   extended <- odemodel$extended
@@ -106,7 +100,7 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
     
     # Sort event time points
     if (!is.null(events)) events <- events[order(events$time),]
-
+    
     
     myderivs <- NULL
     mysensitivities <- NULL
@@ -127,8 +121,8 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
       if (!is.null(forcings)) forc <- setForcings(extended, forcings) else forc <- NULL
       
       outSens <- suppressWarnings(do.call(odeC, c(list(y = c(unclass(yini), yiniSens), times = times, func = extended, parms = mypars, 
-                                      forcings = forc, fcontrol = fcontrol,
-                                      events = list(data = events)), optionsSens)))
+                                                       forcings = forc, fcontrol = fcontrol,
+                                                       events = list(data = events)), optionsSens)))
       #out <- cbind(outSens[,c("time", variables)], out.inputs)
       out <- submatrix(outSens, cols = c("time", names))
       mysensitivities <- submatrix(outSens, cols = !colnames(outSens) %in% c(variables, forcnames))
@@ -157,148 +151,6 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
   attr(P2X, "parameters") <- c(variables, parameters)
   attr(P2X, "equations") <- as.eqnvec(attr(func, "equations"))
   attr(P2X, "forcings") <- forcings
-  attr(P2X, "events") <- events
-  attr(P2X, "modelname") <- func[1]
-  
-  
-  prdfn(P2X, c(variables, parameters), condition) 
-}
-
-#' @export
-Xs.Boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
-                     optionsOde = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1),
-                     optionsSens = list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)) {
-  
-  if (!is.null(forcings)) {
-    stop("Forcings are not yet supported for boost::rosenbrock34.")
-  }
-  
-  if (!is.null(events)) {
-    stop("Events should be passed to odemodel()")
-  }
-  
-  defaultsOde  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
-  defaultsSens <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, roottol = 1e-8, maxroot = 1)
-  
-  if (!is.list(optionsOde))  optionsOde  <- as.list(optionsOde)
-  if (!is.list(optionsSens)) optionsSens <- as.list(optionsSens)
-  
-  badOde  <- setdiff(names(optionsOde),  names(defaultsOde))
-  badSens <- setdiff(names(optionsSens), names(defaultsSens))
-  if (length(badOde)  > 0) warning("optionsOde: Ignoring unknown option(s): ",  paste(badOde,  collapse=", "))
-  if (length(badSens) > 0) warning("optionsSens: Ignoring unknown option(s): ", paste(badSens, collapse=", "))
-  
-  optionsOde  <- modifyList(defaultsOde,  optionsOde[names(optionsOde)  %in% names(defaultsOde)])
-  optionsSens <- modifyList(defaultsSens, optionsSens[names(optionsSens) %in% names(defaultsSens)])
-  
-  func <- odemodel$funCpp
-  func_sens <- odemodel$funCpp_sens
-  
-  if (is.null(func_sens)) warning("ODE model does not contain sensitivities.")
-  
-  # Variable and parameter names
-  variables <- attr(func, "variables")
-  parameters <- attr(func, "parameters")
-  
-  # Variable and parameter names of sensitivities
-  sensvar <- attr(func_sens, "sensvariables")
-  senssplit <- strsplit(sensvar, ".", fixed=TRUE)
-  senssplit.1 <- unlist(lapply(senssplit, function(v) v[1]))
-  senssplit.2 <- unlist(lapply(senssplit, function(v) paste(v[-1], collapse = ".")))
-  svariables <- intersect(senssplit.2, variables)
-  sparameters <- setdiff(senssplit.2, variables)
-  
-  # Names for deriv output
-  sensGrid <- expand.grid(variables, c(svariables, sparameters), stringsAsFactors=FALSE)
-  sensNames <- paste(sensGrid[,1], sensGrid[,2], sep=".")  
-  
-  # Only a subset of all variables/forcings is returned
-  if (is.null(names)) names <- variables
-  
-  # Update sensNames when names are set
-  select <- sensGrid[, 1] %in% names
-  sensNames <- paste(sensGrid[,1][select], sensGrid[,2][select], sep = ".")  
-  
-  # Controls to be modified from outside
-  controls <- list(
-    names = names,
-    optionsOde = optionsOde,
-    optionsSens = optionsSens
-  )
-  
-  P2X <- function(times, pars, deriv=TRUE){
-    
-    paramnames <- c(variables, parameters)
-    # check for missing parameters
-    missing <- setdiff(paramnames, names(pars))
-    if (length(missing) > 0) stop(sprintf("Missing parameters: %s", paste(missing, collapse = ", ")))
-    
-    yini <- unclass(pars)[variables]
-    mypars <- unclass(pars)[parameters]
-    
-    names <- controls$names
-    optionsOde <- controls$optionsOde
-    optionsSens <- controls$optionsSens
-    
-    myderivs <- NULL
-    mysensitivities <- NULL
-    if (!deriv) {
-      
-      # Evaluate model without sensitivities
-      out <- suppressWarnings(
-        .Call(paste0("solve_", as.character(func)),
-              as.numeric(times),
-              as.numeric(c(yini, mypars)),
-              as.numeric(optionsOde$atol),
-              as.numeric(optionsOde$rtol),
-              as.integer(optionsOde$maxattemps),
-              as.integer(optionsOde$maxsteps),
-              as.numeric(optionsOde$roottol),
-              as.integer(optionsOde$maxroot))
-      )
-      colnames(out) <- c("time", variables)
-      out <- submatrix(out, cols = c("time", names))
-      
-    } else {
-      
-      outSens <- suppressWarnings(
-        .Call(paste0("solve_", as.character(func_sens)),
-              as.numeric(times),
-              as.numeric(c(yini, mypars)),
-              as.numeric(optionsSens$atol),
-              as.numeric(optionsSens$rtol),
-              as.integer(optionsSens$maxattemps),
-              as.integer(optionsSens$maxsteps),
-              as.numeric(optionsOde$roottol),
-              as.integer(optionsOde$maxroot))
-      )
-      colnames(outSens) <- c("time", variables, sensvar)
-      out <- submatrix(outSens, cols = c("time", names))
-      mysensitivities <- submatrix(outSens, cols = !colnames(outSens) %in% variables)
-      
-      
-      # Apply parameter transformation to the derivatives
-      variables <- intersect(variables, names)
-      sensLong <- matrix(outSens[,sensNames], nrow = dim(outSens)[1]*length(variables))
-      dP <- attr(pars, "deriv")
-      if (!is.null(dP)) {
-        sensLong <- sensLong %*% submatrix(dP, rows = c(svariables, sparameters))
-        sensGrid <- expand.grid.alt(variables, colnames(dP))
-        sensNames <- paste(sensGrid[,1], sensGrid[,2], sep = ".")
-      }
-      myderivs <- matrix(0, nrow = nrow(outSens), ncol = 1 + length(sensNames), dimnames = list(NULL, c("time", sensNames)))
-      myderivs[, 1] <- out[, 1]
-      myderivs[, -1] <- sensLong
-    }
-    
-    #prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = unique(sensGrid[,2]))
-    prdframe(out, deriv = myderivs, sensitivities = mysensitivities, parameters = pars)
-    
-  }
-  
-  attr(P2X, "parameters") <- c(variables, parameters)
-  attr(P2X, "equations") <- as.eqnvec(attr(func, "equations"))
-  attr(P2X, "forcings") <- NULL
   attr(P2X, "events") <- events
   attr(P2X, "modelname") <- func[1]
   
