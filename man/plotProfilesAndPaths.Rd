@@ -14,7 +14,7 @@ plotProfilesAndPaths(
 )
 }
 \arguments{
-\item{profs}{List of profiles as returned by \code{\link{profile}}.}
+\item{profs}{List of profiles as returned by \code{\link[=profile]{profile()}}.}
 
 \item{whichpars}{Character vector of parameter names for which the profile paths should be generated.}
 
@@ -25,7 +25,7 @@ plotProfilesAndPaths(
 \item{normalizePaths}{Logical indicating whether the paths should be normalized to absolute values of 1.
 Default \code{FALSE}.}
 
-\item{...}{Additional arguments passed to \code{\link[cowplot]{plot_grid}}.}
+\item{...}{Additional arguments passed to \code{\link[cowplot:plot_grid]{cowplot::plot_grid()}}.}
 }
 \value{
 A combined \code{ggplot} object containing the profiles and paths (no shared legend).

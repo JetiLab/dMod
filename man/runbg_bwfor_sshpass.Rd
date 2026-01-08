@@ -45,10 +45,10 @@ Can be used to get back the check and get functions for an already started proce
 \item{password}{Your ssh password in plain text (yes, no joke unfortunately), the password is handed over to sshpass for automatic login on the cluster.}
 }
 \value{
-List of functions \code{check()}, \code{get()} and \code{purge()}. 
+List of functions \code{check()}, \code{get()} and \code{purge()}.
 \code{check()} checks, if the result is ready.
 \code{get()} copies the result file
-to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+to the working directory and loads it into the workspace as an object called \code{.runbgOutput}.
 This object is a list named according to the machines that contains the results returned by each
 machine.
 \code{purge()} deletes the temporary folder
@@ -62,8 +62,8 @@ sshpass needs to be installed on your local machine.
 \details{
 \code{runbg()} generates a workspace from the \code{input} argument
 and copies the workspace and all C files or .so files to the remote machines via
-\code{scp}. This will only work if *an ssh-key had been generated and added
-to the authorized keys on the remote machine*. The
+\code{scp}. This will only work if \emph{an ssh-key had been generated and added
+to the authorized keys on the remote machine}. The
 code snippet, i.e. the \code{...} argument, can include several intermediate results
 but only the last call which is not redirected into a variable is returned via the
 variable \code{.runbgOutput}, see example below.

@@ -11,14 +11,14 @@
 
 #' Generate a dMod.frame
 #'
-#' @description Basically, a dMod.frame is a \link{tibble}, which is grouped \link{rowwise}.
+#' @description Basically, a dMod.frame is a [tibble], which is grouped [rowwise].
 #'
 #' Since the dMod.frame is also designed for interactive use, the class will not be called
 #' "dMod.frame" as I initially planned, but will be c("tbl_df").
 #' This way, I don't have to overwrite all the dplyr-verbs.
 #'
 #' The dMod.frame object stores all objects that are needed to reproducibly
-#' produce a result, such as a plot or profiles, in one row of a \link{tibble}.
+#' produce a result, such as a plot or profiles, in one row of a [tibble].
 #' Each row corresponds to a distinct hypothesis, e.g. one would have two distinct rows
 #' for fitting with and without a prior.
 #'
@@ -32,7 +32,7 @@
 #' @param e fn
 #' @param ... other columns, have to be named. They will be placed in a list.
 #'
-#' @return Object of class \code{tbl_df}, which is grouped rowwise.
+#' @return Object of class `tbl_df`, which is grouped rowwise.
 #'
 #' @importFrom dplyr tibble rowwise
 #'
@@ -63,13 +63,13 @@ dMod.frame <- function(hypothesis, g, x, p, data, e = NULL,...) {
 #' A version of dplyr::mutate
 #'
 #' @description This is basically dplyr::mutate with two differences
-#' 1. It groups the tibble \link{rowwise} before mutating
+#' 1. It groups the tibble [rowwise] before mutating
 #' 2. It allows to store the calls. This is intended for use when your objects are
-#' not standard transformations, such as \code{prd = g*x*p} but more complicated and
+#' not standard transformations, such as `prd = g*x*p` but more complicated and
 #' you want to keep a record of what you did.
 #'
 #' If the result of your ... expressions is not atomic, make sure to wrap your
-#' expression in \code{list()}
+#' expression in `list()`
 #'
 #' @param dMod.frame A dMod.frame
 #' @param ... Expressions going to mutate()
@@ -110,11 +110,11 @@ mutatedMod.frame <- function(dMod.frame,
 #' @param dMod.frame A dMod.frame
 #' @param prd Expression after which the concatenated prediction function is formed. Has to wrapped in list()
 #' @param obj_data Expression after which the objective function which describes the data is formed. Has to wrapped in list()
-#' @param obj This object is taken by the standard fitting functions. At typical expression would be \code{list(obj_data +  constr)}. Has to wrapped in list()
+#' @param obj This object is taken by the standard fitting functions. At typical expression would be `list(obj_data +  constr)`. Has to wrapped in list()
 #' @param ... Other columns which are mutations of existing ones or new columns.
-#' @param keepCalls Store a record of the calls in a new colun? See \link{mutatedMod.frame}.
+#' @param keepCalls Store a record of the calls in a new colun? See [mutatedMod.frame].
 #' @param pars A named vector of parameters to run e.g. test simulations of the model. Defaults to random parameters
-#' @param times A vector of times to run e.g. test simulations of the model. Defaults to \code{seq(0, 1*t_max(data), length.out = 200)}
+#' @param times A vector of times to run e.g. test simulations of the model. Defaults to `seq(0, 1*t_max(data), length.out = 200)`
 #'
 #' @importFrom rlang quos enquo UQS
 #'
@@ -147,11 +147,11 @@ appendObj <- function(dMod.frame,
 #'
 #' Most plotting functions rely on a column "parframes" to be existent in the dMod.frame
 #'
-#' @param dMod.frame A dmod.frame, preferably with a column \code{fits}.
+#' @param dMod.frame A dmod.frame, preferably with a column `fits`.
 #' @param parframes Expression to turn a column containing a parlist (e.g. fits) into a column of parframes
 #' @param keepFits 
 #' @param ... Other columns you want to mutate
-#' @param keepCalls Store a record of the calls in a new colun? See \link{mutatedMod.frame}.
+#' @param keepCalls Store a record of the calls in a new colun? See [mutatedMod.frame].
 #'
 #' @importFrom rlang quos enquo UQS
 #'

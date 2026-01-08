@@ -18,8 +18,8 @@ constraintExp2(p, mu, sigma = 1, k = 0.05, fixed = NULL)
 \item{fixed}{Named numeric with fixed parameter values (contribute to the prior value but not to gradient and Hessian)}
 }
 \value{
-list with entries: value (numeric, the weighted residual sum of squares), 
-gradient (numeric, gradient) and 
+list with entries: value (numeric, the weighted residual sum of squares),
+gradient (numeric, gradient) and
 hessian (matrix of type numeric). Object of class \code{objlist}.
 }
 \description{

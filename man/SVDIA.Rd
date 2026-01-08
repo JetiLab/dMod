@@ -19,9 +19,9 @@ SVDIA(
 \item{times}{Vector of time points for evaluation.}
 
 \item{HC}{A list with the parameter bounds. The list can be in two forms:
-- `HC = list(parlower = lower_value, parupper = upper_value)` for the same bounds for all parameters.
-- `HC = list(parlower = named_numeric_vector, parupper = named_numeric_vector)` for specific bounds for each parameter.
-Defaults to `list(parlower = -5, parupper = 3)`.}
+- \code{HC = list(parlower = lower_value, parupper = upper_value)} for the same bounds for all parameters.
+- \code{HC = list(parlower = named_numeric_vector, parupper = named_numeric_vector)} for specific bounds for each parameter.
+Defaults to \code{list(parlower = -5, parupper = 3)}.}
 
 \item{nsamples}{The number of random samples to generate (default is 10).}
 
@@ -31,16 +31,18 @@ Defaults to `list(parlower = -5, parupper = 3)`.}
 }
 \value{
 A list containing:
-  - `tilde_S`: The concatenated sensitivity matrix.
-  - `svd_result`: The result of the Singular Value Decomposition.
-  - `samples`: The randomly sampled parameter sets.
-  - `singular_values`: The singular values from SVD.
-  - `right_singular_vectors`: The right singular vectors from SVD.
-  - `param_names`: Names of parameters included in the analysis.
+\itemize{
+\item \code{tilde_S}: The concatenated sensitivity matrix.
+\item \code{svd_result}: The result of the Singular Value Decomposition.
+\item \code{samples}: The randomly sampled parameter sets.
+\item \code{singular_values}: The singular values from SVD.
+\item \code{right_singular_vectors}: The right singular vectors from SVD.
+\item \code{param_names}: Names of parameters included in the analysis.
+}
 }
 \description{
 This function performs a Singular Value Decomposition (SVD) based identifiability analysis
-using Sobol sampling to explore parameter sets for a given prediction function (usually 'g*x*p').
+using Sobol sampling to explore parameter sets for a given prediction function (usually 'g\emph{x}p').
 It calculates the sensitivity matrix for each set of parameters, performs SVD,
 and returns the numerical results.
 }

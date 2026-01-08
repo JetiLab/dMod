@@ -7,33 +7,44 @@
 plotResiduals(parframe, x, data, split = "condition", errmodel = NULL, ...)
 }
 \arguments{
-\item{parframe}{Object of class \code{parframe}, e.g. returned by \link{mstrust}}
+\item{parframe}{Object of class \code{parframe}, e.g. returned by \link{mstrust}.}
 
-\item{x}{Prediction function returning named list of data.frames with names as \code{data}.}
+\item{x}{Prediction function returning named list of data.frames with names
+matching \code{data}.}
 
-\item{data}{Named list of data.frames, i.e. with columns \code{name}, \code{time}, 
-\code{value} and \code{sigma}.}
+\item{data}{A \code{datalist} object, i.e. named list of data.frames with
+columns \code{name}, \code{time}, \code{value}, and \code{sigma}.}
 
-\item{split}{List of characters specifying how to summarise the residuals by \code{sqrt(res_i^2)}, 
-\code{split[1]} used for x-axis, \code{split[2]} for grouping (color), and any additional for \code{facet_wrap()}}
+\item{split}{Character vector specifying how to summarize and display residuals.
+\itemize{
+\item \code{split[1]}: Variable for x-axis
+\item \code{split[2]}: Variable for grouping (color/line), defaults to \code{split[1]}
+\item \code{split[3+]}: Additional variables for \code{facet_wrap()}
+}}
 
-\item{errmodel}{object of type prdfn, the error model function.}
+\item{errmodel}{Optional error model function of type \code{prdfn}. If provided,
+residuals include the log-likelihood contribution from sigma.}
 
-\item{...}{Additional arguments for x}
+\item{...}{Additional arguments passed to the prediction function \code{x}.}
 }
 \value{
-A plot object of class \code{ggplot} with data.frame as attribute \code{attr(P,"out")}.
+A \code{ggplot} object with the summarized residual data frame
+attached as attribute \code{"out"}.
 }
 \description{
-Plot residuals for a fitlist
+Creates a plot of residuals from model fits, with flexible options for
+grouping and faceting. Residuals can be summarized across different
+dimensions (time, condition, observable, fit index).
 }
 \examples{
 \dontrun{
- # time axis:
- plotResiduals(myfitlist, g*x*p, data, 
-    c("time","index","condition","name"), 
-    conditions = myconditions[1:4])
- # condition axis (residuals summed over time for each observable and condition):
- plotResiduals(myfitlist, g*x*p, data,  c("condition","name","index"))
+# Time on x-axis, faceted by condition and name
+plotResiduals(myfitlist, g * x * p, data, 
+              c("time", "index", "condition", "name"), 
+              conditions = myconditions[1:4])
+
+# Condition on x-axis, residuals summed over time
+plotResiduals(myfitlist, g * x * p, data, c("condition", "name", "index"))
 }
+
 }

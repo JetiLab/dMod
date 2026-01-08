@@ -7,7 +7,8 @@
 \alias{getDerivs.prdlist}
 \alias{getDerivs.list}
 \alias{getDerivs.objlist}
-\title{Extract the derivatives of an object}
+\alias{getDerivs2.objlist}
+\title{Extract the first derivatives of an object}
 \usage{
 getDerivs(x, ...)
 
@@ -20,20 +21,43 @@ getDerivs(x, ...)
 \method{getDerivs}{list}(x, ...)
 
 \method{getDerivs}{objlist}(x, ...)
+
+\method{getDerivs2}{objlist}(x, ...)
 }
 \arguments{
-\item{x}{object from which the derivatives should be extracted}
+\item{x}{Object from which the first derivatives should be extracted.
+Supported classes are \code{parvec}, \code{prdframe}, \code{prdlist}, and \code{list}.}
 
-\item{...}{additional arguments (not used right now)}
+\item{...}{Additional arguments passed to specific methods (currently unused).}
 }
 \value{
-The derivatives in a format that depends on the class of \code{x}.
-This is
-\code{parvec -> matrix},
-\code{prdframe -> prdframe},
-\code{prdlist -> prdlist},
-\code{objlist -> named numeric}.
+The structure of the returned object depends on the class of \code{x}:
+\itemize{
+\item \code{parvec} – a matrix containing first-order parameter derivatives.
+\item \code{prdframe} – a \code{prdframe} containing time and first-order sensitivities
+of each model variable with respect to all parameters.
+\item \code{prdlist} – a \code{prdlist} whose elements are first-derivative \code{prdframe}s.
+\item \code{list} – a list of derivative objects, depending on the elements.
+\item \code{objlist} – directly returns the stored gradient (named numeric vector).
+}
 }
 \description{
-Extract the derivatives of an object
+Generic function to extract first-order derivatives
+from various model-related objects such as \code{parvec}, \code{prdframe}, or lists thereof.
+}
+\details{
+The output format depends on the class of the input object.
+}
+\examples{
+\dontrun{
+# Extract sensitivities from a model prediction frame:
+d1 <- getDerivs(myprdframe)
+
+# Extract parameter derivatives from a parameter vector:
+getDerivs(myparvec)
+}
+
+}
+\seealso{
+\link{getDerivs2} for second-order derivatives.
 }

@@ -60,11 +60,11 @@ can be used to interact with previously submitted jobs.}
 \item{purge_local}{Logical; if \code{TRUE}, the \code{purge()} function also
 deletes local result files.}
 
-\item{compile}{Logical; if \code{TRUE}, all C/C++ source files (\code{*.c}, \code{*.cpp})
+\item{compile}{Logical; if \code{TRUE}, all C/C++ source files (\verb{*.c}, \verb{*.cpp})
 are transferred to the cluster and fully recompiled into shared objects (\code{.so}).
 If set to \code{TRUE}, this overrides \code{link = TRUE}.}
 
-\item{link}{Logical; if \code{TRUE}, only existing object files (\code{*.o}) are
+\item{link}{Logical; if \code{TRUE}, only existing object files (\verb{*.o}) are
 transferred to the cluster and linked into shared objects (\code{.so}),
 skipping compilation. If no \code{.o} files are found, an error is raised.
 This option is ignored if \code{compile = TRUE}.}
@@ -78,15 +78,15 @@ If \code{NULL}, all operations occur in the current working directory.}
 from the transferred workspace to ensure each node has independent random seeds.}
 
 \item{returnAll}{Logical; if \code{TRUE} (default), retrieves all remote files.
-If \code{FALSE}, only result files (\code{*result.RData}) are fetched.}
+If \code{FALSE}, only result files (\verb{*result.RData}) are fetched.}
 }
 \value{
 A list containing three functions:
 \itemize{
-  \item \code{check()} – Checks whether all remote results are complete.
-  \item \code{get()} – Downloads results and loads them into
-        \code{cluster_result} in the local workspace.
-  \item \code{purge()} – Deletes temporary remote files; optionally removes local ones.
+\item \code{check()} – Checks whether all remote results are complete.
+\item \code{get()} – Downloads results and loads them into
+\code{cluster_result} in the local workspace.
+\item \code{purge()} – Deletes temporary remote files; optionally removes local ones.
 }
 }
 \description{
@@ -97,7 +97,7 @@ The function handles workspace export, job submission, and result retrieval.
 \details{
 \code{distributed_computing()} generates R and bash scripts designed to run
 on an HPC system managed by SLURM. The current R workspace together with the
-scripts are exported and transferred to the remote system via SSH.  
+scripts are exported and transferred to the remote system via SSH.
 If ssh-key authentication is not possible, the SSH password can be provided and
 is used by \code{sshpass} (which must be installed locally).
 

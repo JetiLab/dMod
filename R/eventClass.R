@@ -3,7 +3,7 @@
 #' An eventlist is a data.frame with the necessary parameters to define an event as columns and specific events as rows.
 #' Event time and value can be passed as parameters, which can also be estimated.
 #' 
-#' The function \code{addEvent} is pipe-friendly
+#' The function `addEvent` is pipe-friendly
 #'  
 #' @param var Character, the state to which the event is applied
 #' @param time Character or Numeric, the time at which the event happens
@@ -86,7 +86,7 @@ as.eventlist.data.frame <- function(x, ...) {
 }
 
 #' @rdname eventlist
-#' @param event object of class \code{eventlist}
+#' @param event object of class `eventlist`
 #' @param ... not used
 #' @export
 addEvent <- function(event, var, time = 0, value = 0, root = NA, method = "replace", ...) {

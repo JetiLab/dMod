@@ -5,10 +5,10 @@
 #' Coerce to an equation list
 #' @description Translates a reaction network, e.g. defined by a data.frame, into an equation list object.
 #' @param ... additional arguments to be passed to or from methods.
-#' @details If \code{data} is a \code{data.frame}, it must contain columns "Description" (character), 
+#' @details If `data` is a `data.frame`, it must contain columns "Description" (character), 
 #' "Rate" (character), and one column per ODE state with the state names. 
 #' The state columns correspond to the stoichiometric matrix.
-#' @return Object of class \link{eqnlist}
+#' @return Object of class [eqnlist]
 #' @rdname eqnlist
 #' @export
 as.eqnlist <- function(data, volumes) {
@@ -32,7 +32,7 @@ as.eqnlist.data.frame <- function(data, volumes = NULL) {
 
 #' @export
 #' @rdname eqnlist
-#' @param x object of class \code{eqnlist}
+#' @param x object of class `eqnlist`
 is.eqnlist <- function(x) {
   
   #Empty list
@@ -105,8 +105,8 @@ conservedQuantities <- function(S) {
 
 #' Generate a table of reactions (data.frame) from an equation list
 #' 
-#' @param eqnlist object of class \link{eqnlist}
-#' @return \code{data.frame} with educts, products, rate and description. The first
+#' @param eqnlist object of class [eqnlist]
+#' @return `data.frame` with educts, products, rate and description. The first
 #' column is a check if the reactions comply with reaction kinetics.
 #' 
 #' @example inst/examples/equations.R
@@ -169,13 +169,13 @@ getReactions <- function(eqnlist) {
 
 #' Add reaction to reaction table
 #' 
-#' @param eqnlist equation list, see \link{eqnlist}
+#' @param eqnlist equation list, see [eqnlist]
 #' @param from character with the left hand side of the reaction, e.g. "2*A + B"
 #' @param to character with the right hand side of the reaction, e.g. "C + 2*D"
 #' @param rate character. The rate associated with the reaction. The name is employed as a description
 #' of the reaction.
-#' @param description Optional description instead of \code{names(rate)}.
-#' @return An object of class \link{eqnlist}.
+#' @param description Optional description instead of `names(rate)`.
+#' @return An object of class [eqnlist].
 #' @examples 
 #' f <- eqnlist()
 #' f <- addReaction(f, "2*A+B", "C + 2*D", "k1*B*A^2")
@@ -238,7 +238,7 @@ addReaction <- function(eqnlist, from, to, rate, description = names(rate)) {
 
 #' Generate list of fluxes from equation list
 #' 
-#' @param eqnlist object of class \link{eqnlist}.
+#' @param eqnlist object of class [eqnlist].
 #' @param type "conc." or "amount" for fluxes in units of concentrations or
 #' number of molecules. 
 #' @return list of named characters, the in- and out-fluxes for each state.
@@ -320,10 +320,10 @@ getFluxes <- function(eqnlist, type = c("conc", "amount")) {
 #' Time derivatives of observation functions are expressed in terms of the
 #' rates of the internal states.
 #' 
-#' @param observable named character vector or object of type \link{eqnvec}
+#' @param observable named character vector or object of type [eqnvec]
 #' @param eqnlist equation list
 #' @details Observables are translated into an ODE
-#' @return An object of class \link{eqnvec}
+#' @return An object of class [eqnvec]
 #' @example inst/examples/equations.R
 #' @export
 dot <- function(observable, eqnlist) {
@@ -372,9 +372,9 @@ dot <- function(observable, eqnlist) {
 
 #' Coerce equation list into a data frame
 #' 
-#' @param x object of class \link{eqnlist}
+#' @param x object of class [eqnlist]
 #' @param ... other arguments
-#' @return a \code{data.frame} with columns "Description" (character), 
+#' @return a `data.frame` with columns "Description" (character), 
 #' "Rate" (character), and one column per ODE state with the state names. 
 #' The state columns correspond to the stoichiometric matrix.
 #' @export
@@ -396,8 +396,8 @@ as.data.frame.eqnlist <- function(x, ...) {
 
 #' Write equation list into a csv file
 #' 
-#' @param eqnlist object of class \link{eqnlist}
-#' @param ... Arguments going to \link[utils]{write.table}
+#' @param eqnlist object of class [eqnlist]
+#' @param ... Arguments going to [write.table][utils::write.table]
 #' 
 #' @export
 #' @importFrom utils file.edit getParseData install.packages installed.packages read.csv str tail write.csv
@@ -420,10 +420,10 @@ write.eqnlist <- function(eqnlist, ...) {
 #' 
 #' @param x the equation list
 #' @param ... logical expression for subsetting
-#' @details The argument \code{...} can contain "Educt", "Product", "Rate" and "Description".
+#' @details The argument `...` can contain "Educt", "Product", "Rate" and "Description".
 #' The "%in%" operator is modified to allow searches in Educt and Product (see examples).
 #' 
-#' @return An object of class \link{eqnlist}
+#' @return An object of class [eqnlist]
 #' @examples
 #' reactions <- data.frame(Description = c("Activation", "Deactivation"), 
 #'                         Rate = c("act*A", "deact*pA"), A=c(-1,1), pA=c(1, -1) )
@@ -476,7 +476,7 @@ subset.eqnlist <- function(x, ...) {
 
 #' Print or pander equation list
 #' 
-#' @param x object of class \link{eqnlist}
+#' @param x object of class [eqnlist]
 #' @param pander logical, use pander for output (used with R markdown)
 #' @param ... additional arguments
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
@@ -515,11 +515,11 @@ print.eqnlist <- function(x, pander = FALSE, ...) {
 
 #' Coerce to an equation vector
 #' 
-#' @param x object of class \code{character} or \code{eqnlist}
+#' @param x object of class `character` or `eqnlist`
 #' @param ... arguments going to the corresponding methods
-#' @details If \code{x} is of class \code{eqnlist}, \link{getFluxes} is called and coerced
+#' @details If `x` is of class `eqnlist`, [getFluxes] is called and coerced
 #' into a vector of equations.
-#' @return object of class \link{eqnvec}.
+#' @return object of class [eqnvec].
 #' @export
 as.eqnvec <- function(x, ...) {
   UseMethod("as.eqnvec", x)
@@ -605,7 +605,7 @@ is.eqnvec <- function(x) {
 
 #' Encode equation vector in format with sufficient spaces
 #' 
-#' @param x object of class \link{eqnvec}. Alternatively, a named parsable character vector.
+#' @param x object of class [eqnvec]. Alternatively, a named parsable character vector.
 #' @param ... additional arguments
 #' @return named character
 #' @export format.eqnvec
@@ -632,7 +632,7 @@ format.eqnvec <- function(x, ...) {
 
 #' Print equation vector
 #' 
-#' @param x object of class \link{eqnvec}.
+#' @param x object of class [eqnvec].
 #' @param width numeric, width of the print-out
 #' @param pander logical, use pander for output (used with R markdown)
 #' @param ... not used right now
@@ -703,7 +703,7 @@ print.eqnvec <- function(x, width = 140, pander = FALSE, ...) {
 
 #' Summary of an equation vector
 #' 
-#' @param object of class \link{eqnvec}.
+#' @param object of class [eqnvec].
 #' @param ... additional arguments
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
 #' 
@@ -740,257 +740,10 @@ c.eqnvec <- function(...) {
 }
 
 
-#' Evaluation of algebraic expressions defined by characters
-#' 
-#' @param x Object of class \code{eqnvec} or a
-#' named character vector with the algebraic expressions
-#' @param variables character vector, the symbols that should be treated as variables
-#' @param parameters character vector, the symbols that should be treated as parameters
-#' @param compile Logical. Directly compile the file. If \code{FALSE} and modelname is available,
-#' the C file is written but not compiled. In this case, \link{compile} has to be called separately
-#' to compile one or more .c-files into one .so-file. 
-#' If modelname is not available, an R function is generated and returned.
-#' @param modelname file name of the generated C file. See description of parameter \code{compile}.
-#' @param verbose Print compiler output to R command line.
-#' @param convenient logical, if TRUE return a function with argument \code{...} to pass
-#' all variables/parameters as named arguments
-#' @param warnings logical. Suppress warnings about missing variables/parameters that are
-#' automatically replaced by zero values.
-#' @return Either a prediction function \code{f(..., attach.input = FALSE)} where the 
-#' variables/parameters are passed as named arguments or a prediction function 
-#' \code{f(M, p, attach.input = FALSE)} where \code{M} is the matrix of variable values 
-#' (colums with colnames correspond to different variables) and \code{p} is the vector of
-#' parameter values.
-#' The argument \code{attach.input} determines whether \code{M} is attached to the output.
-#' The function \code{f} returns a matrix.
-#' @examples 
-#' library(ggplot2)
-#' myfun <- funC0(c(y = "a*x^4 + b*x^2 + c"))
-#' out <- myfun(a = -1, b = 2, c = 3, x = seq(-2, 2, .1), attach.input = TRUE)
-#' qplot(x = x, y = y, data = as.data.frame(out), geom = "line")
-#' @export
-funC0 <- function(x, variables = getSymbols(x, exclude = parameters), 
-                  parameters = NULL, compile = FALSE, modelname = NULL, 
-                  verbose = FALSE, convenient = TRUE, warnings = TRUE) {
-    
-  # Get symbols to be substituted by x[] and y[]
-  outnames <- names(x)
-  innames <- variables
-  
-  if (is.null(modelname)) outputC <- FALSE else outputC <- TRUE
-  
-  # Function to check arguments
-  checkArguments <- function(M, p) {
-   
-    if (is.null(innames) | length(innames) == 0) {
-      M <- matrix(0) 
-    } else {
-      check <- all(innames %in% colnames(M))
-      if (!check) {
-        if (warnings) warning("Found missing columns in matrix of variables -> 0")
-        missing <- setdiff(innames, colnames(M))
-        N <- matrix(0, nrow = nrow(M), ncol = length(missing), dimnames = list(NULL, missing))
-        M <- cbind(M, N)
-      }
-      M <- t(M[, innames, drop = FALSE])
-    }
-    
-    if (is.null(parameters) | length(parameters) == 0) {
-      p <- 0 
-    } else {
-      check <- all(parameters %in% names(p))
-      if (!check) {
-        if (warnings) warning("Found missing elements in vector of parameters -> 0")
-        missing <- setdiff(parameters, names(p))
-        q <- structure(rep(0, length(missing)), names = missing)
-        p <- c(p, q)
-      }
-      p <- p[parameters]
-    }
-    
-    return(list(M = M, p = p))
-    
-  }
-  
-  ## Compiled version based on inline package
-  ## Non-compiled version based on with() and eval()
-  if (outputC) {
-    
-    
-    # Do the replacement to obtain C syntax
-    x <- replaceNumbers(x)
-    x <- replaceOperation("^", "pow", x)
-    x <- replaceOperation("**", "pow", x)
-    what <- NULL
-    by <- NULL
-    if ( (!is.null(innames)) & length(innames) != 0) {
-      what <- c(what, innames)
-      by <- c(by, paste0("x[", format(seq_along(innames) - 1, trim = TRUE, scientific = FALSE), "+i**k]"))
-    }
-    if ( (!is.null(parameters)) & length(parameters) != 0) {
-      what <- c(what, parameters)
-      by <- c(by, paste0("p[", format(seq_along(parameters) - 1, trim = TRUE, scientific = FALSE), "]"))
-    }
-    x <- replaceSymbols(what, by, x)
-    names(x) <- paste0("y[", format((1:length(outnames)) - 1, trim = TRUE, scientific = FALSE), "+i**l]")
-    
-    
-    # Paste into equation
-    x <- x[x != "0"]
-    expr <- paste(names(x), "=", x, ";")
-    
-    # Put equation into C function
-    if (is.null(modelname)) {
-      funcname <- paste0("funC0_", paste(sample(c(0:9, letters), 8, replace = TRUE), collapse = ""))
-      filename <- funcname
-    } else {
-      funcname <- paste0(modelname, "_", paste(sample(c(0:9, letters), 8, replace = TRUE), collapse = ""))
-      filename <- modelname
-    }
-    body <- paste(
-      "#include <R.h>\n", 
-      "#include <math.h>\n", 
-      "void", funcname, "( double * x, double * y, double * p, int * n, int * k, int * l ) {\n",
-      "for(int i = 0; i< *n; i++) {\n",
-      paste(expr, collapse = "\n"),
-      "\n}\n}"
-    )
-    
-    # First unload possible loaded DLL before writing C file (otherwise we have problems on Windows)
-    .so <- .Platform$dynlib.ext
-    test <- try(dyn.unload(paste0(filename, .so)), silent = TRUE)
-    if (!inherits(test, "try-error")) message(paste("A shared object with name", filename, "already existed and was overwritten."))
-    
-    # Write C file
-    sink(file = paste(filename, "c", sep = "."))
-    cat(body)
-    sink()
-    
-    
-    # Compile and load if requested
-    if (compile) {
-      
-      shlibOut <- system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", paste(filename, "c", sep = ".")), intern = TRUE)
-      if (verbose) {
-        cat(shlibOut)
-      }
-      
-      dyn.load(paste0(filename, .so))
-    }
-    
-    # Generate output function for compiled version
-    myRfun <- function(M = NULL, p = NULL, attach.input = FALSE) {
-      
-      check <- checkArguments(M, p)
-      M <- check$M
-      p <- as.double(check$p)
-      x <- as.double(as.vector(M))
-
-      # Get integers for the array sizes
-      n <- as.integer(ncol(M))
-      k <- as.integer(length(innames))
-      if (length(k) == 0) k <- as.integer(0)
-      l <- as.integer(length(outnames))
-      
-      # Initialize output vector
-      y <- double(l*n)
-      
-      # Evaluate C function and write into matrix
-      # loadDLL costs time. Probably, the check is not necessary because
-      # each time, funC0 is called, the C function being generated has
-      # or should have another name.
-      # loadDLL(func = funcname, cfunction = funcname)
-      out <- matrix(.C(funcname, x = x, y = y, p = p, n = n, k = k, l = l)$y, nrow = length(outnames), ncol = n)
-      rownames(out) <- outnames
-      
-      # Make sure that output does not containt NaN
-      ## out[is.nan(out)] <- 0
-      
-      if (attach.input)
-        out <- rbind(M, out)
-        
-      
-      return(t(out))    
-      
-    }
-    
-    
-    
-  } else {
-    
-    ntot <- length(x)
-    empty <- which(x == "0")
-    nonempty <- which(x != "0")
-    
-    x.new <- paste0(x[nonempty], collapse = ", ")
-    x.new <- paste0("list(", x.new, ")")
-    x.expr <- parse(text = x.new)
-  
-    # Generate output function for pure R version
-    myRfun <- function(M = NULL, p = NULL, attach.input = FALSE) {
-      
-      check <- checkArguments(M, p)
-      
-      
-      M <- check$M
-      p <- check$p
-      M.list <- lapply(1:nrow(M), function(i) M[i, ]); names(M.list) <- rownames(M)
-      p.list <- as.list(p)
-      x <- c(M.list, p.list)
-      
-      
-      # Initialize output
-      out.list <- as.list(rep(0, ntot))
-      out.list[nonempty] <- with(x, eval(x.expr))
-      ncol.M <- ncol(M)
-      mat <- matrix(0, ncol = 1, nrow = ncol(M))
-      out.list <- lapply(out.list, function(o) {mat[,1] <- o; return(mat)})
-      out.matrix <- do.call(cbind, out.list)
-      colnames(out.matrix) <- outnames
-      rownames(out.matrix) <- NULL
-      
-      if (attach.input)
-        out.matrix <- cbind(t(M), out.matrix)
-      
-      # Make sure that output does not containt NaN
-      # out.matrix[is.nan(out.matrix)] <- 0
-      
-      
-      return(out.matrix)
-      
-    }
-    
-  }
-  
-  outfn <- myRfun
-  
-  # Convenient function to be called with argument list
-  if (convenient) outfn <- function(..., attach.input = FALSE) {
-    
-    
-    arglist <- list(...)
-    if (!length(innames) == 0 & !is.null(innames)) 
-      M <- do.call(cbind, arglist[innames])
-    
-    if (!length(parameters) == 0 & !is.null(parameters))
-      p <- do.call(c, arglist[parameters])
-    
-    myRfun(M, p, attach.input)
-    
-  }
-  
-  attr(outfn, "equations") <- x
-  
-  
-  return(outfn)
-  
-}
-
-
 
 #' Identify linear variables in an equation vector using sympy
 #'
-#' @param eqnvec An object of class \code{eqnvec}, representing a set of equations.
+#' @param eqnvec An object of class `eqnvec`, representing a set of equations.
 #' @details This function calls Python's `sympy` library via `reticulate` to symbolically analyze equations and determine if variables appear linearly in all equations.
 #'
 #' @return A character vector of variables that occur linearly in all equations.
@@ -1034,15 +787,15 @@ getLinVars <- function(eqnvec) {
 
 #' Log-transform variables in an equation vector using SymPy
 #'
-#' @param eqnvec An object of class \code{eqnvec}, representing a set of equations.
+#' @param eqnvec An object of class `eqnvec`, representing a set of equations.
 #' @param whichVar A character vector specifying the variables to be log-transformed.
 #' @details The function applies a logarithmic transformation to the specified variables in the equation vector.
-#' For a variable \code{var}, the transformation is \code{log(var)} and the derivative \code{d/dt log(var)} is replaced by 
-#' \code{(1/exp(log(var))) * d/dt var}, substituting \code{var} with \code{exp(log(var))} in the original equation.
-#' The original variable equations are replaced or removed, and the transformed equations are added with updated names prefixed by \code{log_}.
+#' For a variable `var`, the transformation is `log(var)` and the derivative `d/dt log(var)` is replaced by 
+#' `(1/exp(log(var))) * d/dt var`, substituting `var` with `exp(log(var))` in the original equation.
+#' The original variable equations are replaced or removed, and the transformed equations are added with updated names prefixed by `log_`.
 #' The equations are simplified using SymPy to ensure mathematical correctness and compactness.
 #'
-#' @return An updated \code{eqnvec} object with transformed equations.
+#' @return An updated `eqnvec` object with transformed equations.
 #'
 #' @examples
 #' eqnvec <- as.eqnvec(

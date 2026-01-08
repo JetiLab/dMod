@@ -18,7 +18,7 @@ plotValues(x, ...)
 \item{tol}{maximal allowed difference between neighboring objective values
 to be recognized as one.}
 
-\item{x}{data.frame with columns "value", "converged" and "iterations", e.g. 
+\item{x}{data.frame with columns "value", "converged" and "iterations", e.g.
 a \link{parframe}.}
 }
 \description{

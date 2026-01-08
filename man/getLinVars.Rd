@@ -16,7 +16,7 @@ A character vector of variables that occur linearly in all equations.
 Identify linear variables in an equation vector using sympy
 }
 \details{
-This function calls Python's `sympy` library via `reticulate` to symbolically analyze equations and determine if variables appear linearly in all equations.
+This function calls Python's \code{sympy} library via \code{reticulate} to symbolically analyze equations and determine if variables appear linearly in all equations.
 }
 \examples{
 eqnvec <- as.eqnvec(

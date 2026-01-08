@@ -16,7 +16,7 @@ prediction value.}
 
 \item{sigma}{numeric, the uncertainty of the introduced test data point}
 
-\item{attr.name}{character. The constraint value is additionally returned in an 
+\item{attr.name}{character. The constraint value is additionally returned in an
 attributed with this name}
 
 \item{condition}{character, the condition for which the prediction is made.}
@@ -28,13 +28,13 @@ List of class \code{objlist}, i.e. objective value, gradient and Hessian as list
 L2 objective function for validation data point
 }
 \details{
-Computes the constraint value 
+Computes the constraint value
 \deqn{\left(\frac{x(t)-\mu}{\sigma}\right)^2}{(pred-p[names(mu)])^2/sigma^2}
 and its derivatives with respect to p.
 }
 \examples{
 prediction <- list(a = matrix(c(0, 1), nrow = 1, dimnames = list(NULL, c("time", "A"))))
-derivs <- matrix(c(0, 1, 0.1), nrow = 1, dimnames = list(NULL, c("time", "A.A", "A.k1")))
+derivs <- array(c(1, 0.1), dim = c(1, 1, 2), dimnames = list(NULL, "A", c("A", "k1")))
 attr(prediction$a, "deriv") <- derivs
 p0 <- c(A = 1, k1 = 2)
 

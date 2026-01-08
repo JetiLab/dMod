@@ -15,7 +15,7 @@ can contain a number of symbols whose values need to be passed by the \code{...}
 
 \item{...}{pass symbols as named arguments}
 
-\item{reset}{logical. If true, the trafo element corresponding to lhs is reset according to rhs. 
+\item{reset}{logical. If true, the trafo element corresponding to lhs is reset according to rhs.
 If false, lhs wherever it occurs in the rhs of trafo is replaced by rhs of the formula.}
 }
 \value{
@@ -26,7 +26,7 @@ Reparameterization
 }
 \details{
 Left and right-hand side of \code{expr} are searched for symbols. If separated by
-"_", symbols are recognized as such, e.g. in \code{Delta_x} where the symbols are 
+"_", symbols are recognized as such, e.g. in \code{Delta_x} where the symbols are
 "Delta" and "x". Each symbol for which values (character or numbers) are passed by the
 \code{...} argument is replaced.
 }

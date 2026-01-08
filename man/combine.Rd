@@ -17,7 +17,7 @@ Combine several data.frames by rowbind
 }
 \details{
 This function is useful when separating models into independent csv model files,
-e.g.~a receptor model and several downstream pathways. Then, the models can be recombined 
+e.g.~a receptor model and several downstream pathways. Then, the models can be recombined
 into one model by \code{combine()}.
 }
 \examples{

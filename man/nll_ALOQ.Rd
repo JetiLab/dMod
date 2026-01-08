@@ -8,6 +8,8 @@ nll_ALOQ(
   nout,
   derivs,
   derivs.err,
+  deriv2 = NULL,
+  deriv2.err = NULL,
   opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
   opt.hessian = c(ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE),
   bessel.correction = 1
@@ -16,7 +18,9 @@ nll_ALOQ(
 \arguments{
 \item{nout}{output of \code{\link[=res]{res()}}}
 
-\item{derivs, derivs.err}{attributes of output of \code{\link[=res]{res()}}}
+\item{derivs, derivs.err}{matrix of first derivatives}
+
+\item{deriv2, deriv2.err}{array of second derivatives}
 
 \item{opt.BLOQ}{Character denoting the method to deal with BLOQ data}
 
@@ -24,20 +28,8 @@ nll_ALOQ(
 various non-convex summands of the hessian matrix}
 
 \item{bessel.correction}{Numeric. Bessel correction factor applied to the
-weighted residuals. Default is 1 (no correction). When use.bessel = TRUE
-in normL2(), this is already sqrt(n/(n-p)) where n is total data points
-and p is number of structural (non-errormodel) parameters.}
+weighted residuals. Default is 1 (no correction).}
 }
 \description{
 Non-linear log likelihood for the ALOQ part of the data
-}
-\details{
-The Bessel correction addresses downward bias in ML estimation of variance.
-The correction is applied by multiplying weighted residuals with bessel.correction:
-wr_corrected = wr * bessel.correction. This changes both the objective value
-AND the gradient/Hessian, leading to corrected parameter estimates during optimization.
-
-The returned objective value includes the Bessel correction and is used for optimization.
-The TRUE maximum likelihood value (without correction) is stored in attr(*, "neg2ll")
-for use in BIC/AIC calculations.
 }

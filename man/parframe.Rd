@@ -48,8 +48,8 @@ columns (e.g. index, value, constraint, etc.), (2) the attributes of an objectiv
 (e.g. data contribution and prior contribution) and (3) the parameters.
 }
 \details{
-Parameter frames can be subsetted either by \code{[ , ]} or by \code{subset}. If
-\code{[ , index]} is used, the names of the removed columns will also be removed from
+Parameter frames can be subsetted either by \verb{[ , ]} or by \code{subset}. If
+\verb{[ , index]} is used, the names of the removed columns will also be removed from
 the corresponding attributes, i.e. metanames, obj.attributes and parameters.
 }
 \examples{

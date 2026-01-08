@@ -8,6 +8,8 @@ nll_BLOQ(
   nout.bloq,
   derivs.bloq,
   derivs.err.bloq,
+  deriv2.bloq = NULL,
+  deriv2.err.bloq = NULL,
   opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
   opt.hessian = c(BLOQ_part1 = TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE)
 )
@@ -15,7 +17,9 @@ nll_BLOQ(
 \arguments{
 \item{nout.bloq}{The bloq output of \code{\link[=res]{res()}}}
 
-\item{derivs.bloq, derivs.err.bloq}{attributes of output of \code{\link[=res]{res()}}}
+\item{derivs.bloq, derivs.err.bloq}{matrix of first derivatives}
+
+\item{deriv2.bloq, deriv2.err.bloq}{array of second derivatives}
 
 \item{opt.BLOQ}{Character denoting the method to deal with BLOQ data}
 

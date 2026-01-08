@@ -11,7 +11,7 @@ norm <- function(x) sqrt(crossprod(x))
 #' function to be minimized or maximized and returns them as a list with 
 #' components value, gradient, and hessian. Its first argument should be a 
 #' vector of the length of parinit followed by any other arguments specified 
-#' by the \code{...} argument.
+#' by the `...` argument.
 #' 
 #' @param parinit starting parameter values for the optimization. Must be 
 #' feasible (in the domain).
@@ -100,8 +100,8 @@ norm <- function(x) sqrt(crossprod(x))
 #' @export
 #' @importFrom stats uniroot
 trust <- function(objfun, parinit, rinit, rmax, parscale, iterlim = 100, 
-                  fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps), 
-                  minimize = TRUE, blather = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, traceFile = NULL, ...) 
+                  fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, 
+                  parupper = Inf, parlower = -Inf, printIter = FALSE, traceFile = NULL, ...) 
 {
   
   

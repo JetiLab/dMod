@@ -2,22 +2,30 @@
 % Please edit documentation in R/tools.R
 \name{compile}
 \alias{compile}
-\title{Compile one or more prdfn, obsfn or parfn objects}
+\title{Compile one or more model-related functions}
 \usage{
 compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
-\item{...}{Objects of class parfn, obsfn or prdfn}
+\item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.
+The corresponding C/C++ source files are automatically detected.}
 
-\item{output}{Optional character of the file to be produced. If several objects were
-passed, the different C files are all compiled into one shared object file.}
+\item{output}{Optional base name for the combined shared object.}
 
-\item{args}{Additional arguments for the R CMD SHLIB call, e.g. \code{-leinspline}.}
+\item{args}{Optional compiler or linker arguments (e.g. \code{"-lm"}).}
 
-\item{cores}{Number of cores used for compilation when several files are compiled.}
+\item{cores}{Number of parallel compilation jobs (ignored on Windows).}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{verbose}{Logical; if \code{TRUE}, show compiler output.}
+}
+\value{
+Invisibly returns \code{TRUE} if compilation succeeds.
 }
 \description{
-Compile one or more prdfn, obsfn or parfn objects
+Compiles one or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn} into
+shared libraries (\code{.so} or \code{.dll}).
+}
+\details{
+Boost headers are provided via the BH package (declared in
+\code{LinkingTo: BH}) and no system-installed Boost libraries are required.
 }

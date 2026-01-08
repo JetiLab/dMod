@@ -5,92 +5,209 @@
 \title{Parameter transformation (implicit)}
 \usage{
 Pimpl(
-  trafo,
+  x,
   parameters = NULL,
-  condition = NULL,
+  deriv = TRUE,
+  deriv2 = FALSE,
+  fixed = NULL,
   keep.root = TRUE,
   positive = TRUE,
+  parlower = NULL,
+  parupper = NULL,
+  nstart = 10L,
+  optionsSolver = list(),
+  attach.input = FALSE,
+  condition = NULL,
   compile = FALSE,
   modelname = NULL,
   verbose = FALSE
 )
 }
 \arguments{
-\item{trafo}{Named character vector defining the equations to be set to zero. 
-Names correspond to dependent variables.}
+\item{x}{An \code{eqnvec} defining
+\eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0},
+or an \code{eqnlist} specifying an ODE model in stoichiometric form.}
 
-\item{parameters}{Character vector, the independent variables.}
+\item{parameters}{Character vector of outer parameter names
+\eqn{p_{\text{dyn}}}. If omitted, inferred automatically.}
 
-\item{condition}{character, the condition for which the transformation is generated}
+\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian via
+the implicit function theorem.}
 
-\item{keep.root}{logical, applies for \code{method = "implicit"}. The root of the last
-evaluation of the parameter transformation function is saved as guess for the next 
-evaluation.}
+\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian.
+Implies \code{deriv = TRUE}.}
 
-\item{positive}{logical, returns projection to the (semi)positive range. Comes with a warning if
-the steady state has been found to be negative.}
+\item{fixed}{Character vector of parameter names treated as fixed
+(excluded from symbolic differentiation at compile time).}
 
-\item{compile}{Logical, compile the function (see \link{funC0})}
+\item{keep.root}{Logical. Reuse the previous root as starting guess
+to accelerate convergence.}
 
-\item{modelname}{Character, used if \code{compile = TRUE}, sets a fixed filename for the
-C file.}
+\item{positive}{Logical or named logical vector. If \code{TRUE}, solve in log-space
+(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to ensure positive steady states
+for all dependent states. If a named logical vector, only the states with
+\code{TRUE} values are constrained to be positive. Names must match dependent
+state names. States not mentioned default to \code{FALSE} (unconstrained).}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{parlower}{Named numeric vector of lower bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bounds
+(1e-6 for positive states, -1e6 otherwise).}
+
+\item{parupper}{Named numeric vector of upper bounds for dependent states.
+Used for multistart initialization on cold starts. Names must match
+dependent state names. States not mentioned use default bound of 1e6.}
+
+\item{nstart}{Integer. Number of random starting points for multistart
+root finding (default 10). Only used on cold starts when \code{parlower}
+and \code{parupper} are provided.}
+
+\item{optionsSolver}{List of options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}.
+Merged with internal defaults via \code{\link[=modifyList]{modifyList()}}. Recognized entries include:
+\itemize{
+\item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})
+\item \code{global}: globalization strategy, one of \code{"dbldog"} (double dogleg, default),
+\code{"pwldog"} (Powell dogleg), \code{"qline"} (quadratic line search),
+\code{"gline"} (geometric line search), \code{"none"} (pure local method)
+\item \code{control}: list with \code{ftol} (function tolerance, default \code{1e-10}),
+\code{xtol} (step tolerance, default \code{1e-10}), \code{maxit} (max iterations, default \code{200})
+\item Top-level \code{ftol}, \code{xtol}, \code{maxit} are also accepted for convenience.
+}}
+
+\item{attach.input}{Logical. Include unchanged input parameters in the output.}
+
+\item{condition}{Character. Condition label for which the transformation is generated.}
+
+\item{compile}{Logical. Compile generated residual functions via \link[CppODE:funCpp]{CppODE::funCpp}.}
+
+\item{modelname}{Character. Base name for compiled code if \code{compile = TRUE}.}
+
+\item{verbose}{Logical. If TRUE, print diagnostic and convergence information.}
 }
 \value{
-a function \code{p2p(p, fixed = NULL, deriv = TRUE)} representing the parameter 
-transformation. Here, \code{p} is a named numeric vector with the values of the outer parameters,
-\code{fixed} is a named numeric vector with values of the outer parameters being considered
-as fixed (no derivatives returned) and \code{deriv} is a logical determining whether the Jacobian
-of the parameter transformation is returned as attribute "deriv".
+A function
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
+where \code{fixed} is a named numeric vector of parameters to fix at runtime
+(excluded from derivatives but used for evaluation).
+Returns the steady-state parameter vector with attached attributes
+\code{"deriv"} (Jacobian) and \code{"deriv2"} (Hessian, if requested).
 }
 \description{
-Parameter transformation (implicit)
+#' Constructs an \strong{implicit parameter transformation} that defines a subset of
+inner parameters \eqn{p_{\text{ini}}} as steady-state solutions of a nonlinear,
+\strong{autonomous} system
+
+\deqn{f(p_{\text{ini}}, p_{\text{dyn}}) = 0,}
+
+where \eqn{f} typically represents the right-hand side (RHS) of an ODE model
+\eqn{\dot{x} = f(x, p)}. The system must be \emph{autonomous}, i.e. it should not \strong{explicitly}
+depend on time. Time-dependent (non-autonomous) systems have no stationary solutions and
+are therefore incompatible with \code{Pimpl()}.
+
+The remaining parameters \eqn{p_{\text{dyn}}} are passed through unchanged,
+yielding an overall \strong{partially implicit mapping}
+
+\deqn{p_{\text{dyn}} \mapsto (p_{\text{ini}}, p_{\text{dyn}}).}
+
+The steady-state is obtained numerically using \link[nleqslv:nleqslv]{nleqslv::nleqslv} with
+analytical Jacobians derived via symbolic differentiation.
+If \code{positive = TRUE}, the system is solved in log-space,
+\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}, to ensure positivity of steady states.
+\subsection{Derivatives}{
+
+Sensitivities of the implicit mapping are derived analytically via the
+\strong{implicit function theorem} applied to \eqn{f(p_{\text{ini}}, p_{\text{dyn}})=0}.
+
+\strong{First-order derivative (Jacobian)}
+
+The Jacobian of the mapping \eqn{p_{\text{ini},i}(p_{\text{dyn}})} satisfies
+
+\deqn{
+\dfrac{\partial f_i}{\partial p_{\text{ini},k}}
+\dfrac{\partial p_{\text{ini},k}}{\partial p_{\text{dyn},j}}
++
+\dfrac{\partial f_i}{\partial p_{\text{dyn},j}}
+= 0,
 }
-\details{
-Usually, the equations contain the dependent variables, the independent variables and 
-other parameters. The argument \code{p} of \code{p2p} must provide values for the independent
-variables and the parameters but ALSO FOR THE DEPENDENT VARIABLES. Those serve as initial guess
-for the dependent variables. The dependent variables are then numerically computed by 
-\link[rootSolve]{multiroot}. The Jacobian of the solution with respect to dependent variables
-and parameters is computed by the implicit function theorem. The function \code{p2p} returns
-all parameters as they are with corresponding 1-entries in the Jacobian.
+
+which implies
+
+\deqn{
+\dfrac{\partial p_{\text{ini},i}}{\partial p_{\text{dyn},j}}
+=
+-\!
+\left(\dfrac{\partial f_k}{\partial p_{\text{ini},i}}\right)^{-1}
+\dfrac{\partial f_k}{\partial p_{\text{dyn},j}}.
 }
-\examples{
-########################################################################
-## Example 1: Steady-state trafo
-########################################################################
-f <- c(A = "-k1*A + k2*B",
-       B = "k1*A - k2*B")
-P.steadyState <- Pimpl(f, "A")
 
-p.outerValues <- c(k1 = 1, k2 = 0.1, A = 10, B = 1)
-P.steadyState(p.outerValues)
+\strong{Second-order derivative (Hessian)}
 
-########################################################################
-## Example 2: Steady-state trafo combined with log-transform
-########################################################################
-f <- c(A = "-k1*A + k2*B",
-       B = "k1*A - k2*B")
-P.steadyState <- Pimpl(f, "A")
+A second differentiation with respect to \eqn{p_{\text{dyn},k}} yields
 
-logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", A = "exp(logA)", B = "exp(logB)")
-P.log <- P(logtrafo)
+\deqn{
+\dfrac{\partial^2 p_{\text{ini},i}}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+=
+-\!
+\left(\dfrac{\partial f_l}{\partial p_{\text{ini},i}}\right)^{-1}
+\!\!
+\left[
+  \dfrac{\partial^2 f_l}{\partial p_{\text{ini},m}\,\partial p_{\text{ini},n}}
+    \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},j}}
+    \dfrac{\partial p_{\text{ini},n}}{\partial p_{\text{dyn},k}}
+  +
+  \dfrac{\partial^2 f_l}{\partial p_{\text{ini},m}\,\partial p_{\text{dyn},k}}
+    \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},j}}
+  +
+  \dfrac{\partial^2 f_l}{\partial p_{\text{dyn},j}\,\partial p_{\text{ini},m}}
+    \dfrac{\partial p_{\text{ini},m}}{\partial p_{\text{dyn},k}}
+  +
+  \dfrac{\partial^2 f_l}{\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k}}
+\right]\!,
+}
 
-p.outerValue <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
-(P.log)(p.outerValue)
-(P.steadyState * P.log)(p.outerValue)
+where repeated indices imply summation (Einstein convention), and
+all quantities are evaluated at the steady state satisfying
+\eqn{f_i(p_{\text{ini}}, p_{\text{dyn}}) = 0}.
+The Hessian tensor \eqn{\partial^2 p_{\text{ini},a} / (\partial p_{\text{dyn},j}\,\partial p_{\text{dyn},k})}
+is symmetric in indices \eqn{(j,k)} for sufficiently smooth \eqn{f_i}.
+}
 
-########################################################################
-## Example 3: Steady-states with conserved quantitites
-########################################################################
-f <- c(A = "-k1*A + k2*B", B = "k1*A - k2*B")
-replacement <- c(B = "A + B - total")
-f[names(replacement)] <- replacement
+\subsection{Conservation relations}{
 
-pSS <- Pimpl(f, "total")
-pSS(c(k1 = 1, k2 = 2, A = 5, B = 5, total = 3))
+When the input \code{trafo} is an \code{eqnlist} (ODE model), any algebraic conservation
+laws in the stoichiometric matrix are automatically detected via
+\code{\link[=conservedQuantities]{conservedQuantities()}} and converted into total quantities such as
+\code{totAKT = AKT + pAKT}.
+
+Each total represents a \strong{new outer parameter} (added to \eqn{p_{\text{dyn}}})
+that defines the conserved amount of a species pool. The corresponding
+conservation relations are incorporated into the system as additional
+algebraic equations of the form
+
+\deqn{(\text{sum of species}) - \text{tot} = 0,}
+
+ensuring that the steady-state computation enforces the conservation laws
+exactly.
+
+All detected conservation relations and their associated total parameters
+are printed to the console when \code{Pimpl()} is called.
+}
+
+\subsection{Solver options}{
+
+The nonlinear system is solved with \link[nleqslv:nleqslv]{nleqslv::nleqslv} using analytical
+Jacobians. See \code{optionsSolver} parameter for customization.
+}
+
+\subsection{Composition}{
+
+The resulting mapping composes naturally with other parameter transformations
+created by \link{Pexpl} or \link{Pimpl}. Derivatives (\code{"deriv"}, \code{"deriv2"}) are automatically
+propagated when chained via \link{parfn}.
+}
 }
 \seealso{
-\link{Pexpl} for explicit parameter transformations
+\link{Pexpl} for explicit transformations,
+\link[nleqslv:nleqslv]{nleqslv::nleqslv} for numerical steady-state solving,
+\link{P} for the unified high-level interface.
 }

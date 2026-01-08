@@ -12,7 +12,7 @@ constraintL2(mu, sigma = 1, attr.name = "prior", condition = NULL)
 \item{sigma}{named numeric of length of mu or numeric of length one
 or character of length of mu or character of length one}
 
-\item{attr.name}{character. The constraint value is additionally returned in an 
+\item{attr.name}{character. The constraint value is additionally returned in an
 attributed with this name}
 
 \item{condition}{character, the condition for which the constraint should apply. If
@@ -25,9 +25,9 @@ object of class \code{objfn}
 Soft L2 constraint on parameters
 }
 \details{
-If sigma is numeric, the function computes the constraint value 
+If sigma is numeric, the function computes the constraint value
 \deqn{\left(\frac{p-\mu}{\sigma}\right)^2}{(p-mu)^2/sigma^2}
-and its derivatives with respect to p. If sigma is a character, the 
+and its derivatives with respect to p. If sigma is a character, the
 function computes
 \deqn{\left(\frac{p-\mu}{\sigma}\right)^2 + \log(\sigma^2)}{(p-mu)^2/sigma^2 + log(sigma^2)}
 and its derivatives with respect to p and sigma. Sigma parameters being

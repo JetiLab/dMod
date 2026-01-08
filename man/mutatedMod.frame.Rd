@@ -15,10 +15,12 @@ mutatedMod.frame(dMod.frame, ..., keepCalls = F)
 }
 \description{
 This is basically dplyr::mutate with two differences
-1. It groups the tibble \link{rowwise} before mutating
-2. It allows to store the calls. This is intended for use when your objects are
+\enumerate{
+\item It groups the tibble \link[dplyr:rowwise]{dplyr::rowwise} before mutating
+\item It allows to store the calls. This is intended for use when your objects are
 not standard transformations, such as \code{prd = g*x*p} but more complicated and
 you want to keep a record of what you did.
+}
 
 If the result of your ... expressions is not atomic, make sure to wrap your
 expression in \code{list()}
