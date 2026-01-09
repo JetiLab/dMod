@@ -35,9 +35,10 @@ Imports:
     abind,
     einsum,
     optimx
+Remotes:
+    simonbeyer1/CppODE@v1.0.0
 Suggests:
     MASS,
-    rPython,
     pander,
     knitr,
     rmarkdown,
