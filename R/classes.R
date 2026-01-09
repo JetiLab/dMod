@@ -1118,6 +1118,47 @@ test_conditions <- function(c1, c2) {
 #' @example inst/examples/prediction.R
 #' @export
 "*.fn" <- function(p1, p2) {
+  
+  # ============================================================
+  # Global consistency check for condition handling
+  #
+  # Rules:
+  # - A condition-unspecific function (conditions = NULL) may be
+  #   combined with any other function.
+  # - Two condition-specific functions must cover the same set
+  #   of conditions.
+  # - It is NOT allowed to combine a single-condition function
+  #   with a multi-condition function.
+  # ============================================================
+  
+  conditions.p1 <- attr(p1, "conditions")
+  conditions.p2 <- attr(p2, "conditions")
+  
+  is_unspecific <- function(x) is.null(x)
+  is_specific   <- function(x) !is.null(x) && length(x) == 1
+  is_multiple   <- function(x) !is.null(x) && length(x) > 1
+  
+  if (!is_unspecific(conditions.p1) &&
+      !is_unspecific(conditions.p2)) {
+    
+    # one specific, one multiple -> forbidden
+    if ((is_specific(conditions.p1) && is_multiple(conditions.p2)) ||
+        (is_specific(conditions.p2) && is_multiple(conditions.p1))) {
+      
+      stop(
+        "Invalid composition of functions:\n",
+        "Incompatible condition sets.\n\n",
+        "Left-hand function conditions:  ",
+        paste(conditions.p1, collapse = ", "), "\n",
+        "Right-hand function conditions: ",
+        paste(conditions.p2, collapse = ", "), "\n\n",
+        "A function defined for a single condition cannot be\n",
+        "combined with a function defined for multiple conditions.\n",
+        "Either both functions must cover all conditions,\n",
+        "or one function must be condition-unspecific."
+      )
+    }
+  }
 
   # obsfn * obsfn -> obsfn
   if (inherits(p1, "obsfn") & inherits(p2, "obsfn")) {
