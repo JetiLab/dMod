@@ -23,10 +23,11 @@ Converts a flat sensitivity matrix (as produced by deSolve-based ODE integration
 with column names of the form "variable.parameter" into a structured 3D array.
 }
 \examples{
-# Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
-mysens <- matrix(runif(40), nrow = 10)
-colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
-reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
-
+\dontrun{
+  # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
+  mysens <- matrix(runif(40), nrow = 10)
+  colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
+  reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
+}
 }
 \keyword{internal}

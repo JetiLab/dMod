@@ -88,7 +88,7 @@ The data.frame being plotted has columns \code{time}, \code{value}, \code{sigma}
 \code{name} and \code{condition}.
 }
 \examples{
-    
+\dontrun{    
     ## Observation function
     fn <- eqnvec(
       sine = "1 + sin(6.28*omega*time)",
@@ -145,7 +145,7 @@ The data.frame being plotted has columns \code{time}, \code{value}, \code{sigma}
      plot4
     plot5 <- plotCombined(prediction, data, aesthetics = list(linetype = "condition"))
      plot5
-
+}
 \dontrun{
 plotCombined(pred, mydata, time < 100, facet = "grid")
 plotCombined(pred, mydata, aesthetics = list(color = "treatment"))

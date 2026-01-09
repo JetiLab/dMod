@@ -25,6 +25,7 @@ from \code{data$value}.
 Model prediction function from data.frame
 }
 \examples{
+\dontrun{
 # Generate a data.frame and corresponding prediction function
 timesD <- seq(0, 2*pi, 0.5)
 mydata <- data.frame(name = "A", time = timesD, value = sin(timesD), 
@@ -37,4 +38,5 @@ pouter <- structure(mydata$value, names = rownames(mydata))
 prediction <- x(times, pouter)
 plot(prediction)
 
+}
 }

@@ -11,7 +11,6 @@ Description: The framework provides functions to generate ODEs of reaction
     used for optimization whenever possible. Therefore, all major functions produce
     and can handle expressions for symbolic derivatives.
 License: GPL (>= 2)
-LinkingTo: BH
 Depends:
     cOde (>= 1.1)
 Imports:
@@ -35,7 +34,9 @@ Imports:
     abind,
     einsum,
     optimx,
-    nleqslv
+    nleqslv,
+    reticulate,
+    BH
 Remotes:
     simonbeyer1/CppODE@v1.0.0
 Suggests:
@@ -44,6 +45,5 @@ Suggests:
     knitr,
     rmarkdown,
 RoxygenNote: 7.3.3
-VignetteBuilder: knitr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

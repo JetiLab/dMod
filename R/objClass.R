@@ -1262,15 +1262,8 @@ nll_BLOQ <- function(nout.bloq,
 #' the corresponding elements of out1 and out2 as they are.
 #' @return List of length of out1. 
 #' @aliases sumobjlist
-#' @export "+.objlist"
 #' @export
 #' 
-#' @examples 
-#' objlist1 <- dMod:::init_empty_objlist(c(a = 1, b = 2))
-#' objlist1$value  = 1; objlist1$gradient[1:2] <- 1; objlist1$hessian[1:4] <- 1
-#' objlist2 <- dMod:::init_empty_objlist(c(a = 1, d = 2))
-#' objlist2$value  = 1; objlist2$gradient[1:2] <- 1; objlist2$hessian[1:4] <- 1
-#' objlist1 + objlist2
 "+.objlist" <- function(out1, out2) {
   
   if (is.null(out1)) return(out2)

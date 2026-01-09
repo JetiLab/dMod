@@ -54,7 +54,7 @@ model function. Supports flexible faceting and coordinate transformations.
 The data.frame being plotted has columns \code{time}, \code{value}, \code{name} and \code{condition}.
 }
 \examples{
-    
+\dontrun{    
     ## Observation function
     fn <- eqnvec(
       sine = "1 + sin(6.28*omega*time)",
@@ -111,5 +111,5 @@ The data.frame being plotted has columns \code{time}, \code{value}, \code{name} 
      plot4
     plot5 <- plotCombined(prediction, data, aesthetics = list(linetype = "condition"))
      plot5
-
+}
 }

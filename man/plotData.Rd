@@ -71,7 +71,7 @@ plotData(mydata, time < 100)
 plotData(mydata, facet = "grid")
 }
 
-    
+\dontrun{    
     ## Observation function
     fn <- eqnvec(
       sine = "1 + sin(6.28*omega*time)",
@@ -128,5 +128,5 @@ plotData(mydata, facet = "grid")
      plot4
     plot5 <- plotCombined(prediction, data, aesthetics = list(linetype = "condition"))
      plot5
-
+}
 }

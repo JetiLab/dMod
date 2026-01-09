@@ -188,11 +188,12 @@ Xs.deSolve <- function(odemodel,
 #'   and proper `dimnames` for variables and parameters.
 #'
 #' @examples
-#' # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
-#' mysens <- matrix(runif(40), nrow = 10)
-#' colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
-#' reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
-#'
+#' \dontrun{
+#'   # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
+#'   mysens <- matrix(runif(40), nrow = 10)
+#'   colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
+#'   reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
+#' }
 #' @keywords internal
 reshapeSens <- function(sensMatrix, variables, parameters) {
   n_times <- nrow(sensMatrix)
@@ -521,6 +522,7 @@ Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optio
 #' the data frame), and possibly "pouter", a named numeric vector which is generated
 #' from `data$value`.
 #' @examples
+#' \dontrun{
 #' # Generate a data.frame and corresponding prediction function
 #' timesD <- seq(0, 2*pi, 0.5)
 #' mydata <- data.frame(name = "A", time = timesD, value = sin(timesD), 
@@ -533,6 +535,7 @@ Xf <- function(odemodel, forcings = NULL, events = NULL, condition = NULL, optio
 #' prediction <- x(times, pouter)
 #' plot(prediction)
 #' 
+#' }
 #' @export
 Xd <- function(data, condition = NULL) {
   
@@ -1030,51 +1033,53 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL, condition = NULL,
 }
 
  
-# #' Generate a prediction function that returns times
-# #' 
-# #' Function to deal with non-ODE models within the framework of dMod. See example.
-# #' 
-# #' @param condition  either NULL (generic prediction for any condition) or a character, denoting
-# #' the condition for which the function makes a prediction.
-# #' @return Object of class [prdfn].
-# #' @examples 
-# #' x <- Xt()
-# #' g <- Y(c(y = "a*time^2+b"), f = NULL, parameters = c("a", "b"))
-# #' 
-# #' times <- seq(-1, 1, by = .05)
-# #' pars <- c(a = .1, b = 1)
-# #' 
-# #' plot((g*x)(times, pars))
-# #' @export
-# Xt <- function(condition = NULL) {
-# 
-# 
-# 
-#   # Controls to be modified from outside
-#   controls <- list()
-# 
-#   P2X <- function(times, pars, deriv=TRUE){
-# 
-#     out <- matrix(times, ncol = 1, dimnames = list(NULL, "time"))
-#     sens <- deriv <- out
-# 
-#     prdframe(out, deriv = deriv, sensitivities = sens, parameters = pars)
-# 
-#   }
-# 
-#   attr(P2X, "parameters") <- NULL
-#   attr(P2X, "equations") <- NULL
-#   attr(P2X, "forcings") <- NULL
-#   attr(P2X, "events") <- NULL
-# 
-# 
-#   prdfn(P2X, NULL, condition)
-# 
-# 
-# 
-# 
-# }
-
+#' Generate a prediction function that returns times
+#'
+#' Function to deal with non-ODE models within the framework of dMod. See example.
+#'
+#' @param condition  either NULL (generic prediction for any condition) or a character, denoting
+#' the condition for which the function makes a prediction.
+#' @return Object of class [prdfn].
+#' @examples
+#' x <- Xt()
+#' g <- Y(c(y = "a*time^2+b"), f = NULL, parameters = c("a", "b"))
+#'
+#' times <- seq(-1, 1, by = .05)
+#' pars <- c(a = .1, b = 1)
+#'
+#' plot((g*x)(times, pars))
+#' @export
+Xt <- function(condition = NULL) {
+  # Controls to be modified from outside
+  controls <- list()
+  P2X <- function(times, pars, deriv = TRUE, deriv2 = FALSE, ...) {
+    n_times <- length(times)
+    n_pars <- length(pars)
+    par_names <- names(pars)
+    
+    # Output: matrix with time column
+    out <- matrix(times, ncol = 1, dimnames = list(NULL, "time"))
+    
+    # Sensitivities (deriv): 3D array [n_times, n_states, n_pars]
+    # time has no dependence on parameters, so all zeros
+    sens <- array(0, 
+                  dim = c(n_times, 1, n_pars),
+                  dimnames = list(NULL, "time", par_names))
+    
+    # Second derivatives (deriv2): 4D array [n_times, n_states, n_pars, n_pars]
+    # All zeros since time is independent of parameters
+    deriv2_arr <- array(0,
+                        dim = c(n_times, 1, n_pars, n_pars),
+                        dimnames = list(NULL, "time", par_names, par_names))
+    
+    prdframe(out, deriv = sens, deriv2 = deriv2_arr, parameters = pars)
+  }
+  attr(P2X, "parameters") <- NULL
+  attr(P2X, "equations") <- NULL
+  attr(P2X, "forcings") <- NULL
+  attr(P2X, "events") <- NULL
+  prdfn(P2X, NULL, condition)
+}
 
 
 #' An identity function which vanishes upon concatenation of fns

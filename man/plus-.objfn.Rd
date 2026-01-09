@@ -26,6 +26,7 @@ and all evaluations take place in the same environment. The first objective func
 in a sum of functions generates a new environment.
 }
 \examples{
+\dontrun{
   ## Generate three objective functions
   prior <- structure(rep(0, 5), names = letters[1:5])
   
@@ -54,6 +55,7 @@ in a sum of functions generates a new environment.
   pouter <- prior + rnorm(length(prior))
   obj <- obj1 + obj2 + obj3
   print(obj(pouter))
+}
 }
 \seealso{
 \link{normL2}, \link{constraintL2}, \link{priorL2}, \link{datapointL2}

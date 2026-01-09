@@ -49,15 +49,17 @@ a list or data.frame ist returned, elements of those can be manipulated by the
 \code{$}- or \verb{[]}-operator.
 }
 \examples{
-## parfn with condition
-p <- P(eqnvec(x = "-a*x"), method = "implicit", condition = "C1")
-controls(p)
-controls(p, "C1", "keep.root")
-controls(p, "C1", "keep.root") <- FALSE
-
-## obsfn with NULL condition
-g <- Y(g = eqnvec(y = "s*x"), f = NULL, states = "x", parameters = "s")
-controls(g)
-controls(g, NULL, "attach.input")
-controls(g, NULL, "attach.input") <- FALSE
+\dontrun{
+  ## parfn with condition
+  p <- P(eqnvec(x = "-a*x"), method = "implicit", condition = "C1")
+  controls(p)
+  controls(p, "C1", "keep.root")
+  controls(p, "C1", "keep.root") <- FALSE
+  
+  ## obsfn with NULL condition
+  g <- Y(g = eqnvec(y = "s*x"), f = NULL, states = "x", parameters = "s")
+  controls(g)
+  controls(g, NULL, "attach.input")
+  controls(g, NULL, "attach.input") <- FALSE
+}
 }
