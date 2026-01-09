@@ -1,10 +1,9 @@
 ---
-output: 
-  html_document: 
-    keep_md: yes
+title: "dMod - Dynamic Modeling and Parameter Estimation in R"
+output:
+  github_document:
+    toc: false
 ---
-# dMod - Dynamic Modeling and Parameter Estimation in R
-
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/JetiLab/dMod/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/JetiLab/dMod/actions/workflows/R-CMD-check.yaml)

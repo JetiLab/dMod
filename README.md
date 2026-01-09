@@ -1,9 +1,5 @@
----
-output: 
-  html_document: 
-    keep_md: yes
----
-# dMod - Dynamic Modeling and Parameter Estimation in R
+dMod - Dynamic Modeling and Parameter Estimation in R
+================
 
 <!-- badges: start -->
 
@@ -11,47 +7,65 @@ output:
 
 <!-- badges: end -->
 
-The dMod package is a framework that provides functions to generate ODEs of reaction networks, parameter transformations, observation functions, residual functions, etc. The framework follows the paradigm that derivative information should be used for optimization whenever possible. Therefore, all major functions produce and can handle expressions for symbolic derivatives.
+The dMod package is a framework that provides functions to generate ODEs
+of reaction networks, parameter transformations, observation functions,
+residual functions, etc. The framework follows the paradigm that
+derivative information should be used for optimization whenever
+possible. Therefore, all major functions produce and can handle
+expressions for symbolic derivatives.
 
 ## System requirements
 
-dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up ODE models as compiled C code (deSolve) or [CppODE](https://github.com/simonbeyer1/CppODE) to autogenerate C++ code (Boost.Odeint). This means that **C and C++ compilers** are required on the system. On Linux, the compilers are installed by default. Windows users need to install [RTools](https://cran.r-project.org/bin/windows/Rtools/).
+dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up
+ODE models as compiled C code (deSolve) or
+[CppODE](https://github.com/simonbeyer1/CppODE) to autogenerate C++ code
+(Boost.Odeint). This means that **C and C++ compilers** are required on
+the system. On Linux, the compilers are installed by default. Windows
+users need to install
+[RTools](https://cran.r-project.org/bin/windows/Rtools/).
 
-For **parallelization**, dMod uses `mclapply()` on Linux and macOS. On Windows, parallelization is implemented via the `foreach` package using `%dopar%`.
+For **parallelization**, dMod uses `mclapply()` on Linux and macOS. On
+Windows, parallelization is implemented via the `foreach` package using
+`%dopar%`.
 
 ## Installation from GitHub
 
-To **install dMod from the GitHub repository**, it is convenient to use **RStudio**.
+To **install dMod from the GitHub repository**, it is convenient to use
+**RStudio**.
 
-1.  Create a new project via\
+1.  Create a new project via  
     **File → New Project → Version Control → Git**.
 
-2.  Use the repository URL\
+2.  Use the repository URL  
 
-```         
+<!-- -->
 
-[https://github.com/jetilab/dMod](https://github.com/jetilab/dMod)
-```
+
+    [https://github.com/jetilab/dMod](https://github.com/jetilab/dMod)
 
 and create the project.
 
-3.  Install all required package dependencies (including GitHub dependencies specified via `Remotes`) by running:
+3.  Install all required package dependencies (including GitHub
+    dependencies specified via `Remotes`) by running:
 
 ``` r
 remotes::install_deps(dependencies = TRUE)
 ```
 
-4.  Open the **Build** tab in RStudio and click **Build and Reload** (or **Install**).
+4.  Open the **Build** tab in RStudio and click **Build and Reload** (or
+    **Install**).
 
-Once these steps are completed, it should be possible to run the following example.
-
-------------------------------------------------------------------------
-
-If **PEtab support** is required, **libSBML** is needed in addition. Installation and usage instructions can be found in the wiki under [Support for PEtab](https://github.com/dkaschek/dMod/wiki/Support-for-PEtab).
+Once these steps are completed, it should be possible to run the
+following example.
 
 ------------------------------------------------------------------------
 
+If **PEtab support** is required, **libSBML** is needed in addition.
+Installation and usage instructions can be found in the wiki under
+[Support for
+PEtab](https://github.com/dkaschek/dMod/wiki/Support-for-PEtab).
 
+------------------------------------------------------------------------
 
 ## Simple example: enzyme kinetics
 
@@ -145,7 +159,7 @@ times <- 0:100
 plot((g*x*p)(times, pouter))
 ```
 
-![](README_files/figure-html/prediction-1.png)<!-- -->
+![](README_files/figure-gfm/prediction-1.png)<!-- -->
 
 ### Define data to be fitted by the model
 
@@ -169,13 +183,13 @@ timesD <- sort(unique(unlist(lapply(data, function(d) d$time))))
 plot(data) + geom_line()
 ```
 
-![](README_files/figure-html/data-1.png)<!-- -->
+![](README_files/figure-gfm/data-1.png)<!-- -->
 
 ``` r
 plot((g*x*p)(times, pouter), data)
 ```
 
-![](README_files/figure-html/data-2.png)<!-- -->
+![](README_files/figure-gfm/data-2.png)<!-- -->
 
 ### Define an objective function to be minimized and run minimization by `trust()`
 
@@ -192,8 +206,7 @@ myfit <- trust(obj, pouter, rinit = 1, rmax = 10)
 plot((g*x*p)(times, myfit$argument), data)
 ```
 
-![](README_files/figure-html/trust-1.png)<!-- -->
-
+![](README_files/figure-gfm/trust-1.png)<!-- -->
 
 ### Compute the profile likelihood to analyze parameter identifiability
 
@@ -206,9 +219,4 @@ profiles <- profile(obj, bestfit, names(bestfit), limits = c(-10, 10), cores = 4
 plotProfile(profiles)
 ```
 
-![](README_files/figure-html/profiles-1.png)<!-- -->
-
-
-
-
-
+![](README_files/figure-gfm/profiles-1.png)<!-- -->

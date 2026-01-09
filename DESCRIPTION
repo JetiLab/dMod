@@ -34,7 +34,8 @@ Imports:
     CppODE,
     abind,
     einsum,
-    optimx
+    optimx,
+    nleqslv
 Remotes:
     simonbeyer1/CppODE@v1.0.0
 Suggests:
