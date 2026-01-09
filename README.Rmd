@@ -4,6 +4,16 @@ output:
   github_document:
     toc: false
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  fig.width = 8,
+  fig.height = 3,
+  out.width = "100%",
+  dpi = 150
+)
+```
+
 <!-- badges: start -->
 
 [![R-CMD-check](https://github.com/JetiLab/dMod/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/JetiLab/dMod/actions/workflows/R-CMD-check.yaml)
@@ -28,8 +38,7 @@ To **install dMod from the GitHub repository**, it is convenient to use **RStudi
 2.  Use the repository URL\
 
 ```         
-
-[https://github.com/jetilab/dMod](https://github.com/jetilab/dMod)
+jetilab/dMod
 ```
 
 and create the project.
@@ -136,7 +145,7 @@ p <- p + P(trafo2, condition = "withDegradation")
 ```
 
 ### Initialize parameters and make prediction
-```{r prediction, fig.width = 6, fig.height = 2}
+```{r prediction}
 
 # Initialize with randomly chosen parameters
 set.seed(1)
@@ -150,7 +159,7 @@ plot((g*x*p)(times, pouter))
 ```
 
 ### Define data to be fitted by the model
-```{r data, fig.width = 6, fig.height = 2}
+```{r data}
 
 data <- datalist(
   noDegradation = data.frame(
@@ -174,7 +183,7 @@ plot((g*x*p)(times, pouter), data)
 ```
 
 ### Define an objective function to be minimized and run minimization by `trust()`
-```{r trust, fig.width = 6, fig.height = 2}
+```{r trust}
 
 # Define prior values for parameters
 prior <- structure(rep(0, length(pouter)), names = names(pouter))
@@ -191,7 +200,7 @@ plot((g*x*p)(times, myfit$argument), data)
 
 
 ### Compute the profile likelihood to analyze parameter identifiability
-```{r profiles, fig.width = 6, fig.height = 4}
+```{r profiles, fig.height = 5}
 
 # Compute the profile likelihood around the optimum
 bestfit <- myfit$argument
@@ -212,5 +221,3 @@ files <- list.files(pattern = "^(enzymeKinetics|obsfn|expl_parfn_noDegradation|e
 unlink(files)
 
 ```
-
-

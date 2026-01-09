@@ -40,8 +40,7 @@ To **install dMod from the GitHub repository**, it is convenient to use
 
 <!-- -->
 
-
-    [https://github.com/jetilab/dMod](https://github.com/jetilab/dMod)
+    jetilab/dMod
 
 and create the project.
 
@@ -159,7 +158,7 @@ times <- 0:100
 plot((g*x*p)(times, pouter))
 ```
 
-![](README_files/figure-gfm/prediction-1.png)<!-- -->
+<img src="README_files/figure-gfm/prediction-1.png" alt="" width="100%" />
 
 ### Define data to be fitted by the model
 
@@ -183,13 +182,13 @@ timesD <- sort(unique(unlist(lapply(data, function(d) d$time))))
 plot(data) + geom_line()
 ```
 
-![](README_files/figure-gfm/data-1.png)<!-- -->
+<img src="README_files/figure-gfm/data-1.png" alt="" width="100%" />
 
 ``` r
 plot((g*x*p)(times, pouter), data)
 ```
 
-![](README_files/figure-gfm/data-2.png)<!-- -->
+<img src="README_files/figure-gfm/data-2.png" alt="" width="100%" />
 
 ### Define an objective function to be minimized and run minimization by `trust()`
 
@@ -206,7 +205,7 @@ myfit <- trust(obj, pouter, rinit = 1, rmax = 10)
 plot((g*x*p)(times, myfit$argument), data)
 ```
 
-![](README_files/figure-gfm/trust-1.png)<!-- -->
+<img src="README_files/figure-gfm/trust-1.png" alt="" width="100%" />
 
 ### Compute the profile likelihood to analyze parameter identifiability
 
@@ -219,4 +218,4 @@ profiles <- profile(obj, bestfit, names(bestfit), limits = c(-10, 10), cores = 4
 plotProfile(profiles)
 ```
 
-![](README_files/figure-gfm/profiles-1.png)<!-- -->
+<img src="README_files/figure-gfm/profiles-1.png" alt="" width="100%" />
