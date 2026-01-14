@@ -30,11 +30,8 @@
 #'   
 #' @export
 #' @importFrom utils write.table
-#' @importFrom CppODE ensurePythonEnv
 #' @example inst/examples/steadystates.R
 steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T", resolve = TRUE) {
-  
-  CppODE::ensurePythonEnv(envname = "dMod")
   
   # Check if model is an equation list
   if (inherits(model, "eqnlist")) {

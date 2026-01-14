@@ -143,14 +143,14 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
     if (length(unsupported) > 0) {
       warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
     }
-    func <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = modelname, deriv = FALSE, verbose = verbose, ...)
+    func <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = modelname, outdir = getwd(), deriv = FALSE, verbose = verbose, ...)
     extended <- NULL
     extended2 <- NULL
     if (!deriv2 & deriv) {
-      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
     } else if (deriv2 & deriv) {
-      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), deriv = TRUE, verbose = verbose, ...)
-      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2"), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
+      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2"), outdir = getwd(), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
     }
     out <- list(func = func, extended = extended, extended2 = extended2)
     class(out) <- c("boost", "odemodel")

@@ -38,7 +38,7 @@ Imports:
     reticulate,
     BH
 Remotes:
-    simonbeyer1/CppODE@v1.0.0
+    simonbeyer1/CppODE
 Suggests:
     MASS,
     pander,
