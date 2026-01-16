@@ -256,7 +256,7 @@ Pexpl <- function(trafo,
   }
   
   # Model name with condition label
-  if (is.null(modelname)) modelname <- "expl_parfn" else paste(modelname, "expl_parfn", sep = "_")
+  if (is.null(modelname)) modelname <- "expl_parfn"
   if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
   
   # ---------------------------------------------------------------------------
@@ -1734,6 +1734,7 @@ branch <- function(
   
   for (cn in conditions) {
     row <- table[cn, , drop = FALSE]
+    row <- row[, !colnames(row) %in% c("condition", "conditions"), drop = FALSE]
     
     for (par in colnames(row)) {
       val <- row[[par]]

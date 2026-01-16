@@ -1,5 +1,5 @@
 
-norm <- function(x) sqrt(sum(x^2))
+norm <- function(x) sqrt(crossprod(x))
 
 
 #' @export
@@ -9,9 +9,8 @@ norm <- function(x) sqrt(sum(x^2))
 #' @param one.sided logical. One-sided penalization.
 #' @param lambda strength of the L1 penalty 
 trustL1 <- function(objfun, parinit, mu = 0*parinit, one.sided=FALSE, lambda = 1, rinit, rmax, parscale,
-    iterlim = 100, fterm = sqrt(.Machine$double.eps),
-    mterm = sqrt(.Machine$double.eps),
-    minimize = TRUE, blather = FALSE, blather2 = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, ...)
+    iterlim = 100, fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, 
+    blather2 = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, ...)
 {
   
   # Guarantee that pars is named numeric without deriv attribute

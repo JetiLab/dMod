@@ -129,7 +129,6 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
   else if (solver == "boost") {
     # Check and warn about unsupported arguments for boost::rosenbrock4
     unsupported_args <- list(
-      forcings = forcings,
       outputs = outputs,
       estimate = estimate,
       gridpoints = gridpoints
@@ -147,10 +146,10 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
     extended <- NULL
     extended2 <- NULL
     if (!deriv2 & deriv) {
-      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
     } else if (deriv2 & deriv) {
-      extended <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
-      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = paste0(modelname, "_s2"), outdir = getwd(), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
+      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s2"), outdir = getwd(), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
     }
     out <- list(func = func, extended = extended, extended2 = extended2)
     class(out) <- c("boost", "odemodel")

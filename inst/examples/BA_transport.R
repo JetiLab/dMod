@@ -24,13 +24,13 @@ reactions <- eqnlist() %>%
 #             TCA_cell = "k_import * TCA_buffer - k_export_sinus * TCA_cell - k_export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = T)
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = F, solver = "boost", deriv2 = T)
 # Generate trajectories for the default condition
-x <- Xs(mymodel, condition = "closed")
+x <- Xs(mymodel)
 
 # Define observables buffer and cellular
 observables <- eqnvec(buffer = "s*TCA_buffer", cellular = "s*(TCA_cana + TCA_cell)")
-g <- Y(observables, f = x, condition = NULL, compile = F, modelname = "bamodel", attach.input = F)
+g <- Y(observables, f = x, condition = NULL, compile = F, modelname = "obsfn_bamodel", attach.input = F, deriv2 = T)
 
 # Define parameter transformations using define(), insert() and branch(). Old function repar also avaiable!
 innerpars <- getParameters(x,g)
@@ -50,11 +50,11 @@ trafo <- NULL %>%
 #                 k_reflux = "exp(log(10)*k_reflux)",
 #                 s = "exp(log(10)*s)")
 
-p <- P(trafo, condition = "closed", compile = F)
+p <- P(trafo, condition = "closed", compile = F, deriv2 = T)
 
 
 ### Compile the objects
-compile(g, x, p, output = "bamodel", cores = 8) # Compile C/C++ output of odemodel in parallel
+compile(g, x, p, cores = 5) # Compile C/C++ output of odemodel in parallel
 
 ## Use simulate data to calibrate outer model parameters -------------------------------------------------------------
 data(badata)
@@ -64,14 +64,19 @@ pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 
 p(pouter[!grepl("K_IMPORT", outerpars)], fixed = c(K_IMPORT = -2))
 
+
+times <- seq(0, 45, len = 300)
+
+p(pouter)
+(x*p)(times, pouter)
+
 # # One Fit
 obj <- normL2(data, g * x * p)
-obj(pouter, deriv2 = F)
-obj(pouter, deriv2 = T)
+obj(pouter)
 
 # Fit on time (starting from pouter)
-myfit <- trust(obj, pouter, rinit = 0.1, rmax = 5, iterlim = 500, printIter = T, deriv2 = F)
-mypred <- (g * x * p)(times, myfit$argument, deriv2 = T)
+myfit <- trust(obj, pouter, rinit = 0.1, rmax = 5, iterlim = 500, printIter = T)
+mypred <- (g * x * p)(times, myfit$argument)
 plot(mypred, data)
 
 obj(myfit$argument)

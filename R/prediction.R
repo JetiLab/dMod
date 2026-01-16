@@ -222,15 +222,46 @@ reshapeSens <- function(sensMatrix, variables, parameters) {
 Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL, 
                      optionsOde = list(), optionsSens = list(), optionsSens2 = list()) {
   
-  if (!is.null(forcings)) {
-    stop("Forcings are not yet supported for boost solver")
+  if(!is.null(forcings)) {
+    if (!inherits(forcings, "data.frame")) {
+      stop("'forcings' must be a data.frame, data.table, or tibble")
+    }
+    
+    if (!all(c("name", "time", "value") %in% names(forcings))) {
+      stop(
+        "'forcings' must contain columns: ",
+        paste(c("name", "time", "value"), collapse = ", ")
+      )
+    }
+    
+    if (!is.character(forcings$name)) {
+      stop("'name' must be a character")
+    }
+    
+    if (!is.numeric(forcings$time)) {
+      stop("'time' must be numeric")
+    }
+    
+    if (!is.numeric(forcings$value)) {
+      stop("'value' must be numeric")
+    }
+    
+    if (anyNA(forcings[, required_cols])) {
+      stop("'forcings' contains NA values")
+    }
+    forcs <- split(
+      forcings[, c("time", "value")],
+      forcings$name
+    )
+  } else {
+    forcs <- NULL
   }
   
   if (!is.null(events)) {
     stop("Events should be passed to odemodel()")
   }
   
-  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 5000, maxsteps = 1e6, hini = 0, roottol = 1e-8, maxroot = 1)
+  optionsDefault  <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 10, maxsteps = 1e6, hini = 0, roottol = 1e-6, maxroot = 1)
   
   ## --- Warn about unknown options
   warn_unknown <- function(user, defaults, label) {
@@ -251,6 +282,13 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   extended <- odemodel$extended
   extended2 <- odemodel$extended2
   
+  # Extract metadata
+  variables <- attr(func, "variables")
+  parameters <- attr(func, "parameters")
+  forcnames <- attr(func, "forcings")
+  dimnames <- attr(func, "dim_names")
+  dimnames_sens <- attr(extended, "dim_names")
+  
   if (is.null(extended) || is.null(extended2)) {
     warning(
       sprintf(
@@ -262,18 +300,12 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     )
   }
   
-  # Variable and parameter names
-  variables <- attr(func, "variables")
-  parameters <- attr(func, "parameters")
-  
-  dimnames <- attr(func, "dim_names")
-  dimnames_sens <- attr(extended, "dim_names")
-  
   # Only a subset of all variables is returned
   if (is.null(names)) names <- variables
   
   # Controls to be modified from outside
   controls <- list(
+    forcings = forcs,
     names = names,
     optionsOde = optionsOde,
     optionsSens = optionsSens,
@@ -289,40 +321,24 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
       deriv <- TRUE
     }
     
-    paramnames <- c(variables, parameters)
-    # check for missing parameters
-    missing <- setdiff(paramnames, names(pars))
-    if (length(missing) > 0) stop(sprintf("Missing parameters: %s", paste(missing, collapse = ", ")))
-    
-    mypars <- unclass(pars)[paramnames]
-    
+    forcings <- controls$forcs
     names <- controls$names
     optionsOde <- controls$optionsOde
     optionsSens <- controls$optionsSens
     optionsSens2 <- controls$optionsSens2
     
     dX <- NULL
-    mysensitivities <- NULL
     dX2 <- NULL
-    mysensitivities2 <- NULL
     
     if (!deriv) {
       
       # Evaluate model without sensitivities
-      out <- suppressWarnings(
-        .Call(paste0("solve_", as.character(func)),
-              as.numeric(times),
-              as.numeric(mypars),
-              as.numeric(optionsOde$atol),
-              as.numeric(optionsOde$rtol),
-              as.integer(optionsOde$maxattemps),
-              as.integer(optionsOde$maxsteps),
-              as.numeric(optionsOde$hini),
-              as.numeric(optionsOde$roottol),
-              as.integer(optionsOde$maxroot))
-      )
       
-      colnames(out$variable) <- dimnames$variable
+      out <- suppressWarnings(
+        CppODE::solveODE(func, times, pars, forcings, optionsOde$atol, optionsOde$rtol,
+                         optionsOde$maxattemps, optionsOde$maxsteps, optionsOde$hini,
+                         optionsOde$roottol, optionsOde$maxroot)
+      )
       
       out <- cbind(out$time, submatrix(out$variable, cols = names))
       colnames(out)[1] <- "time"
@@ -330,20 +346,10 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     } else if (deriv & !deriv2) {
       
       outSens <- suppressWarnings(
-        .Call(paste0("solve_", as.character(extended)),
-              as.numeric(times),
-              as.numeric(mypars),
-              as.numeric(optionsSens$atol),
-              as.numeric(optionsSens$rtol),
-              as.integer(optionsSens$maxattemps),
-              as.integer(optionsSens$maxsteps),
-              as.numeric(optionsSens$hini),
-              as.numeric(optionsSens$roottol),
-              as.integer(optionsSens$maxroot))
+        CppODE::solveODE(extended, times, pars, forcings, optionsSens$atol, optionsSens$rtol,
+                         optionsSens$maxattemps, optionsSens$maxsteps, optionsSens$hini,
+                         optionsSens$roottol, optionsSens$maxroot)
       )
-      
-      colnames(outSens$variable) <- controls$dimnames_sens$variable
-      dimnames(outSens$sens1) <- list(NULL, controls$dimnames_sens$variable, controls$dimnames_sens$sens)
       
       out <- cbind(outSens$time, submatrix(outSens$variable, cols = names))
       colnames(out)[1] <- "time"
@@ -364,23 +370,10 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
     } else {
       
       outSens2 <- suppressWarnings(
-        .Call(paste0("solve_", as.character(extended2)),
-              as.numeric(times),
-              as.numeric(mypars),
-              as.numeric(optionsSens2$atol),
-              as.numeric(optionsSens2$rtol),
-              as.integer(optionsSens2$maxattemps),
-              as.integer(optionsSens2$maxsteps),
-              as.numeric(optionsSens2$hini),
-              as.numeric(optionsSens2$roottol),
-              as.integer(optionsSens2$maxroot))
+        CppODE::solveODE(extended2, times, pars, forcings, optionsSens2$atol, optionsSens2$rtol,
+                         optionsSens2$maxattemps, optionsSens2$maxsteps, optionsSens2$hini,
+                         optionsSens2$roottol, optionsSens2$maxroot)
       )
-      
-      colnames(outSens2$variable) <- controls$dimnames_sens$variable
-      
-      dimnames(outSens2$sens1) <- list(NULL, controls$dimnames_sens$variable, controls$dimnames_sens$sens)
-      dimnames(outSens2$sens2) <- list(NULL, controls$dimnames_sens$variable, controls$dimnames_sens$sens, controls$dimnames_sens$sens)
-      
       out <- cbind(outSens2$time, submatrix(outSens2$variable, cols = names))
       colnames(out)[1] <- "time"
       
@@ -426,7 +419,7 @@ Xs.boost <- function(odemodel, forcings = NULL, events = NULL, names = NULL, con
   
   attr(P2X, "parameters") <- c(variables, parameters)
   attr(P2X, "equations") <- as.eqnvec(attr(func, "equations"))
-  attr(P2X, "forcings") <- NULL
+  attr(P2X, "forcings") <- forcs
   attr(P2X, "events") <- events
   attr(P2X, "modelname") <- func[1]
   
