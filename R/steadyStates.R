@@ -15,7 +15,8 @@
 #'   compatible output. To obtain an output appropriate for d2d [2] "M" must be 
 #'   selected.
 #' @param testSteady Boolean, if "T" the correctness of the obtained steady states is numerically checked (this can be very time intensive). If "F" this is skipped. 
-#'   
+#' @param resolve Boolean. If TRUE, recursive dependencies are resolved, meaning that independent equations are substituted into each expression and then simplified.  
+#'  
 #' @return Character vector of steady-state equations.
 #'   
 #' @references [1]
@@ -29,10 +30,9 @@
 #'   
 #' @export
 #' @importFrom utils write.table
+#' @importFrom reticulate py_require source_python
 #' @example inst/examples/steadystates.R
-steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T") {
-  
-  require(reticulate)
+steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenCQs = NULL, neglect=NULL, sparsifyLevel = 2, outputFormat = "R", testSteady = "T", resolve = TRUE) {
   
   # Check if model is an equation list
   if (inherits(model, "eqnlist")) {
@@ -40,25 +40,33 @@ steadyStates <- function(model, file=NULL, rates = NULL, forcings = NULL, givenC
     write.eqnlist(model, file = paste0(file, "_model.csv"))
     model <- paste0(file, "_model.csv")    
   }
-
+  
   if (!is.null(givenCQs) && length(names(givenCQs)) > 0) 
     stop("givenCQs must not have names. Please unname() them.")
   
   
   # Calculate steady states.
-  source_python(system.file("code/AlyssaPetit_ver1.1.py", package = "dMod"))
+  reticulate::py_require("sympy")
+  reticulate::source_python(system.file("code/AlyssaPetit_ver1.1.py", package = "dMod"))
   m_ss <- Alyssa(model, as.list(forcings), as.list(givenCQs), as.list(neglect), sparsifyLevel, outputFormat, testSteady)
   
   # Write steady states to disk.
-  if(length(m_ss)>1){    
+  if(length(m_ss)>0){    
     m_ssChar <- do.call(c, lapply(strsplit(m_ss, "="), function(eq) {
       out <- eq[2]
       names(out) <- eq[1]
+      
       return(out)
     }))
     if(!is.null(file) & is.character(file))
       saveRDS(object = m_ssChar, file = file)
     
+    if (resolve) {
+      simplify <- import("sympy")$simplify
+      m_ssChar <- lapply(resolveRecurrence(m_ssChar), function(expr) {
+        simplify(expr) %>% as.character()
+      }) %>% unlist(use.names = TRUE)
+    }
     return(m_ssChar)
   } else return(0)
 }
