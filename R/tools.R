@@ -489,7 +489,7 @@ compile <- function(..., output=NULL, args=NULL, cores=1, verbose=FALSE){
   roots <- sub("\\.(c|cpp)$","",basename(files))
   
   pic <- if(.Platform$OS.type=="windows") "" else "-fPIC"
-  base <- paste("-O3 -ffp-contract=fast", pic)
+  base <- paste("-O2 -DNDEBUG", pic)
   if(!is.null(args) && nzchar(args)) base <- paste(base, args)
   
   Sys.setenv(
@@ -498,7 +498,7 @@ compile <- function(..., output=NULL, args=NULL, cores=1, verbose=FALSE){
     PKG_CPPFLAGS = paste0("-I", shQuote(system.file("include",package="CppODE")))
   )
   
-  ## toolchain report
+  ## toolchain report (truthful)
   cfg <- \(x) system(paste(shQuote(file.path(R.home("bin"),"R")),"CMD config",x),intern=TRUE)
   strip <- \(x) trimws(gsub("(^| )-std=[^ ]+","",x))
   
@@ -509,6 +509,7 @@ compile <- function(..., output=NULL, args=NULL, cores=1, verbose=FALSE){
   if(any(grepl("\\.cpp$",files)))
     cat(sprintf("using C++ compiler: %s [%s]\n",
                 strip(cfg("CXX")), trimws(Sys.getenv("PKG_CXXFLAGS"))))
+  
   
   invisible(lapply(c(roots,output),\(x)
                    if(!is.null(x)) try(dyn.unload(paste0(x,so)),silent=TRUE)))
