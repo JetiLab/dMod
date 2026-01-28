@@ -13,7 +13,8 @@ steadyStates(
   neglect = NULL,
   sparsifyLevel = 2,
   outputFormat = "R",
-  testSteady = "T"
+  testSteady = "T",
+  resolve = TRUE
 )
 }
 \arguments{
@@ -31,11 +32,13 @@ steadyStates(
 
 \item{sparsifyLevel}{numeric, Upper bound for length of linear combinations used for simplifying the stoichiometric matrix}
 
-\item{outputFormat}{Define the output format. By default "R" generating dMod 
-compatible output. To obtain an output appropriate for d2d [2] "M" must be 
+\item{outputFormat}{Define the output format. By default "R" generating dMod
+compatible output. To obtain an output appropriate for d2d [2] "M" must be
 selected.}
 
 \item{testSteady}{Boolean, if "T" the correctness of the obtained steady states is numerically checked (this can be very time intensive). If "F" this is skipped.}
+
+\item{resolve}{Boolean. If TRUE, recursive dependencies are resolved, meaning that independent equations are substituted into each expression and then simplified.}
 }
 \value{
 Character vector of steady-state equations.

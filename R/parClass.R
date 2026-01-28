@@ -2,7 +2,7 @@
 
 #' Parameter list
 #' 
-#' @param x list of lists, as returned by \code{trust}
+#' @param x list of lists, as returned by `trust`
 #' @rdname parlist
 #' @export
 as.parlist <- function(x = NULL) {
@@ -73,7 +73,7 @@ stat.parlist <- function(x) {
 #' @param x fitlist obtained from mstrust
 #' @param ... additional arguments
 #' @param path print path of parameters from initials to convergence. For this
-#'   option to be TRUE \code{\link{mstrust}} must have had the option
+#'   option to be TRUE [mstrust()] must have had the option
 #'   \option{blather}.
 #' 
 #' @details If path=TRUE:        
@@ -118,7 +118,7 @@ plot.parlist <- function(x, path = FALSE, ...) {
 #' @importFrom data.table as.data.table rbindlist
 #' @rdname as.parframe
 #' @param sort.by character indicating by which colum the returned parameter frame
-#' should be sorted. Defaults to \code{"value"}.
+#' should be sorted. Defaults to `"value"`.
 as.parframe.parlist <- function(x, sort.by = "value", ...) {
   m_stat <- stat.parlist(x)
   m_metanames <- c("index", "value", "converged", "iterations")
@@ -172,7 +172,7 @@ c.parlist <- function(...) {
 #' 
 #' @param x object to be coerced
 #' @param ... other arguments
-#' @return object of class \link{parframe}.
+#' @return object of class [parframe].
 #' @example inst/examples/parlist.R
 #' @export
 as.parframe <- function(x, ...) {
@@ -185,8 +185,8 @@ as.parframe <- function(x, ...) {
 #' @description Obtain a parameter vector from a parameter frame.
 #' 
 #' @param x A parameter frame, e.g., the output of
-#'   \code{\link{as.parframe}}.
-#' @param index Integer, the parameter vector with the \code{index}-th lowest
+#'   [as.parframe()].
+#' @param index Integer, the parameter vector with the `index`-th lowest
 #'   objective value.
 #' @param ... not used right now
 #'   
@@ -543,9 +543,9 @@ subset.parframe <- function(x, ...) {
 #' Extract those lines of a parameter frame with unique elements in the value column
 #' @param x parameter frame
 #' @param incomparables not used. Argument exists for compatibility with S3 generic.
-#' @param tol tolerance to decide when values are assumed to be equal, see \code{\link{plotValues}()}.
-#' @param ... additional arguments being passed to \code{\link{plotValues}()}, e.g. for subsetting.
-#' @return A subset of the parameter frame \code{x}.
+#' @param tol tolerance to decide when values are assumed to be equal, see [plotValues()].
+#' @param ... additional arguments being passed to [plotValues()], e.g. for subsetting.
+#' @return A subset of the parameter frame `x`.
 #' @export
 unique.parframe <- function(x, incomparables = FALSE, tol = 1, ...) {
   
@@ -562,6 +562,30 @@ unique.parframe <- function(x, incomparables = FALSE, tol = 1, ...) {
 
 #' Dispatch as.parvec.
 #'
+#' Creates an object of class `parvec`, optionally carrying first- and
+#' second-order derivatives. No automatic identity or zero derivatives are
+#' created.
+#'
+#' @param x Numeric vector of parameter values.
+#' @param names Optional character vector of parameter names.
+#' @param deriv Optional Jacobian matrix (first derivatives), `FALSE` to drop,
+#'   or `NULL` to inherit if present attribute 'deriv'.
+#' @param deriv2 Optional Hessian array (second derivatives), `FALSE` to drop,
+#'   or `NULL` to inherit if present atribute 'deriv2'.
+#'
+#' @return
+#' A numeric vector of class `"parvec"` with optional attributes:
+#' \itemize{
+#'   \item `attr(x, "deriv")`  — Jacobian matrix, or `NULL`
+#'   \item `attr(x, "deriv2")` — Hessian tensor, or `NULL`
+#' }
+#'
+#' @details
+#' If `deriv = FALSE` or `deriv2 = FALSE`, the respective attributes are
+#' forcibly removed, even if they exist in the input `x`.
+#' If `deriv = NULL` or `deriv2 = NULL`, existing attributes are inherited
+#' (if present), but nothing is created automatically.
+#'
 #' @export
 #' @rdname parvec
 as.parvec <- function(x, ...) {
@@ -569,117 +593,240 @@ as.parvec <- function(x, ...) {
 }
 
 
-#' Parameter vector
-#' @param x numeric or named numeric, the parameter values
-#' @param names optional character vector, the parameter names. Otherwise, names
-#' are taken from \code{x}.
-#' @rdname parvec
 #' @export
-as.parvec.numeric <- function(x, names = NULL, deriv = NULL, ...) {
+#' @rdname parvec
+as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...) {
   
-  p <- x
+  # --- Basic setup ---
+  p <- as.numeric(x)
+  if (is.null(names)) names(p) <- names(x) else names(p) <- names
+  pnames <- names(p)
   
-  out <- as.numeric(p)
-  if (is.null(names)) names(out) <- names(p) else names(out) <- names
-  if (is.null(deriv)) deriv <- attr(x, "deriv")
-  if (is.null(deriv)) {
-    deriv <- diag(length(out))
-    colnames(deriv) <- rownames(deriv) <- names(out)
+  # --- First derivatives ---
+  if (isFALSE(deriv)) {
+    full_deriv <- NULL
+  } else if (is.matrix(deriv)) {
+    full_deriv <- deriv
+  } else { # deriv == NULL
+    full_deriv <- attr(x, "deriv", exact = TRUE)
   }
-  attr(out, "deriv") <- deriv
-  class(out) <- c("parvec", "numeric")
   
-  return(out)
+  # --- Second derivatives ---
+  if (isFALSE(deriv2)) {
+    full_deriv2 <- NULL
+  } else if (is.array(deriv2)) {
+    full_deriv2 <- deriv2
+  } else { # deriv2 == NULL
+    full_deriv2 <- attr(x, "deriv2", exact = TRUE)
+  }
   
-}
-
-
-#' Pretty printing for a parameter vector
-#' 
-#' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
-#' 
-#' @param x object of class \code{parvec}
-#' @param ... not used yet.
-#' @export
-print.parvec <- function(x, ...) {
-  
-  par <- x
-  
-  m_parWidth <- max(nchar(names(par)))
-  m_names <- names(par)
-  m_order <- order(m_names)
-  
-  msg <- mapply(function(p, n) {
-    if (!as.numeric(p) < 0 ) {
-      p <- paste0(" ", p)
-    }
-    paste0(strpad(n, m_parWidth, where = "left"), ": ", p)
-  }, p = par[m_order], n = m_names[m_order])
-  
-  cat(msg, sep = "\n")
+  # --- Assemble object ---
+  attr(p, "deriv")  <- full_deriv
+  attr(p, "deriv2") <- full_deriv2
+  class(p) <- c("parvec", "numeric")
+  p
 }
 
 
 
 
+
+#' Pretty printing for parvec objects
+#'
+#' Prints a parameter vector along with information about
+#' its attached derivative matrices (`deriv`, `deriv2`).
+#'
+#' @param x parvec object
 #' @export
-#' @param drop logical, drop empty columns in Jacobian after subsetting. 
-#' ATTENTION: Be careful with this option. The default behavior is to keep
-#' the columns in the Jacobian. This can lead to unintended results when
-#' subsetting the parvec and using it e.g. in another parameter
-#' transformation.
-#' @rdname parvec
+print.parvec <- function(x) {
+  
+  # --- Extract parameter values ---
+  par <- unclass(x)
+  nms <- names(par)
+  n_width <- max(nchar(nms))
+  
+  # --- Header ---
+  cat("Parameter vector:\n")
+  
+  # --- Print parameters neatly aligned ---
+  for (i in seq_along(par)) {
+    val <- formatC(par[i], digits = 6, format = "g")
+    if (par[i] >= 0) val <- paste0(" ", val)
+    cat(sprintf("  %s : %s\n", format(nms[i], width = n_width, justify = "right"), val))
+  }
+  
+  # --- Print derivative info ---
+  deriv  <- attr(x, "deriv")
+  deriv2 <- attr(x, "deriv2")
+  
+  cat("\nAttributes:\n")
+  if (!is.null(deriv)) {
+    d <- dim(deriv)
+    cat(sprintf("  deriv  : %d × %d matrix\n", d[1], d[2]))
+  } else {
+    cat("  deriv  : <none>\n")
+  }
+  
+  if (!is.null(deriv2)) {
+    d2 <- dim(deriv2)
+    cat(sprintf("  deriv2 : %d × %d × %d array\n", d2[1], d2[2], d2[3]))
+  } else {
+    cat("  deriv2 : <none>\n")
+  }
+  
+  invisible(x)
+}
+
+
+#' Subset method for parvec objects
+#'
+#' Safely subsets a `parvec` object while keeping its Jacobian (`deriv`)
+#' and Hessian (`deriv2`) attributes consistent.
+#'
+#' This version is robust against missing derivative entries:
+#' if parameters being subsetted are not present in the Jacobian or Hessian,
+#' zero rows (and matching dimensions) are added automatically.
+#'
+#' @param x A `parvec` object.
+#' @param ... Parameter indices or names to subset.
+#' @param drop Logical; if `TRUE`, drop zero Jacobian columns and
+#'   matching Hessian dimensions.
+#'
+#' @return A `parvec` object with updated numeric values and derivative
+#'   attributes.
+#' @export
 "[.parvec" <- function(x, ..., drop = FALSE) {
-  
-  # myclass <- class(...)
-  # if (inherits(myclass, "character")) {
-  #   select.name <- Reduce("|", lapply(as.list(...), function(n) grepl(glob2rx(n), names(x))))
-  #   select.row <- Reduce("|", lapply(as.list(...), function(n) grepl(glob2rx(n), rownames(attr(x, "deriv")))))
-  #   out <- unclass(x)[select.name]
-  #   deriv <- submatrix(attr(x, "deriv"), rows = select.row)
-  # } else {
-  #   out <- unclass(x)[...]
-  #   deriv <- submatrix(attr(x, "deriv"), rows = ...)
-  # }
-  # 
+  # --- Extract numeric parameter values ---
   out <- unclass(x)[...]
-  deriv <- submatrix(attr(x, "deriv"), rows = ...)
-  if (drop) {
-    empty.cols <- apply(deriv, 2, function(v) all(v == 0))
-    deriv <- submatrix(deriv, cols = !empty.cols)
+  nms <- names(out)
+  
+  # --- Subset Jacobian (first derivatives) ---
+  deriv <- attr(x, "deriv")
+  if (!is.null(deriv)) {
+    available <- intersect(nms, rownames(deriv))
+    missing <- setdiff(nms, rownames(deriv))
+    
+    # Subset existing rows
+    deriv_sub <- deriv[available, , drop = FALSE]
+    
+    # Add zero rows for missing parameters
+    if (length(missing)) {
+      add_rows <- matrix(0, nrow = length(missing), ncol = ncol(deriv),
+                         dimnames = list(missing, colnames(deriv)))
+      deriv_sub <- rbind(deriv_sub, add_rows)
+    }
+    
+    # Reorder rows to match the subset order
+    deriv <- deriv_sub[nms, , drop = FALSE]
   }
-  as.parvec(out, deriv = deriv)
+  
+  # --- Subset Hessian (second derivatives) ---
+  deriv2 <- attr(x, "deriv2")
+  if (!is.null(deriv2)) {
+    basis_names <- dimnames(deriv2)[[2]]
+    available1 <- intersect(nms, dimnames(deriv2)[[1]])
+    missing1 <- setdiff(nms, dimnames(deriv2)[[1]])
+    
+    # Subset existing first dimension
+    deriv2_sub <- deriv2[available1, , , drop = FALSE]
+    
+    # Add zero slices for missing parameters (first dimension)
+    if (length(missing1)) {
+      add_slices <- array(0, dim = c(length(missing1), dim(deriv2)[2], dim(deriv2)[3]),
+                          dimnames = list(missing1, dimnames(deriv2)[[2]], dimnames(deriv2)[[3]]))
+      deriv2_sub <- abind::abind(deriv2_sub, add_slices, along = 1)
+    }
+    
+    # Reorder first dimension to match the subset order
+    deriv2 <- deriv2_sub[nms, , , drop = FALSE]
+  }
+  
+  # --- Drop zero columns and matching Hessian dimensions if requested ---
+  if (drop && !is.null(deriv)) {
+    keep.cols <- colSums(abs(deriv)) > 0
+    deriv <- deriv[, keep.cols, drop = FALSE]
+    if (!is.null(deriv2)) {
+      deriv2 <- deriv2[, keep.cols, keep.cols, drop = FALSE]
+    }
+  }
+  
+  # --- Rebuild the parvec object ---
+  as.parvec(out, deriv = deriv, deriv2 = deriv2)
 }
 
+
+#' Concatenate parvec objects
+#'
+#' Combines multiple `parvec` objects into one, preserving first (`deriv`)
+#' and second (`deriv2`) derivatives when available.
+#'
+#' @param ... `parvec` objects to concatenate.
+#' @return A combined `parvec` object.
 #' @export
-#' @rdname parvec
 c.parvec <- function(...) {
+  parlist <- list(...)
+  stopifnot(length(parlist) > 0)
   
-  mylist <- list(...) #lapply(list(...), as.parvec)
+  # Concatenate numeric values and names
+  nms  <- unlist(lapply(parlist, names), use.names = FALSE)
+  vals <- unlist(lapply(parlist, as.numeric), use.names = FALSE)
+  if (anyDuplicated(nms))
+    stop("Duplicated parameter names detected.")
   
-  n <- unlist(lapply(mylist, function(l) names(l)))
-  v <- unlist(lapply(mylist, function(l) as.numeric(l)))
-  d <- lapply(mylist, function(l) attr(l, "deriv"))
+  # Check available derivative attributes
+  derivs  <- lapply(parlist, function(p) attr(p, "deriv"))
+  deriv2s <- lapply(parlist, function(p) attr(p, "deriv2"))
+  has_deriv  <- any(vapply(derivs,  function(d) !is.null(d),  TRUE))
+  has_deriv2 <- any(vapply(deriv2s, function(d) !is.null(d), TRUE))
   
+  # Determine derivative basis only if consistent
+  basis <- NULL
+  if (has_deriv) {
+    basis <- colnames(derivs[[which(!vapply(derivs, is.null, TRUE))[1]]])
+  } else if (has_deriv2) {
+    basis <- dimnames(deriv2s[[which(!vapply(deriv2s, is.null, TRUE))[1]]])[[2]]
+  }
   
+  nb <- if (!is.null(basis)) length(basis) else 0
+  nt <- length(nms)
   
-  if (any(duplicated(n))) stop("Found duplicated names. Parameter vectors cannot be coerced.")
+  # Preallocate only if consistent across all parvecs
+  deriv  <- if (has_deriv)  matrix(0, nt, nb, dimnames = list(nms, basis)) else NULL
+  deriv2 <- NULL
   
-  deriv <- Reduce(combine, d)
-  n.missing <- setdiff(n, rownames(deriv))
-  n.available <- intersect(n, rownames(deriv))
-  deriv.missing <- matrix(0, nrow = length(n.missing), ncol = ncol(deriv), 
-                          dimnames = list(n.missing, colnames(deriv)))
+  if (has_deriv2) {
+    # Ensure all non-null deriv2 blocks have same basis dims
+    valid_dims <- unique(Filter(Negate(is.null),
+                                lapply(deriv2s, function(h) dim(h)[2:3])))
+    if (length(valid_dims) == 1L) {
+      deriv2 <- array(0, dim = c(nt, nb, nb),
+                      dimnames = list(nms, basis, basis))
+    } else {
+      warning("Inconsistent deriv2 dimensions across parvecs – dropping second derivatives.")
+      has_deriv2 <- FALSE
+    }
+  }
   
-  ## Attention: The expected way of function is that
-  ## no columns are attachd for parameters for which no derivatives
-  ## were available. This is important for prdfn() and obsfn() to 
-  ## work properly with the "fixed" argument.
-  deriv <- submatrix(rbind(deriv, deriv.missing), rows = n)
+  # Fill derivative blocks
+  row_start <- 1
+  for (i in seq_along(parlist)) {
+    np <- length(parlist[[i]])
+    
+    d1 <- derivs[[i]]
+    if (!is.null(deriv) && !is.null(d1))
+      deriv[row_start:(row_start + np - 1), ] <- d1
+    
+    d2 <- deriv2s[[i]]
+    if (!is.null(deriv2) && !is.null(d2) &&
+        all(dim(d2)[2:3] == dim(deriv2)[2:3]))
+      deriv2[row_start:(row_start + np - 1), , ] <- d2
+    
+    row_start <- row_start + np
+  }
   
-  as.parvec(v, names = n, deriv = deriv)
-  
+  as.parvec(vals, names = nms, deriv = deriv, deriv2 = deriv2)
 }
+
 
 
 

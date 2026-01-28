@@ -12,7 +12,7 @@ conservedQuantities(S)
 }
 \value{
 Data frame with conserved quantities carrying an attribute with the
-  number of conserved quantities.
+number of conserved quantities.
 }
 \description{
 Determine conserved quantites by finding the kernel of the stoichiometric

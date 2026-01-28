@@ -58,7 +58,7 @@ Datalists can be plotted, see \link{plotData} and merged, see \link{sumdatalist}
 They are the basic structure when combining model prediction and data via the \link{normL2}
 objective function.
 
-The standard columns of the datalist data frames are "name" (observable name), 
+The standard columns of the datalist data frames are "name" (observable name),
 "time" (time points), "value" (data value), "sigma" (uncertainty, can be NA), and
 "lloq" (lower limit of quantification, \code{-Inf} by default).
 

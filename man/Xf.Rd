@@ -25,17 +25,17 @@ the condition for which the function makes a prediction.}
 
 \item{optionsOde}{list with arguments to be passed to odeC() for the ODE integration.}
 
-\item{fcontrol}{list with additional fine-tuning arguments for the forcing interpolation. 
-See \link[stats]{approxfun} for possible arguments.}
+\item{fcontrol}{list with additional fine-tuning arguments for the forcing interpolation.
+See \link[stats:approxfun]{approxfun} for possible arguments.}
 }
 \description{
-Interface to get an ODE 
+Interface to get an ODE
 into a model function \code{x(times, pars, forcings, events)} returning ODE output.
 It is a reduced version of \link{Xs}, missing the sensitivities.
 }
 \details{
-Can be used to integrate additional quantities, e.g. fluxes, by adding them to \code{f}. 
-All quantities that are not initialised by pars 
+Can be used to integrate additional quantities, e.g. fluxes, by adding them to \code{f}.
+All quantities that are not initialised by pars
 in \code{x(..., forcings, events)} are initialized with 0. For more details and
 the return value see \link{Xs}.
 }

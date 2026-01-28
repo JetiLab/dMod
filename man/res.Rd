@@ -7,25 +7,12 @@
 res(data, out, err = NULL)
 }
 \arguments{
-\item{data}{data.frame with name (factor), time (numeric), value (numeric) and sigma (numeric)}
+\item{data}{data.frame with columns: time, name, value, sigma, lloq}
 
-\item{out}{output of ode(), optionally augmented with attributes
-"deriv" (output of ode() for the sensitivity equations) and
-"parameters" (character vector of parameter names, a subsest of those
-contained in the sensitivity equations). If "deriv" is given, also "parameters"
-needs to be given.}
+\item{out}{matrix with predictions (first column = time)}
 
-\item{err}{output of the error model function}
-}
-\value{
-data.frame with the original data augmented by columns "prediction" (
-numeric, the model prediction), "residual" (numeric, difference between
-prediction and data value), "weighted.residual" (numeric, residual devided
-by sigma). If "deriv" was given, the returned data.frame has an
-attribute "deriv" (data.frame with the derivatives of the residuals with
-respect to the parameters).
+\item{err}{Nullable matrix with error model predictions}
 }
 \description{
 When sigma is given in the data, it always has priority over the sigma in the error model
 }
-\concept{dMod interface}

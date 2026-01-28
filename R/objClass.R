@@ -19,8 +19,8 @@
 as.objlist <- function(p) {
   
   objlist(value = 0,
-      gradient = structure(rep(0, length(p)), names = names(p)),
-      hessian = matrix(0, length(p), length(p), dimnames = list(names(p), names(p))))
+          gradient = structure(rep(0, length(p)), names = names(p)),
+          hessian = matrix(0, length(p), length(p), dimnames = list(names(p), names(p))))
   
 }
 
@@ -93,102 +93,203 @@ constraintExp2 <- function(p, mu, sigma = 1, k = 0.05, fixed=NULL) {
 
 
 #' L2 norm between data and model prediction
-#' 
-#' @description For parameter estimation and optimization, an objective function
-#' is needed. \code{normL2} returns an objective function for the L2 norm of
-#' data and model prediction. The resulting objective function can be used for
-#' optimization with the trust optimizer, see \link{mstrust}.
-#' @param data object of class \link{datalist}
-#' @param x object of class \link{prdfn}
-#' @param errmodel object of class \link{obsfn}. \code{errmodel} does not need to be defined for all conditions.
-#' @param times numeric vector, additional time points where the prediction function is 
-#' evaluated. If NULL, time points are extacted from the datalist solely. If the prediction
-#' function makes use of events, hand over event \code{times} here.
-#' @param attr.name character. The constraint value is additionally returned in an 
-#' attributed with this name
-#' 
-#' 
-#' @param forcings TO BE FILLED BY DANIEL K
-#' @param iiv Example: c("ka", "ETA_EMAX"). \cr 
-#'   Vector with names which are individualized per condition
-#' @param conditional Example: data.frame(parname = "GR", covname = "SEX", covvalue = "1", stringsAsFactors = FALSE).\cr
-#'   * covname can relate to any parameter in the condition.grid of the data. \cr
-#'   * covvalue is the value of this variable to use for individualization
 #'
-#' @param fixed.grid data.frame(parname, partask, ids...) Lookup table for fixed parameters
-#' @param nauxtimes additional simulation times
-#' @param cores to parallelize over conditions not over fits
-#' 
-#' 
-#' @return Object of class \code{obsfn}, i.e. a function 
-#' \code{obj(..., fixed, deriv, conditions, env)} that returns an objective list,
-#' \link{objlist}.
-#' @details Objective functions can be combined by the "+" operator, see \link{sumobjfn}.
+#' @description
+#' For parameter estimation and optimization, an objective function is needed.
+#' `normL2` returns an objective function based on the (negative log-likelihood)
+#' L2 norm between data and model prediction. The resulting objective function
+#' can be used for optimization with the trust optimizer, see [mstrust].
+#'
+#' @param data Object of class [datalist].
+#' @param x Object of class [prdfn].
+#' @param errmodel Optional object of class [obsfn]. The error model does not
+#'   need to be defined for all conditions.
+#' @param times Numeric vector of additional time points where the prediction
+#'   function is evaluated. If NULL, time points are extracted from the data.
+#'   If the prediction function uses events, event times should be provided here.
+#' @param attr.name Character string. The objective value is additionally returned
+#'   as an attribute with this name.
+#' @param use.bessel Logical. If TRUE and an error model is present, applies a
+#'   global Bessel correction to variance estimates to account for finite-sample
+#'   bias. Default is TRUE if an error model is provided, FALSE otherwise.
+#'
+#' @return
+#' An object of class `objfn`, i.e. a function
+#' `obj(pars, fixed, deriv, deriv2, conditions, env, cores)` returning an
+#' [objlist].
+#'
+#' @details
+#' Objective functions can be combined using the `+` operator, see [sumobjfn].
+#'
+#' The Bessel correction is applied globally across all conditions and is given by
+#' \deqn{\sqrt{n / (n - p)}}
+#' where \eqn{n} is the total number of data points and \eqn{p} the number of
+#' structural (non-error-model) parameters.
+#'
+#' Parallel evaluation over conditions is supported via the `cores` argument
+#' of the returned objective function. Parallelization is only applied if
+#' `cores > 1`. A value of `cores <= 0` is not allowed.
+#'
 #' @example inst/examples/normL2.R
 #' @export
-normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
-
+normL2 <- function(data, x, errmodel = NULL, times = NULL,
+                   attr.name = "data",
+                   use.bessel = ifelse(!is.null(errmodel), TRUE, FALSE)) {
+  
+  ## --- time grid ------------------------------------------------------------
   timesD <- sort(unique(c(0, do.call(c, lapply(data, function(d) d$time)))))
-  if (!is.null(times)) timesD <- sort(union(times, timesD))
-
+  if (!is.null(times)) {
+    timesD <- sort(union(times, timesD))
+  }
+  
+  ## --- conditions -----------------------------------------------------------
   x.conditions <- names(attr(x, "mappings"))
   data.conditions <- names(data)
-  if (!all(data.conditions %in% x.conditions)) 
+  
+  if (!all(data.conditions %in% x.conditions)) {
     stop("The prediction function does not provide predictions for all conditions in the data.")
-  e.conditions <- names(attr(errmodel, "mappings"))
+  }
   
-  controls <- list(times = timesD, attr.name = attr.name, conditions = intersect(x.conditions, data.conditions))
-
-  # might be necessary to "store" errmodel in the objective function (-> runbg)
-  force(errmodel)  
+  e.conditions <- if (!is.null(errmodel))
+    names(attr(errmodel, "mappings"))
+  else
+    NULL
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = controls$conditions, env = NULL) {
+  ## Ensure errmodel is captured in closure (e.g. for runbg)
+  force(errmodel)
+  
+  ## --- Bessel correction ----------------------------------------------------
+  if (use.bessel && !is.null(errmodel)) {
+    
+    n.data <- sum(sapply(data, nrow))
+    
+    par.structural <- union(
+      getParameters(x),
+      getParameters(errmodel)
+    )
+    
+    par.err <- setdiff(
+      getSymbols(unlist(getEquations(errmodel))),
+      names(unlist(getEquations(errmodel)))
+    )
+    
+    p <- length(par.structural) - length(par.err)
+    
+    bessel.correction <- sqrt(n.data / (n.data - p))
+    
+  } else {
+    bessel.correction <- 1
+  }
+  
+  controls <- list(
+    times = timesD,
+    attr.name = attr.name,
+    conditions = intersect(x.conditions, data.conditions),
+    bessel.correction = bessel.correction
+  )
+  
+  ## ========================================================================
+  ## Objective function
+  ## ========================================================================
+  myfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
+                   conditions = controls$conditions,
+                   env = NULL, cores = 1) {
+    
+    if (!is.numeric(cores) || cores <= 0) {
+      stop("`cores` must be a positive integer (cores >= 1).")
+    }
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pouter <- arglist[[1]]
     
-    # Generate output template
-    pars_out <- colnames(getDerivs(as.parvec(pouter)))
-   
-    # Import from controls
-    timesD <- controls$times
-    attr.name <- controls$attr.name
-    
-    # Create new environment if necessary
-    if (is.null(env)) env <- new.env()
-    
-    prediction <- x(times = timesD, pars = pouter, fixed = fixed, deriv = deriv, conditions = conditions)
-    
-    # Apply res() and wrss() to compute residuals and the weighted residual sum of squares
-    out.data <- lapply(conditions, function(cn) {
-      err <- NULL
-      if ((!is.null(errmodel) & is.null(e.conditions)) | (!is.null(e.conditions) && (cn %in% e.conditions))) 
-        err <- errmodel(out = prediction[[cn]], pars = getParameters(prediction[[cn]]), conditions = cn)
-      nll(res(data[[cn]], prediction[[cn]], err[[cn]]), pars = pouter, deriv = deriv)
-    })
-    out.data <- Reduce("+", out.data)
-    
-    # Combine contributions and attach attributes
-    out <- out.data
-    attr(out, controls$attr.name) <- out.data$value
-    
-    if (!is.null(env)) {
-      assign("prediction", prediction, envir = env)
+    if (is.null(env)) {
+      env <- new.env()
     }
     
-    attr(out, "env") <- env
-    return(out)
+    ## Prediction for all conditions at once
+    prediction <- x(
+      times = controls$times,
+      pars = pouter,
+      fixed = fixed,
+      deriv = deriv,
+      deriv2 = deriv2,
+      conditions = conditions
+    )
+    
+    pars_pred <- if (length(prediction) > 0)
+      getParameters(prediction[[1]])
+    else
+      NULL
+    
+    use_errmodel <- !is.null(errmodel) &&
+      (is.null(e.conditions) || any(conditions %in% e.conditions))
+    
+    ## --- condition-wise evaluation -----------------------------------------
+    eval_condition <- function(cn) {
       
-
+      if (use_errmodel && (is.null(e.conditions) || cn %in% e.conditions)) {
+        
+        err <- errmodel(
+          out = prediction[[cn]],
+          pars = pars_pred,
+          conditions = cn
+        )
+        
+        err_cn <- if (!is.null(err) && !is.null(err[[cn]]))
+          err[[cn]]
+        else
+          NULL
+        
+      } else {
+        err_cn <- NULL
+      }
+      
+      nll(
+        res(data[[cn]], prediction[[cn]], err_cn),
+        pars = pouter,
+        deriv = deriv,
+        bessel.correction = controls$bessel.correction
+      )
+    }
+    
+    ## --- apply over conditions ---------------------------------------------
+    if (cores == 1) {
+      
+      out.data <- lapply(conditions, eval_condition)
+      
+    } else if (.Platform$OS.type != "windows") {
+      
+      out.data <- parallel::mclapply(
+        conditions, eval_condition, mc.cores = cores
+      )
+      
+    } else {
+      
+      cl <- parallel::makeCluster(cores)
+      on.exit(parallel::stopCluster(cl))
+      out.data <- parallel::parLapply(cl, conditions, eval_condition)
+    }
+    
+    ## --- aggregate ----------------------------------------------------------
+    out.data <- Reduce("+", out.data)
+    
+    out <- out.data
+    attr(out, controls$attr.name) <- out.data$value
+    assign("prediction", prediction, envir = env)
+    attr(out, "env") <- env
+    
+    out
   }
+  
   class(myfn) <- c("objfn", "fn")
   attr(myfn, "conditions") <- data.conditions
   attr(myfn, "parameters") <- attr(x, "parameters")
   attr(myfn, "modelname") <- modelname(x, errmodel)
-  return(myfn)
-
+  
+  myfn
 }
+
 
 #' Soft L2 constraint on parameters
 #' 
@@ -209,159 +310,125 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL, attr.name = "data") {
 #' and its derivatives with respect to p and sigma. Sigma parameters being
 #' passed to the function are ALWAYS assumed to be on a log scale, i.e. internally
 #' sigma parameters are converted by \code{exp()}.
-#' @examples
-#' mu <- c(A = 0, B = 0)
-#' sigma <- c(A = 0.1, B = 1)
-#' myfn <- constraintL2(mu, sigma)
-#' myfn(pars = c(A = 1, B = -1))
-#' 
-#' # Introduce sigma parameter but fix them (sigma parameters
-#' # are assumed to be passed on log scale)
-#' mu <- c(A = 0, B = 0)
-#' sigma <- paste("sigma", names(mu), sep = "_")
-#' myfn <- constraintL2(mu, sigma)
-#' pars <- c(A = .8, B = -.3, sigma_A = -1, sigma_B = 1)
-#' myfn(pars = pars[c(1, 3)], fixed = pars[c(2, 4)])
-#' 
-#' # Assume same sigma parameter for both A and B
-#' # sigma is assumed to be passed on log scale
-#' mu <- c(A = 0, B = 0)
-#' myfn <- constraintL2(mu, sigma = "sigma")
-#' pars <- c(A = .8, B = -.3, sigma = 0)
-#' myfn(pars = pars)
-#' 
 #' @export
 constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
-
   
-  # Aktuell zu kompliziert aufgesetzt. Man sollte immer die komplette Hessematrix/Gradient
-  # auswerten und dann die Elemente streichen, die in fixed sind!
+  estimateSigma <- is.character(sigma)
   
-  
-  estimateSigma <- ifelse(is.character(sigma), TRUE, FALSE)
-  if (length(sigma) > 1 & length(sigma) < length(mu))
-    stop("sigma must either have length 1 or at least length equal to length of mu.")
-  
-  ## Augment sigma if length = 1
   if (length(sigma) == 1) 
     sigma <- structure(rep(sigma, length(mu)), names = names(mu))
   if (is.null(names(sigma)))
     names(sigma) <- names(mu)
-  if (!is.null(names(sigma)) & !all(names(mu) %in% names(sigma)))
-    stop("Names of sigma and names of mu do not match.")
-  
-  ## Bring sigma in correct order (no matter if character or numeric)
   sigma <- sigma[names(mu)]
   
   controls <- list(mu = mu, sigma = sigma, attr.name = attr.name)
   
-  myfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition, env = NULL) {
+  myfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = condition, env = NULL) {
     
-    arglist <- list(...)
-    arglist <- arglist[match.fnargs(arglist, "pars")]
-    pouter <- arglist[[1]]
-    
-    # Import from controls
+    pouter <- list(...)[[match.fnargs(list(...), "pars")]]
     mu <- controls$mu
     sigma <- controls$sigma
-    attr.name <- controls$attr.name
-    nmu <- length(mu)
     
-    # pouter can be a list (if result from a parameter transformation)
-    # In this case match with conditions and evaluate only those
-    # If there is no overlap, return NULL
-    # If pouter is not a list, evaluate the constraint function 
-    # for this pouter.
+    # Handle list input (multiple conditions)
     if (is.list(pouter) && !is.null(conditions)) {
       available <- intersect(names(pouter), conditions)
-      defined <- ifelse(is.null(condition), TRUE, condition %in% conditions)
-      
-      if (length(available) == 0 | !defined) return()
-      pouter <- pouter[intersect(available, condition)]
+      if (length(available) == 0) return()
+      pouter <- pouter[available]
     }
     if (!is.list(pouter)) pouter <- list(pouter)
     
-    
     outlist <- lapply(pouter, function(p) {
       
+      # Get deriv attributes before any manipulation
+      dP <- attr(p, "deriv", exact = TRUE)
+      dP2 <- attr(p, "deriv2", exact = TRUE)
       
-      pars <- c(p, fixed)[names(mu)]
-      p1 <- setdiff(intersect(names(mu), names(p)), names(fixed))
+      # Combine and extract available parameters
+      all_pars <- c(as.numeric(p), fixed)
+      names(all_pars) <- c(names(p), names(fixed))
+      avail <- intersect(names(mu), names(all_pars))
       
-      # if estimate sigma, produce numeric sigma vector from the parameters provided in p and fixed
+      if (length(avail) == 0)
+        return(objlist(value = 0, 
+                       gradient = if(deriv) setNames(rep(0, length(p)), names(p)) else NULL,
+                       hessian = if(deriv) matrix(0, length(p), length(p), dimnames = list(names(p), names(p))) else NULL))
+      
+      pars <- all_pars[avail]
+      mu_a <- mu[avail]
+      sig_a <- sigma[avail]
+      n_a <- length(avail)
+      
+      p1 <- intersect(setdiff(names(mu), names(fixed)), names(p))
+      p2 <- character(0)
+      
+      # Handle sigma estimation
       if (estimateSigma) {
-        sigmapars <- sigma
-        sigma <- exp(c(p, fixed)[sigma])
-        names(sigma) <- names(mu)
-        Jsigma <- do.call(cbind, lapply(unique(sigmapars), function(s) {
-          (sigmapars == s)*sigma
-        }))
-        colnames(Jsigma) <- unique(sigmapars)
-        rownames(Jsigma) <- names(sigma)
-        p2 <- setdiff(intersect(unique(sigmapars), names(p)), names(fixed))
+        sig_a <- exp(all_pars[sig_a])
+        names(sig_a) <- avail
+        p2 <- intersect(setdiff(unique(sigma[avail]), names(fixed)), names(p))
       }
       
-      # Compute constraint value and derivatives
-      val <- sum((pars - mu)^2/sigma^2) + estimateSigma * sum(log(sigma^2))
-      val.p <- 2*(pars - mu)/sigma^2
-      val.sigma <- -2*(pars-mu)^2/sigma^3 + 2/sigma
-      val.p.p <- diag(2/sigma^2, nmu, nmu); colnames(val.p.p) <- rownames(val.p.p) <- names(mu)
-      val.p.sigma <- diag(-4*(pars-mu)/sigma^3, nmu, nmu); colnames(val.p.sigma) <- rownames(val.p.sigma) <- names(mu)
-      val.sigma.sigma <- diag(6*(pars-mu)^2/sigma^4 - 2/sigma^2, nmu, nmu); colnames(val.sigma.sigma) <- rownames(val.sigma.sigma) <- names(mu)
-      
-      # Multiply with Jacobian of sigma vector if estimate sigma
-      if (estimateSigma) {
-        val.sigma.sigma <- t(Jsigma) %*% val.sigma.sigma %*% Jsigma + diag((t(val.sigma) %*% Jsigma)[1,], ncol(Jsigma), ncol(Jsigma))
-        val.sigma <- (val.sigma %*% Jsigma)[1,]
-        val.p.sigma <- (val.p.sigma %*% Jsigma)
-      }
-      
+      # Compute value
+      res <- pars - mu_a
+      val <- sum(res^2 / sig_a^2) + estimateSigma * sum(2 * log(sig_a))
       
       gr <- hs <- NULL
       if (deriv) {
-        # Produce output gradient and hessian
-        gr <- rep(0, length(p)); names(gr) <- names(p)
+        gr <- setNames(rep(0, length(p)), names(p))
         hs <- matrix(0, length(p), length(p), dimnames = list(names(p), names(p)))
         
-        # Set values in gradient and hessian
-        gr[p1] <- val.p[p1]
-        hs[p1, p1] <- val.p.p[p1, p1]
-        if (estimateSigma) {
-          gr[p2] <- val.sigma[p2]
-          hs[p1, p2] <- val.p.sigma[p1, p2]
-          hs[p2, p1] <- t(val.p.sigma)[p2, p1]
-          hs[p2, p2] <- val.sigma.sigma[p2, p2]
+        p1_a <- intersect(p1, avail)
+        if (length(p1_a) > 0) {
+          gr[p1_a] <- 2 * res[p1_a] / sig_a[p1_a]^2
+          diag(hs)[p1_a] <- 2 / sig_a[p1_a]^2
         }
         
-        # Multiply with derivatives of incoming parameter
-        dP <- attr(p, "deriv")
+        if (estimateSigma && length(p2) > 0) {
+          # Aggregate sigma derivatives by sigma parameter name
+          for (sp in p2) {
+            idx <- which(sigma[avail] == sp)
+            gr[sp] <- sum(-2 * res[idx]^2 / sig_a[idx]^2 + 2)
+            hs[sp, sp] <- sum(4 * res[idx]^2 / sig_a[idx]^2)
+          }
+          # Cross terms p1 x p2
+          for (sp in p2) {
+            idx <- names(sigma[avail])[sigma[avail] == sp]
+            common <- intersect(idx, p1_a)
+            if (length(common) > 0) {
+              hs[common, sp] <- -4 * res[common] / sig_a[common]^2
+              hs[sp, common] <- hs[common, sp]
+            }
+          }
+        }
+        
+        # Chain rule
         if (!is.null(dP)) {
-          gr <- as.vector(gr %*% dP); names(gr) <- colnames(dP)
-          hs <- t(dP) %*% hs %*% dP; colnames(hs) <- colnames(dP); rownames(hs) <- colnames(dP)
+          gr_inner <- gr
+          gr <- as.vector(gr_inner %*% dP)
+          names(gr) <- colnames(dP)
+          hs <- t(dP) %*% hs %*% dP
+          if (!is.null(dP2)) {
+            hs <- hs + colSums(gr_inner * matrix(dP2, nrow = length(gr_inner)))
+            dim(hs) <- c(ncol(dP), ncol(dP))
+          }
+          dimnames(hs) <- list(colnames(dP), colnames(dP))
         }
       }
-
+      
       objlist(value = val, gradient = gr, hessian = hs)
-      
-      
     })
     
     out <- Reduce("+", outlist)
     attr(out, controls$attr.name) <- out$value
     attr(out, "env") <- env
-    return(out)
-    
-    
+    out
   }
+  
   class(myfn) <- c("objfn", "fn")
   attr(myfn, "conditions") <- condition
   attr(myfn, "parameters") <- names(mu)
-  return(myfn)
- 
-  
+  myfn
 }
-
-
 
 
 #' L2 objective function for validation data point
@@ -381,7 +448,7 @@ constraintL2 <- function(mu, sigma = 1, attr.name = "prior", condition = NULL) {
 #' and its derivatives with respect to p.
 #' @examples
 #' prediction <- list(a = matrix(c(0, 1), nrow = 1, dimnames = list(NULL, c("time", "A"))))
-#' derivs <- matrix(c(0, 1, 0.1), nrow = 1, dimnames = list(NULL, c("time", "A.A", "A.k1")))
+#' derivs <- array(c(1, 0.1), dim = c(1, 1, 2), dimnames = list(NULL, "A", c("A", "k1")))
 #' attr(prediction$a, "deriv") <- derivs
 #' p0 <- c(A = 1, k1 = 2)
 #' 
@@ -399,8 +466,8 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
   )
   
   
-  myfn <- function(..., fixed = NULL, deriv=TRUE, conditions = NULL, env = NULL) {
-  
+  myfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
+    
     # Import from controls
     mu <- controls$mu
     time <- controls$time
@@ -416,7 +483,7 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
     } else {
       stop("No prediction available. Use the argument env to pass an environment that contains the prediction.")
     }
-  
+    
     # Return result only when the data point condition overlaps with the evaluated conditions
     if (!is.null(conditions) && !condition %in% conditions) 
       return()
@@ -428,37 +495,127 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
     # Divide parameter into data point and rest
     datapar <- setdiff(names(mu), names(fixed))
     parapar <- setdiff(names(pouter), c(datapar, names(fixed)))
+    n_pouter <- length(pouter)
     
     
     # Get predictions and derivatives at time point
-    time.index <- which(prediction[[condition]][,"time"] == time)
+    time.index <- which(prediction[[condition]][, "time"] == time)
     if (length(time.index) == 0) 
       stop("datapointL2() requests time point for which no prediction is available. Please add missing time point by the times argument in normL2()")
-    withDeriv <- !is.null(attr(prediction[[condition]], "deriv"))
-    pred <- prediction[[condition]][time.index, ]
-    deriv <- NULL
-    if (withDeriv)
-      deriv <- attr(prediction[[condition]], "deriv")[time.index, ]
     
-    # Reduce to name = mu
-    pred <- pred[mu]
+    # Get prediction value - check if column exists
+    pred <- tryCatch(
+      prediction[[condition]][time.index, mu],
+      error = function(e) {
+        available_states <- setdiff(colnames(prediction[[condition]]), "time")
+        stop(sprintf(
+          "datapointL2() cannot find state '%s' in prediction.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+          mu, 
+          paste(available_states, collapse = ", "),
+          mu
+        ), call. = FALSE)
+      }
+    )
+    
+    # Get first derivatives (deriv is 3D array [time, name, param])
+    deriv_array <- attr(prediction[[condition]], "deriv")
+    withDeriv <- !is.null(deriv_array)
+    dxdp <- NULL
     if (withDeriv) {
-      mu.para <- intersect(paste(mu, parapar, sep = "."), names(deriv))
-      deriv <- deriv[mu.para]
+      # Extract derivatives: deriv_array[time.index, mu, ]
+      dxdp_full <- tryCatch(
+        deriv_array[time.index, mu, , drop = TRUE],
+        error = function(e) {
+          available_states <- if (!is.null(dimnames(deriv_array)[[2]])) 
+            dimnames(deriv_array)[[2]] 
+          else 
+            "unknown"
+          stop(sprintf(
+            "datapointL2() cannot find derivatives for state '%s'.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+            mu, 
+            paste(available_states, collapse = ", "),
+            mu
+          ), call. = FALSE)
+        }
+      )
+      
+      # Only extract parameters that actually exist in the derivatives
+      if (length(parapar) > 0) {
+        available_parapar <- intersect(parapar, names(dxdp_full))
+        dxdp <- numeric(length(parapar))
+        names(dxdp) <- parapar
+        if (length(available_parapar) > 0) {
+          dxdp[available_parapar] <- dxdp_full[available_parapar]
+        }
+        # Parameters not in dxdp_full remain 0 (not NA)
+      } else {
+        dxdp <- numeric(0)
+      }
     }
     
-    # Compute prior value and derivatives
+    # Get second derivatives (deriv2 is 4D array [time, name, param, param])
+    deriv2_array <- attr(prediction[[condition]], "deriv2")
+    withDeriv2 <- !is.null(deriv2_array) && deriv2
+    d2xdp2 <- NULL
+    if (withDeriv2 && length(parapar) > 0) {
+      # Extract second derivatives: deriv2_array[time.index, mu, , ]
+      d2xdp2_full <- tryCatch(
+        deriv2_array[time.index, mu, , , drop = TRUE],
+        error = function(e) {
+          available_states <- if (!is.null(dimnames(deriv2_array)[[2]])) 
+            dimnames(deriv2_array)[[2]] 
+          else 
+            "unknown"
+          stop(sprintf(
+            "datapointL2() cannot find second derivatives for state '%s'.\n  Available states: %s\n  If '%s' is an input, make sure to use Y() with attach.input = TRUE!",
+            mu, 
+            paste(available_states, collapse = ", "),
+            mu
+          ), call. = FALSE)
+        }
+      )
+      
+      # Only extract parameters that actually exist in the second derivatives
+      available_parapar <- intersect(parapar, rownames(d2xdp2_full))
+      d2xdp2 <- matrix(0, length(parapar), length(parapar), 
+                       dimnames = list(parapar, parapar))
+      if (length(available_parapar) > 0) {
+        d2xdp2[available_parapar, available_parapar] <- 
+          d2xdp2_full[available_parapar, available_parapar, drop = FALSE]
+      }
+      # Parameters not in d2xdp2_full get 0 entries (not NA)
+    }
+    
+    # Compute residual and objective value
     res <- as.numeric(pred - c(fixed, pouter)[names(mu)])
-    val <- as.numeric((res/sigma) ^ 2)
+    sigma2_inv <- 1/(sigma * sigma)
+    val <- res * res * sigma2_inv
+    
+    # Initialize gradient and hessian
     gr <- NULL
     hs <- NULL
     
-    if (withDeriv) {
-      dres.dp <- structure(rep(0, length(pouter)), names = names(pouter))
-      if (length(parapar) > 0) dres.dp[parapar] <- as.numeric(deriv)
-      if (length(datapar) > 0) dres.dp[datapar] <- -1
-      gr <- 2*res*dres.dp/sigma ^ 2
-      hs <- 2*outer(dres.dp, dres.dp, "*")/sigma ^ 2; colnames(hs) <- rownames(hs) <- names(pouter)
+    if (deriv && withDeriv) {
+      # Derivative of residual with respect to parameters
+      dres.dp <- numeric(n_pouter)
+      names(dres.dp) <- names(pouter)
+      if (length(parapar) > 0) 
+        dres.dp[parapar] <- dxdp
+      if (length(datapar) > 0) 
+        dres.dp[datapar] <- -1
+      
+      # Gradient: d(val)/dp = 2 * res * dres.dp / sigma^2
+      gr <- 2 * res * sigma2_inv * dres.dp
+      
+      # Hessian: d2(val)/dp2 = 2 * dres.dp %*% t(dres.dp) / sigma^2 + 2 * res * d2res.dp2 / sigma^2
+      # Use tcrossprod for efficiency (C-based BLAS operation)
+      hs <- 2 * sigma2_inv * tcrossprod(dres.dp)
+      colnames(hs) <- rownames(hs) <- names(pouter)
+      
+      # Add second derivative contribution if available
+      if (withDeriv2 && length(parapar) > 0) {
+        hs[parapar, parapar] <- hs[parapar, parapar] + 2 * res * sigma2_inv * d2xdp2
+      }
     }
     
     out <- objlist(value = val, gradient = gr, hessian = hs)
@@ -480,8 +637,9 @@ datapointL2 <- function(name, time, value, sigma = 1, attr.name = "validation", 
   
   return(myfn)
   
-      
+  
 }
+
 
 #' L2 objective function for prior value
 #' 
@@ -515,7 +673,7 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pouter <- arglist[[1]]
-   
+    
     # Import from controls 
     mu <- controls$mu
     lambda <- controls$lambda
@@ -596,137 +754,272 @@ priorL2 <- function(mu, lambda = "lambda", attr.name = "prior", condition = NULL
 
 #' Compute the negative log-likelihood
 #' 
-#' Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4 and estimation of error models
+#' @description Gaussian Log-likelihood. Supports NONMEM-like BLOQ handling methods M1, M3 and M4 
+#' and estimation of error models with optional Bessel correction for variance parameter bias.
 #' 
 #' @param nout data.frame (result of [res]) or object of class [res].
-#' @param pars Example named vector of outer parameters to construct the objlist
-#' @param deriv TRUE or FALSE
-#' @param opt.BLOQ see [normIndiv]
-#' @param opt.hessian see [normIndiv]
+#' @param pars Named vector of outer parameters to construct the objlist
+#' @param deriv Logical. If TRUE, compute gradient and hessian
+#' @param opt.BLOQ Character denoting the method to deal with BLOQ data. 
+#' One of "M1", "M3", "M4NM", or "M4BEAL".
+#' @param opt.hessian Named logical vector to include or exclude various 
+#' summands of the hessian matrix. Controls which parts contribute to the 
+#' Hessian calculation for both ALOQ and BLOQ data.
+#' @param bessel.correction Numeric. Bessel correction factor for variance estimation.
+#' Default is 1 (no correction). When use.bessel = TRUE in normL2(), this is set to 
+#' sqrt(n/(n-p)) where n is total data points and p is number of structural (non-errormodel) parameters.
 #' 
 #' @md
-#' @return list with entries value (numeric, the weighted residual sum of squares), 
-#' gradient (numeric, gradient) and 
-#' hessian (matrix of type numeric).
+#' @return list with entries value (numeric, the negative log-likelihood with Bessel correction applied), 
+#' gradient (numeric vector, gradient with respect to parameters) and 
+#' hessian (matrix of type numeric, second derivatives). The returned value includes the Bessel correction
+#' and is used for optimization. The TRUE maximum likelihood (for BIC/AIC) is stored in attr(*, "neg2ll").
+#' 
+#' @details The Bessel correction is applied by multiplying weighted residuals with bessel.correction.
+#' This changes both the objective value AND the gradient/Hessian, leading to corrected parameter 
+#' estimates during optimization. The TRUE maximum likelihood value (without correction) is stored 
+#' in the "neg2ll" attribute for use in BIC/AIC calculations.
+#' 
 #' @export
 nll <- function(nout, pars, deriv, opt.BLOQ = "M3", opt.hessian = c(
   ALOQ_part1 = TRUE, ALOQ_part2 = TRUE, ALOQ_part3 = TRUE,
   BLOQ_part1 = TRUE, BLOQ_part2 = TRUE, BLOQ_part3 = TRUE,
-  PD = TRUE  # enforce Hessian to be positive semidefinite, by setting nearest negative eigenvalues to zero
-  )) {
+  PD = TRUE), bessel.correction = 1) {
   
   # Split residuals into ALOQ and BLOQ
   is.bloq   <- nout$bloq
   nout.bloq <- nout[is.bloq, , drop = FALSE]
   nout.aloq <- nout[!is.bloq, , drop = FALSE]
   
-  # Handle derivs
+  # Handle derivs (matrices and arrays)
   derivs          <- attr(nout, "deriv")
-  derivs.bloq     <- derivs[is.bloq, , drop = FALSE]
-  derivs.aloq     <- derivs[!is.bloq, , drop = FALSE]
+  derivs.bloq     <- if (!is.null(derivs)) derivs[is.bloq, , drop = FALSE] else NULL
+  derivs.aloq     <- if (!is.null(derivs)) derivs[!is.bloq, , drop = FALSE] else NULL
+  
   derivs.err      <- attr(nout, "deriv.err")
-  derivs.err.bloq <- derivs.err[is.bloq, , drop = FALSE]
-  derivs.err.aloq <- derivs.err[!is.bloq, , drop = FALSE]
+  derivs.err.bloq <- if (!is.null(derivs.err)) derivs.err[is.bloq, , drop = FALSE] else NULL
+  derivs.err.aloq <- if (!is.null(derivs.err)) derivs.err[!is.bloq, , drop = FALSE] else NULL
+  
+  deriv2          <- attr(nout, "deriv2")
+  deriv2.bloq     <- if (!is.null(deriv2)) deriv2[is.bloq, , , drop = FALSE] else NULL
+  deriv2.aloq     <- if (!is.null(deriv2)) deriv2[!is.bloq, , , drop = FALSE] else NULL
+  
+  deriv2.err      <- attr(nout, "deriv2.err")
+  deriv2.err.bloq <- if (!is.null(deriv2.err)) deriv2.err[is.bloq, , , drop = FALSE] else NULL
+  deriv2.err.aloq <- if (!is.null(deriv2.err)) deriv2.err[!is.bloq, , , drop = FALSE] else NULL
+  
+  mywrss <- {
+    gr <- if (deriv) setNames(numeric(length(pars)), names(pars)) else NULL
+    he <- if (deriv) matrix(
+      0, length(pars), length(pars),
+      dimnames = list(names(pars), names(pars))
+    ) else NULL
+    
+    objlist(value = 0, gradient = gr, hessian = he)
+  }
   
   # Apply nll
-  mywrss <- init_empty_objlist(pars, deriv = deriv)
   nll_ALOQ_result <- NULL
-  if (!all(is.bloq))
-    nll_ALOQ_result <- nll_ALOQ(nout.aloq, derivs.aloq, derivs.err.aloq, opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
-  mywrss <- mywrss + nll_ALOQ_result
-  if (any(is.bloq) && (!opt.BLOQ == "M1"))
-    mywrss <- mywrss + nll_BLOQ(nout.bloq, derivs.bloq, derivs.err.bloq, opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian)
   
+  if (!all(is.bloq)) {
+    nll_ALOQ_result <- nll_ALOQ(
+      nout.aloq, derivs.aloq, derivs.err.aloq, 
+      deriv2.aloq, deriv2.err.aloq,
+      opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian, 
+      bessel.correction = bessel.correction
+    )
+  }
+  
+  mywrss <- mywrss + nll_ALOQ_result
+  
+  if (any(is.bloq) && (!opt.BLOQ == "M1")) {
+    mywrss <- mywrss + nll_BLOQ(
+      nout.bloq, derivs.bloq, derivs.err.bloq,
+      deriv2.bloq, deriv2.err.bloq,
+      opt.BLOQ = opt.BLOQ, opt.hessian = opt.hessian
+    )
+  }
+  
+  # Extract and store attributes
   chisquare <- attr(nll_ALOQ_result, "chisquare")
+  nll <- attr(nll_ALOQ_result, "nll")
   attr(mywrss, "chisquare") <- if (length(chisquare)) chisquare else 0
+  attr(mywrss, "nll") <- if (length(nll)) nll else 0 
   
   mywrss
 }
 
 
-
 #' Non-linear log likelihood for the ALOQ part of the data
-#' @md
+#' 
 #' @param nout output of [res()]
-#' @param derivs,derivs.err attributes of output of [res()]
+#' @param derivs,derivs.err matrix of first derivatives
+#' @param deriv2,deriv2.err array of second derivatives
 #' @param opt.BLOQ Character denoting the method to deal with BLOQ data
 #' @param opt.hessian Named logical vector to include or exclude
 #'   various non-convex summands of the hessian matrix
+#' @param bessel.correction Numeric. Bessel correction factor applied to the 
+#'   weighted residuals. Default is 1 (no correction).
+#'   
+#' @md
 #' @importFrom stats pnorm dnorm
 nll_ALOQ <- function(nout,
                      derivs,
                      derivs.err,
+                     deriv2 = NULL,
+                     deriv2.err = NULL,
                      opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
                      opt.hessian = c(
-                       # ALOQ (Above limit of quantification): Three parts of the hessian which can be obtained with first order derivs
                        ALOQ_part1 = TRUE,
                        ALOQ_part2 = TRUE,
                        ALOQ_part3 = TRUE
-                     )) {
-  
-  # opt.BLOQ: only M4BEAL changes something, all others are implicit, since they do not change anything in the ALOQ part
-  # opt.hessian ALOQ_part1-ALOQ_part3
+                     ),
+                     bessel.correction = 1) {
   
   # .. Residual terms ----#
   wr <- nout$weighted.residual
   w0 <- nout$weighted.0
   s  <- nout$sigma
   
-  # .. Compute objective value ----#
-  chisquare <- obj <- sum(wr^2)
-  obj <- obj + sum(log(2*pi*s^2))
-  if (opt.BLOQ %in% "M4BEAL")
-    obj <- obj + 2 * sum(stats::pnorm(w0, log.p = TRUE))
+  # .. Compute TRUE negative log-likelihood (for BIC/AIC) ----#
+  chisquare_ml <- sum(wr^2)
+  neg2ll_ml <- chisquare_ml + sum(log(2*pi*s^2))
+  
+  # .. Apply Bessel correction to weighted residuals ----#
+  use_bessel <- bessel.correction != 1
+  if (use_bessel) {
+    wr <- wr * bessel.correction
+    w0 <- w0 * bessel.correction
+  }
+  
+  # .. Compute corrected objective value (for optimization) ----#
+  chisquare <- sum(wr^2)
+  obj <- chisquare + sum(log(2*pi*s^2))
+  
+  if (opt.BLOQ %in% "M4BEAL") {
+    bloq_term <- 2 * sum(stats::pnorm(w0, log.p = TRUE))
+    obj <- obj + bloq_term
+    neg2ll_ml <- neg2ll_ml + bloq_term
+  }
   
   grad <- NULL
   hessian <- NULL
+  
   if (!is.null(derivs) && nrow(derivs) > 0) {
     # .. Sensitivities terms ----#
-    #   sens = dres/dp = dx/dp, sens.err = dsigma/dp
-    dxdp <- as.matrix(derivs[, -(1:2), drop = FALSE])
-    dsdp <- 0 * dxdp
-    if (!is.null(derivs.err))
-      dsdp <- as.matrix(derivs.err[, -(1:2), drop = FALSE])
-    dwrdp <- 1/s*dxdp - wr/s*dsdp
-    dw0dp <- 1/s*dxdp - w0/s*dsdp
-    dlogsdp <- (1/s)*dsdp # dlogsig.dp
-    G_by_Phi <- function(w) exp(stats::dnorm(w, log = TRUE)- stats::pnorm(w, log.p = TRUE))
-    # .. 2nd Sensitivity terms ----#
-    #   interaction terms of second derivative. d2adb2 means second derivative: d^2a/db^2
-    #   d2wrdp2 does not solely consist of second derivatives but via the prefactors also of some combinations of first order derivs.
-    # * These are the equations, but since we need to sum over residuals, they will be inserted directly
-    # d2wrdp2 <- - 1 / (s^2) * (dxdp * dsdp + dsdp * dxdp) +
-    #               2 * wr/(s^2) * dsdp * dsdp # - wr/s* d2sdp2 + 1/s * d2xdp2
+    dxdp <- derivs
+    dsdp <- if (!is.null(derivs.err)) derivs.err else matrix(0, nrow = nrow(derivs), ncol = ncol(derivs))
+    n_pars <- ncol(dxdp)
+    
+    # Compute base derivatives
+    dwrdp <- 1/s * dxdp - wr/s * dsdp
+    dw0dp <- 1/s * dxdp - w0/s * dsdp
+    
+    # Apply Bessel correction to derivatives if needed
+    if (use_bessel) {
+      dwrdp <- dwrdp * bessel.correction
+      dw0dp <- dw0dp * bessel.correction
+    }
+    
+    dlogsdp <- (1/s) * dsdp
+    G_by_Phi <- function(w) exp(stats::dnorm(w, log = TRUE) - stats::pnorm(w, log.p = TRUE))
     
     # .. Compute gradient ----#
-    grad <- as.vector(2*matrix(wr, nrow = 1) %*% dwrdp + 2*apply(dlogsdp,2, sum))
-    if (opt.BLOQ %in% "M4BEAL")
-      grad <- grad + as.vector((2 * matrix(G_by_Phi(w0), nrow = 1)) %*% (dw0dp))
+    grad <- as.vector(2 * colSums(wr * dwrdp) + 2 * colSums(dlogsdp))
+    if (opt.BLOQ %in% "M4BEAL") {
+      grad <- grad + as.vector(2 * colSums(G_by_Phi(w0) * dw0dp))
+    }
     names(grad) <- colnames(dxdp)
     
     # .. Compute hessian ----#
-    # >>>> All equations were double-checked, they should be fine. (Dont touch or read them, D2!) <<<<<<<<<<<
-    hessian <- matrix(0, nrow = ncol(dwrdp), ncol = ncol(dwrdp), dimnames = list(colnames(dwrdp), colnames(dwrdp)))
-    hessian <- hessian + 2 * t(dwrdp) %*% dwrdp # - 2 * t(dsig.dp) %*% dsig.dp # + 2. sens
+    hessian <- matrix(0, nrow = n_pars, ncol = n_pars, 
+                      dimnames = list(colnames(dxdp), colnames(dxdp)))
     
-    if (opt.hessian["ALOQ_part1"])  # "interaction"-terms of d2wrdp2
-      hessian <- hessian + 2 * (t(-wr/s^2 * dxdp) %*% dsdp + t(-wr/s^2 * dsdp) %*% dxdp) #slightly concave
-    if (opt.hessian["ALOQ_part2"])  # "interaction"-terms of d2wrdp2
-      hessian <- hessian + 2 * t(2 * wr^2/(s^2) * dsdp)%*%dsdp # + 2nd order derivs of logsig and wr
-    if (opt.hessian["ALOQ_part3"]) # The non-convex contribution by log(sigma)
-      hessian <- hessian - 2 * t(dlogsdp) %*% dlogsdp
+    # Base term: 2 * dwrdp^T * dwrdp
+    hessian <- hessian + 2 * crossprod(dwrdp)
     
+    if (opt.hessian["ALOQ_part1"]) {
+      # Interaction terms: 2 * (-wr/s^2) * (dxdp * dsdp^T + dsdp * dxdp^T)
+      hessian <- hessian + 2 * crossprod(-wr/s^2 * dxdp, dsdp)
+      hessian <- hessian + 2 * crossprod(-wr/s^2 * dsdp, dxdp)
+    }
     
+    if (opt.hessian["ALOQ_part2"]) {
+      # 2 * (2*wr^2/s^2) * dsdp^T * dsdp
+      hessian <- hessian + 2 * crossprod(sqrt(2) * wr/s * dsdp)
+    }
+    
+    if (opt.hessian["ALOQ_part3"]) {
+      # Non-convex log(sigma) contribution: -2 * dlogsdp^T * dlogsdp
+      hessian <- hessian - 2 * crossprod(dlogsdp)
+    }
+    
+    # Add second derivative terms if available
+    if (!is.null(deriv2)) {
+      # deriv2 is array [n_data, n_pars, n_pars]
+      # einsum("i,ijk->jk", weights, arr) = crossprod of weights with flattened arr
+      
+      d2xdp2 <- deriv2
+      d2sdp2 <- if (!is.null(deriv2.err)) deriv2.err else array(0, dim = dim(deriv2))
+      
+      n_i <- dim(d2xdp2)[1]
+      
+      # Weights for the two terms
+      w1 <- wr * (1/s)
+      w2 <- wr * (wr/s)
+      
+      # einsum("i,ijk->jk", w, A) = t(w) %*% matrix(A, n_i, n_j*n_k), reshaped
+      # Reshape d2xdp2 to [n_i, n_pars * n_pars]
+      d2xdp2_flat <- matrix(d2xdp2, nrow = n_i, ncol = n_pars * n_pars)
+      d2sdp2_flat <- matrix(d2sdp2, nrow = n_i, ncol = n_pars * n_pars)
+      
+      contrib_flat <- crossprod(w1, d2xdp2_flat) - crossprod(w2, d2sdp2_flat)
+      contrib_mat <- matrix(contrib_flat, nrow = n_pars, ncol = n_pars)
+      
+      hessian <- hessian + 2 * contrib_mat
+    }
+    
+    # M4BEAL terms
     if (opt.BLOQ %in% "M4BEAL") {
-      hessian <- hessian + 2 * t((-w0 * G_by_Phi(w0) - G_by_Phi(w0)^2) * dw0dp) %*% dw0dp # 1st order terms
-      hessian <- hessian + 2 * t(G_by_Phi(w0) * (-1)/(s^2) * dxdp ) %*% dsdp + 2 * t(G_by_Phi(w0) * (-1)/(s^2) * dsdp ) %*% dxdp # 2nd order terms
-      if (opt.hessian["ALOQ_part1"]) # The other term from second sensitivities of wr
-        hessian <- hessian + 2 * t(2 * G_by_Phi(w0) * w0/(s^2) * dsdp)%*%dsdp
+      G_w0 <- G_by_Phi(w0)
+      
+      # First order terms: 2 * (-w0*G - G^2) * dw0dp^T * dw0dp
+      hessian <- hessian + 2 * crossprod(sqrt(pmax(0, -w0 * G_w0 - G_w0^2)) * dw0dp)
+      
+      # Second order terms: 2 * G * (-1/s^2) * (dxdp * dsdp^T + dsdp * dxdp^T)
+      hessian <- hessian + 2 * crossprod(G_w0 * (-1/s^2) * dxdp, dsdp)
+      hessian <- hessian + 2 * crossprod(G_w0 * (-1/s^2) * dsdp, dxdp)
+      
+      if (opt.hessian["ALOQ_part1"]) {
+        # 2 * G * (2*w0/s^2) * dsdp^T * dsdp
+        hessian <- hessian + 2 * crossprod(sqrt(2 * G_w0 * w0/s^2) * dsdp)
+      }
+      
+      # Add second derivative terms for M4BEAL if available
+      if (!is.null(deriv2)) {
+        d2xdp2 <- deriv2
+        d2sdp2 <- if (!is.null(deriv2.err)) deriv2.err else array(0, dim = dim(deriv2))
+        
+        n_i <- dim(d2xdp2)[1]
+        
+        w1 <- G_w0 * (1/s)
+        w2 <- G_w0 * (w0/s)
+        
+        d2xdp2_flat <- matrix(d2xdp2, nrow = n_i, ncol = n_pars * n_pars)
+        d2sdp2_flat <- matrix(d2sdp2, nrow = n_i, ncol = n_pars * n_pars)
+        
+        contrib_flat <- crossprod(w1, d2xdp2_flat) - crossprod(w2, d2sdp2_flat)
+        contrib_mat <- matrix(contrib_flat, nrow = n_pars, ncol = n_pars)
+        
+        hessian <- hessian + 2 * contrib_mat
+      }
     }
   }
   
   out <- objlist(value = obj, gradient = grad, hessian = hessian)
-  attr(out, "chisquare") <- chisquare
+  attr(out, "chisquare") <- chisquare_ml
+  attr(out, "nll") <- neg2ll_ml
+  attr(out, "besselcorrected") <- use_bessel
   out
 }
 
@@ -735,7 +1028,8 @@ nll_ALOQ <- function(nout,
 #' Non-linear log likelihood for the BLOQ part of the data
 #' @md
 #' @param nout.bloq The bloq output of [res()]
-#' @param derivs.bloq,derivs.err.bloq attributes of output of [res()]
+#' @param derivs.bloq,derivs.err.bloq matrix of first derivatives
+#' @param deriv2.bloq,deriv2.err.bloq array of second derivatives
 #' @param opt.BLOQ Character denoting the method to deal with BLOQ data
 #' @param opt.hessian Named logical vector to include or exclude
 #'   various summands of the hessian matrix
@@ -743,6 +1037,8 @@ nll_ALOQ <- function(nout,
 nll_BLOQ <- function(nout.bloq,
                      derivs.bloq,
                      derivs.err.bloq,
+                     deriv2.bloq = NULL,
+                     deriv2.err.bloq = NULL,
                      opt.BLOQ = c("M3", "M4NM", "M4BEAL", "M1"),
                      opt.hessian = c(
                        BLOQ_part1 = TRUE,
@@ -751,134 +1047,201 @@ nll_BLOQ <- function(nout.bloq,
                      )) {
   
   # .. Checks -----
-  if (opt.BLOQ %in% c("M4NM", "M4BEAL") & any(nout.bloq$value < 0))
-    stop("M4-Method cannot handle LLOQ < 0. Possible solutions:
-      * Use M3 which allows negative LLOQ (recommended)
-      * If you are working with log-transformed DV, exponentiate DV and LLOQ\n")
+  if (opt.BLOQ %in% c("M4NM", "M4BEAL") & any(nout.bloq$value < 0)) {
+    stop("M4-Method cannot handle LLOQ < 0. Possible solutions:\n",
+         "  * Use M3 which allows negative LLOQ (recommended)\n",
+         "  * If you are working with log-transformed DV, exponentiate DV and LLOQ\n")
+  }
   
-  # .. Residuals and sensitivities ----#
+  # .. Residuals ----#
   wr <- nout.bloq$weighted.residual
   w0 <- nout.bloq$weighted.0
   s  <- nout.bloq$sigma
   
   # .. Compute objective value ----#
-  if (opt.BLOQ == "M3"){
-    objvals.bloq <- -2*stats::pnorm(-wr, log.p = TRUE)
+  if (opt.BLOQ == "M3") {
+    objvals.bloq <- -2 * stats::pnorm(-wr, log.p = TRUE)
   }
-  if (opt.BLOQ %in% c("M4NM", "M4BEAL")){
-    objvals.bloq <- -2*log(1 - stats::pnorm(wr) / stats::pnorm(w0))
-    # .... catch numerically problematic cases ----#
-    # The problematic region can be approximated by a parabola, intercept and linear coefficient depend on LOQ/s
-    intercept = ifelse(log(w0-wr) > 0, 1.8, -1.9 * log(w0-wr) +0.9)
-    lin = ifelse(log(w0-wr) > 0, 0.9, 0.5 )
-    objvals.bloq[!is.finite(objvals.bloq)] <-  (intercept + lin * w0 + 0.95 * w0^2)[!is.finite(objvals.bloq)]
+  
+  if (opt.BLOQ %in% c("M4NM", "M4BEAL")) {
+    objvals.bloq <- -2 * log(1 - stats::pnorm(wr) / stats::pnorm(w0))
+    
+    # Catch numerically problematic cases
+    intercept <- ifelse(log(w0 - wr) > 0, 1.8, -1.9 * log(w0 - wr) + 0.9)
+    lin <- ifelse(log(w0 - wr) > 0, 0.9, 0.5)
+    objvals.bloq[!is.finite(objvals.bloq)] <- (intercept + lin * w0 + 0.95 * w0^2)[!is.finite(objvals.bloq)]
   }
   
   obj.bloq <- sum(objvals.bloq)
   grad.bloq <- NULL
   hessian.bloq <- NULL
   
-  if (!is.null(derivs.bloq) && nrow(derivs.bloq) > 0){
+  if (!is.null(derivs.bloq) && nrow(derivs.bloq) > 0) {
     # .. Sensitivities ----#
-    #   sens = dres/dp = dx/dp, sens.err = dsigma/dp = dsdp
-    dxdp <- as.matrix(derivs.bloq[, -(1:2), drop = FALSE])
-    dsdp <- 0 * dxdp
-    if (!is.null(derivs.err.bloq))
-      dsdp <- as.matrix(derivs.err.bloq[, -(1:2), drop = FALSE])
-    dwrdp <- 1/s*dxdp - wr/s*dsdp
-    dw0dp <- 1/s*dxdp - w0/s*dsdp
-    dlogsdp <- (1/s)*dsdp # dlogsig.dp
-    G_by_Phi <- function(w1, w2 = w1) exp(stats::dnorm(w1, log = TRUE) - stats::pnorm(w2, log.p = TRUE))
+    dxdp <- derivs.bloq
+    dsdp <- if (!is.null(derivs.err.bloq)) derivs.err.bloq else matrix(0, nrow = nrow(derivs.bloq), ncol = ncol(derivs.bloq))
+    n_pars <- ncol(dxdp)
     
-    # .. 2nd Sensitivities ----#
-    #   interaction terms of second derivative. d2adb2 means second derivative: d^2a/db^2
-    #   d2wrdp2 does not solely consist of second derivatives but via the prefactors also of some combinations of first order derivs.
-    # * These are the equations, but since we need to sum over residuals, they will be inserted directly
-    # d2wrdp2 <- - 1 / (s^2) * (dxdp * dsdp + dsdp * dxdp) +
-    #               2 * wr/(s^2) * dsdp * dsdp # - wr/s* d2sdp2 + 1/s * d2xdp2
+    dwrdp <- 1/s * dxdp - wr/s * dsdp
+    dw0dp <- 1/s * dxdp - w0/s * dsdp
+    dlogsdp <- (1/s) * dsdp
+    
+    G_by_Phi <- function(w1, w2 = w1) {
+      exp(stats::dnorm(w1, log = TRUE) - stats::pnorm(w2, log.p = TRUE))
+    }
     
     # .. Compute gradient ----#
-    if (opt.BLOQ == "M3"){
-      grad.bloq <- -2 * as.vector(matrix( G_by_Phi(-wr), nrow = 1) %*% (-dwrdp)) # minus sign of -2logLikelihood and -dwrdp cancel # [] clean this formula
+    if (opt.BLOQ == "M3") {
+      grad.bloq <- 2 * as.vector(colSums(G_by_Phi(-wr) * dwrdp))
     }
-    if (opt.BLOQ %in% c("M4NM", "M4BEAL")){
-      grad.bloq <-             as.vector(matrix(2 / (1/G_by_Phi(wr,w0) - 1/G_by_Phi(wr,wr)), nrow = 1) %*% dwrdp)
-      grad.bloq <- grad.bloq - as.vector(matrix(2 / (1/G_by_Phi(w0,w0) - 1/G_by_Phi(w0,wr)), nrow = 1) %*% dw0dp)
-      grad.bloq <- grad.bloq + as.vector(matrix(2 * G_by_Phi(w0), nrow = 1) %*% dw0dp)
+    
+    if (opt.BLOQ %in% c("M4NM", "M4BEAL")) {
+      c1 <- 1 / (1/G_by_Phi(wr, w0) - 1/G_by_Phi(wr, wr))
+      c2 <- 1 / (1/G_by_Phi(w0, w0) - 1/G_by_Phi(w0, wr))
+      c3 <- G_by_Phi(w0)
+      
+      grad.bloq <- as.vector(2 * colSums(c1 * dwrdp - c2 * dw0dp + c3 * dw0dp))
     }
     names(grad.bloq) <- colnames(dxdp)
     
     # .. Compute hessian ----
+    hessian.bloq <- matrix(0, nrow = n_pars, ncol = n_pars, 
+                           dimnames = list(colnames(dxdp), colnames(dxdp)))
+    
     if (opt.BLOQ %in% "M3") {
-      hessian.bloq <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-      if (opt.hessian["BLOQ_part1"])
-        hessian.bloq <- hessian.bloq + 2 * t((-wr * G_by_Phi(-wr) + G_by_Phi(-wr)^2) * dwrdp) %*% dwrdp # 1st order terms
-      if (opt.hessian["BLOQ_part2"]){
-        hessian.bloq <- hessian.bloq - 2 * t(G_by_Phi(-wr) * (+1)/(s^2) * dxdp) %*% dsdp # 2nd order terms (+1) because the original term of d2wrdp2 contains -1/s^2, so (d2-wrdp) contains +1/s^2
-        hessian.bloq <- hessian.bloq - 2 * t(G_by_Phi(-wr) * (+1)/(s^2) * dsdp) %*% dxdp
+      G_neg_wr <- G_by_Phi(-wr)
+      
+      if (opt.hessian["BLOQ_part1"]) {
+        # 2 * (-wr*G + G^2) * dwrdp^T * dwrdp
+        coef <- -wr * G_neg_wr + G_neg_wr^2
+        # Handle sign: coef can be positive or negative
+        hessian.bloq <- hessian.bloq + 2 * crossprod(dwrdp, coef * dwrdp)
       }
-      if (opt.hessian["BLOQ_part3"])
-        hessian.bloq <- hessian.bloq - 2 *  t(G_by_Phi(-wr) * (2 * (-wr))/(s^2) * dsdp)%*%dsdp
+      
+      if (opt.hessian["BLOQ_part2"]) {
+        # -2 * G * (+1/s^2) * (dxdp * dsdp^T + dsdp * dxdp^T)
+        hessian.bloq <- hessian.bloq - 2 * crossprod(G_neg_wr * (1/s^2) * dxdp, dsdp)
+        hessian.bloq <- hessian.bloq - 2 * crossprod(G_neg_wr * (1/s^2) * dsdp, dxdp)
+      }
+      
+      if (opt.hessian["BLOQ_part3"]) {
+        # -2 * G * (2*(-wr)/s^2) * dsdp^T * dsdp
+        hessian.bloq <- hessian.bloq - 2 * crossprod(dsdp, G_neg_wr * (2 * (-wr)/s^2) * dsdp)
+      }
+      
+      # Add second derivative terms if available
+      if (!is.null(deriv2.bloq)) {
+        d2xdp2 <- deriv2.bloq
+        d2sdp2 <- if (!is.null(deriv2.err.bloq)) deriv2.err.bloq else array(0, dim = dim(deriv2.bloq))
+        
+        n_i <- dim(d2xdp2)[1]
+        
+        # For M3: d(-wr)/dp has sign flip, so d2(-wr)/dp2 = -d2xdp2/s + ...
+        w1 <- G_neg_wr * (1/s)
+        w2 <- G_neg_wr * (wr/s)
+        
+        d2xdp2_flat <- matrix(d2xdp2, nrow = n_i, ncol = n_pars * n_pars)
+        d2sdp2_flat <- matrix(d2sdp2, nrow = n_i, ncol = n_pars * n_pars)
+        
+        # -einsum w1 * d2xdp2 + einsum w2 * d2sdp2
+        contrib_flat <- -crossprod(w1, d2xdp2_flat) + crossprod(w2, d2sdp2_flat)
+        contrib_mat <- matrix(contrib_flat, nrow = n_pars, ncol = n_pars)
+        
+        hessian.bloq <- hessian.bloq + 2 * contrib_mat
+      }
     }
     
     # .. M4 hessian ----
     if (opt.BLOQ %in% c("M4NM", "M4BEAL")) {
-      d_dp_sq <- function(A, w = wr, sign = 1) {
-        # @details This function performs the multiplication of A with quadratic first order derivs: A*t(dw/dp)%*%(dw/dp)
-        # @param A: sth to multiply the derivs with
-        # @param w weighted residual: practically choice between wr or w0
-        # @param sign: +1 or -1, e.g. in H(-2*LLBM3), wr appears as -wr, therefore, the minus signs have to be propagated correctly. (In A, however, everything has to specified by hand).
-        dwdp <- 1/s*dxdp - w/s*dsdp
-        out <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-        out <- out + t(A * dwdp) %*% dwdp
-      }
-      d2_dp2 <- function(A, w = wr, sign = 1) {
-        # @details This function performs the multiplication of A with the second derivative terms: A*d^2w/dp^2
-        # @inheritParams d_dp_sq
-        out <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-        out <- out + t(A * (-1*sign)/(s^2) * dxdp) %*% dsdp
-        out <- out + t(A * (-1*sign)/(s^2) * dsdp) %*% dxdp
-        out <- out + t(A * (2 * (w*sign))/(s^2) * dsdp) %*% dsdp
-      }
-      # In hessian(BM4), one often gets an expression G(w0 or wr)/(Phi(w0)-Phi(wr))
-      # This function is replaces numerically problematic regions by an approximation
-      # @params wn,w0,wr "Weighted residual Numerator/Denominator 1/2"
+      # Helper function for stable division
       stable <- function(wn, w0, wr) {
+        out <- stats::dnorm(wn) / (stats::pnorm(w0) - stats::pnorm(wr))
         
-        if(!(identical(wn, w0) | identical(wn, wr)))
-          stop("The first argument wn needs to be identical to either the second or third")
-        
-        out <- stats::dnorm(wn)/(stats::pnorm(w0)-stats::pnorm(wr))
-        # two possible cases with different asymptotics: wn == wd1 or wn == wd2
-        if (identical(wn, w0)){
+        if (identical(wn, w0)) {
           out[is.infinite(out)] <- 0
           return(out)
         }
-        if (identical(wn, wr)){
-          out[is.infinite(out)] <- 1/(w0-wr) + wr # This formula was found out "by hand", I didn't really search for an analytic justification. If you want, you can try l'Hospitalizing it.
+        if (identical(wn, wr)) {
+          out[is.infinite(out)] <- 1/(w0 - wr) + wr
           return(out)
         }
+        out
       }
       
-      part1 <- d_dp_sq(-wr * stable(wr,w0,wr)) +
-        d2_dp2(stable(wr,w0,wr)) -
-        (d_dp_sq(-w0 * stable(w0,w0,wr), w = w0) +
-           d2_dp2(stable(w0,w0,wr), w = w0))
-      part1 <- 2 * part1
+      # Coefficient vectors
+      A1 <- -wr * stable(wr, w0, wr)
+      A2 <- stable(wr, w0, wr)
+      A3 <- -w0 * stable(w0, w0, wr)
+      A4 <- stable(w0, w0, wr)
+      A5 <- -w0 * G_by_Phi(w0) - G_by_Phi(w0)^2
+      A6 <- G_by_Phi(w0)
       
-      part2 <- stable(wr,w0,wr) * dwrdp - stable(w0,w0,wr) * dw0dp
-      part2 <- -2 * t(part2) %*% part2
+      # Part 1: First order derivative terms
+      part1 <- 2 * (
+        crossprod(dwrdp, A1 * dwrdp) +
+          crossprod(dw0dp, A3 * dw0dp) +
+          crossprod(dw0dp, A5 * dw0dp)
+      )
       
-      part3 <- d_dp_sq(-w0 * G_by_Phi(w0) - (G_by_Phi(w0))^2, w = w0) + d2_dp2(G_by_Phi(w0), w = w0)
-      part3 <- 2 * part3
+      # Part 2: Cross terms (non-convex)
+      part2_vec <- A2 * dwrdp - A4 * dw0dp
+      part2 <- -2 * crossprod(part2_vec)
       
-      hessian.bloq <- matrix(0, nrow = ncol(dxdp), ncol = ncol(dxdp), dimnames = list(colnames(dxdp), colnames(dxdp)))
-      if (opt.hessian["BLOQ_part1"])
+      # Part 3: Second order derivative interaction terms
+      part3 <- matrix(0, n_pars, n_pars)
+      if (opt.hessian["BLOQ_part2"]) {
+        part3 <- part3 + 2 * (
+          crossprod(A2 * (-1/s^2) * dxdp, dsdp) +
+            crossprod(A2 * (-1/s^2) * dsdp, dxdp) +
+            crossprod(A4 * (-1/s^2) * dxdp, dsdp) +
+            crossprod(A4 * (-1/s^2) * dsdp, dxdp) +
+            crossprod(A6 * (-1/s^2) * dxdp, dsdp) +
+            crossprod(A6 * (-1/s^2) * dsdp, dxdp)
+        )
+      }
+      
+      if (opt.hessian["BLOQ_part3"]) {
+        part3 <- part3 + 2 * (
+          crossprod(dsdp, A2 * (2 * wr/s^2) * dsdp) +
+            crossprod(dsdp, A4 * (2 * w0/s^2) * dsdp) +
+            crossprod(dsdp, A6 * (2 * w0/s^2) * dsdp)
+        )
+      }
+      
+      if (opt.hessian["BLOQ_part1"]) {
         hessian.bloq <- hessian.bloq + part1
-      if (opt.hessian["BLOQ_part2"])
+      }
+      if (opt.hessian["BLOQ_part2"]) {
         hessian.bloq <- hessian.bloq + part2
-      if (opt.hessian["BLOQ_part3"])
+      }
+      if (opt.hessian["BLOQ_part3"]) {
         hessian.bloq <- hessian.bloq + part3
+      }
+      
+      # Add second derivative terms if available
+      if (!is.null(deriv2.bloq)) {
+        d2xdp2 <- deriv2.bloq
+        d2sdp2 <- if (!is.null(deriv2.err.bloq)) deriv2.err.bloq else array(0, dim = dim(deriv2.bloq))
+        
+        n_i <- dim(d2xdp2)[1]
+        
+        d2xdp2_flat <- matrix(d2xdp2, nrow = n_i, ncol = n_pars * n_pars)
+        d2sdp2_flat <- matrix(d2sdp2, nrow = n_i, ncol = n_pars * n_pars)
+        
+        # contrib_wr: A2 * ((1/s) * d2xdp2 - (wr/s) * d2sdp2)
+        w1_wr <- A2 * (1/s)
+        w2_wr <- A2 * (wr/s)
+        contrib_wr_flat <- crossprod(w1_wr, d2xdp2_flat) - crossprod(w2_wr, d2sdp2_flat)
+        contrib_wr <- matrix(contrib_wr_flat, nrow = n_pars, ncol = n_pars)
+        
+        # contrib_w0: (A4 + A6) * ((1/s) * d2xdp2 - (w0/s) * d2sdp2)
+        w1_w0 <- (A4 + A6) * (1/s)
+        w2_w0 <- (A4 + A6) * (w0/s)
+        contrib_w0_flat <- crossprod(w1_w0, d2xdp2_flat) - crossprod(w2_w0, d2sdp2_flat)
+        contrib_w0 <- matrix(contrib_w0_flat, nrow = n_pars, ncol = n_pars)
+        
+        hessian.bloq <- hessian.bloq + 2 * (contrib_wr - contrib_w0)
+      }
     }
   }
   
@@ -900,20 +1263,13 @@ nll_BLOQ <- function(nout.bloq,
 #' the corresponding elements of out1 and out2 as they are.
 #' @return List of length of out1. 
 #' @aliases sumobjlist
-#' @export "+.objlist"
 #' @export
 #' 
-#' @examples 
-#' objlist1 <- dMod:::init_empty_objlist(c(a = 1, b = 2))
-#' objlist1$value  = 1; objlist1$gradient[1:2] <- 1; objlist1$hessian[1:4] <- 1
-#' objlist2 <- dMod:::init_empty_objlist(c(a = 1, d = 2))
-#' objlist2$value  = 1; objlist2$gradient[1:2] <- 1; objlist2$hessian[1:4] <- 1
-#' objlist1 + objlist2
 "+.objlist" <- function(out1, out2) {
   
   if (is.null(out1)) return(out2)
   if (is.null(out2)) return(out1)
-
+  
   what <- intersect(c("value", "gradient", "hessian"), c(names(out1), names(out2)))
   
   add_vector <- function(a,b) {
@@ -945,8 +1301,8 @@ nll_BLOQ <- function(nout.bloq,
     }
     if (w == "hessian") {
       if (neither_included) return(add_matrix(add_matrix(matrix(0, length(union(gn1,gn2)),length(union(gn1,gn2)),
-                                                       dimnames = list(union(gn1,gn2), union(gn1,gn2))
-                                                       ),v1),v2))
+                                                                dimnames = list(union(gn1,gn2), union(gn1,gn2))
+      ),v1),v2))
       if (one_includes_two) return(add_matrix(v1,v2))
       if (two_includes_one) return(add_matrix(v2,v1))
     }
@@ -989,7 +1345,7 @@ print.objlist <- function(x, n1 = 20, n2 = 6, ...) {
 
 #' @export
 print.objfn <- function(x, ...) {
- 
+  
   parameters <- attr(x, "parameters")
   
   cat("Objective function:\n")
@@ -998,4 +1354,3 @@ print.objfn <- function(x, ...) {
   cat("... parameters:", paste0(parameters, collapse = ", "), "\n")
   
 }
-

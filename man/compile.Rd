@@ -2,22 +2,61 @@
 % Please edit documentation in R/tools.R
 \name{compile}
 \alias{compile}
-\title{Compile one or more prdfn, obsfn or parfn objects}
+\title{Compile model-related C/C++ code}
 \usage{
-compile(..., output = NULL, args = NULL, cores = 1, verbose = F)
+compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 }
 \arguments{
-\item{...}{Objects of class parfn, obsfn or prdfn}
+\item{...}{One or more objects of class \code{parfn}, \code{obsfn}, or \code{prdfn}.
+Corresponding source files (e.g. \code{model.c}) are detected
+automatically based on the current \code{modelname}.}
 
-\item{output}{Optional character of the file to be produced. If several objects were
-passed, the different C files are all compiled into one shared object file.}
+\item{output}{Optional character string. If provided, all detected source
+files are compiled and linked into a single shared library named
+\code{paste0(output, .Platform$dynlib.ext)}. If \code{NULL}, each source file is
+compiled and linked into its own shared library.}
 
-\item{args}{Additional arguments for the R CMD SHLIB call, e.g. \code{-leinspline}.}
+\item{args}{Optional character string of additional compiler or linker
+flags passed to \verb{R CMD SHLIB}. If \code{NULL} or empty, compilation defaults
+to \code{-O3 -DNDEBUG}.}
 
-\item{cores}{Number of cores used for compilation when several files are compiled.}
+\item{cores}{Integer specifying the number of CPU cores used for parallel
+compilation of individual source files. Parallel compilation is enabled
+when \code{cores > 1}.}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{verbose}{Logical. If \code{TRUE}, compiler and linker output is printed
+to the R console.}
+}
+\value{
+Invisibly returns \code{TRUE} if compilation and linking succeed.
 }
 \description{
-Compile one or more prdfn, obsfn or parfn objects
+Compiles one or more model-related objects of class \code{parfn}, \code{obsfn}, or
+\code{prdfn} into dynamically loadable shared libraries (\code{.so} on Unix-alike
+systems, \code{.dll} on Windows).
+
+The function automatically detects C and C++ source files associated
+with each object based on its \code{modelname}, compiles them, and links them
+into shared libraries which are loaded into the current R session.
+}
+\details{
+Any previously loaded shared libraries with matching names are unloaded
+prior to linking. Successfully linked libraries are loaded automatically.
+
+When \code{output} is specified, the \code{modelname} of each input object is
+overwritten with \code{output} to ensure consistent symbol naming across all
+compiled routines. In addition, the attributes \code{sourcefiles} (C/C++
+source files) and \code{objfiles} (corresponding object files) are added to
+each object for diagnostic purposes.
+}
+\examples{
+\dontrun{
+## Compile a single model into separate shared libraries
+x <- odemodel(reactions)
+compile(x)
+
+## Compile multiple models into a single shared library
+compile(x, g, output = "combined")
+}
+
 }

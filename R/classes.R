@@ -1,103 +1,160 @@
 ## ODE model class -------------------------------------------------------------------
 
 
-#' Generate the model objects for use in Xs (models with sensitivities)
+#' Generate model objects for use in Xs (models with sensitivities)
 #'
-#' @param f Something that can be converted to \link{eqnvec},
-#' e.g. a named character vector with the ODE
-#' @param deriv logical, generate sensitivities or not
-#' @param forcings Character vector with the names of the forcings
-#' @param events data.frame of events with columns "var" (character, the name of the state to be
-#' affected), "time" (character or numeric, time point), "value" (character or numeric, value),
-#' "method" (character, either
-#' "replace" or "add"). See \link[deSolve]{events}. Events need to be defined here if they contain
-#' parameters, like the event time or value. If both, time and value are purely numeric, they
-#' can be specified in \code{\link{Xs}()}, too.
+#' Creates and compiles model objects for systems of ordinary differential equations (ODEs)
+#' with optional first- and second-order sensitivities. Depending on the selected solver,
+#' the function interfaces either to [cOde::funC()] (for `solver = "deSolve"`)
+#' or to [CppODE::CppODE()] (for `solver = "boost"`).
+#'
+#' @param f Something that can be converted to [eqnvec], e.g. a named character vector
+#'   specifying the right-hand sides of the ODE system.
+#' @param deriv Logical. If `TRUE`, generate first-order sensitivities.
+#'   Defaults to `TRUE`.
+#' @param deriv2 Logical. If `TRUE`, generate second-order sensitivities.
+#'   Only available with the `"boost"` solver and requires `deriv = TRUE`.
+#' @param forcings Character vector with the names of external forcings.
+#' @param events `data.frame` specifying discrete events during integration.
+#'   Must contain the columns `"var"` (character, name of the affected state),
+#'   `"time"` (character or numeric, time point),
+#'   `"value"` (character or numeric, value to apply), and
+#'   `"method"` (character, either `"replace"` or `"add"`).
+#'   Events must be defined here if they depend on parameters (e.g., event time or value).
+#'   If both `time` and `value` are purely numeric, such events may alternatively
+#'   be specified in [Xs()], but this is only supported for
+#'   `solver = "deSolve"`.
+#'   See [events][deSolve::events] for details on the `deSolve` implementation, or
+#'   [CppODE::CppODE()] for information on event handling in the `boost` solver.
 #' @param outputs Named character vector for additional output variables.
-#' @param fixed Character vector with the names of parameters (initial values and dynamic) for which
-#' no sensitivities are required (will speed up the integration).
-#' @param estimate Character vector specifying parameters (initial values and dynamic) for which
-#' sensitivities are returned. If estimate is specified, it overwrites `fixed`.
-#' @param modelname Character, the name of the C file being generated.
-#' @param solver Solver for which the equations are prepared.
-#' @param gridpoints Integer, the minimum number of time points where the ODE is evaluated internally
-#' @param verbose Print compiler output to R command line.
-#' @param ... Further arguments being passed to funC.
-#' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
-#' @export
+#' @param fixed Character vector with the names of parameters (initial values and dynamic)
+#'   for which no sensitivities are required (this speeds up integration).
+#' @param estimate Character vector specifying parameters (initial values and dynamic)
+#'   for which sensitivities are returned. If specified, `estimate` overwrites `fixed`.
+#' @param modelname Character. The base name of the generated C/C++ file.
+#' @param solver Character string specifying the solver backend.
+#'   One of `"deSolve"`, `"Sundials"` (deprecated), or `"boost"`.
+#' @param gridpoints Integer specifying the minimum number of internal time points
+#'   where the ODE is evaluated.
+#' @param verbose Logical. If `TRUE`, print compiler output to the R console.
+#' @param ... Additional arguments passed to [cOde::funC()] or
+#'   [CppODE::CppODE()].
+#'
+#' @return A list containing the generated model objects.
+#'   For `solver = "deSolve"`, the list includes `func` (ODE object)
+#'   and optionally `extended` (ODE + sensitivities object).
+#'   For `solver = "boost"`, the list contains compiled C++ solvers:
+#'   `boostODE`, `boostODE_sens`, and (if requested) `boostODE_sens2`.
+#'
+#' @seealso [cOde::funC()], [CppODE::CppODE()]
+#'
 #' @example inst/examples/odemodel.R
-#' @import cOde
-odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials"), gridpoints = NULL, verbose = FALSE, ...) {
-
-
-  if (is.null(gridpoints)) gridpoints <- 2
+#' @export
+odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NULL, outputs = NULL, 
+                     fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost"), 
+                     gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
-  modelname_s <- paste0(modelname, "_s")
   solver <- match.arg(solver)
-
-  func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
-  extended <- NULL
-  if (solver == "Sundials") {
-    # Sundials does not need "extended" by itself, but dMod relies on it.
-    extended <- func
-    attr(extended, "deriv") <- TRUE
-    attr(extended, "variables") <- c(attr(extended, "variables"), attr(extended, "variablesSens"))
-    attr(extended, "events") <- events
+  
+  if (deriv2 && !deriv) {
+    warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
+    deriv <- TRUE
   }
 
-  if (deriv && solver == "deSolve") {
-
-    mystates <- attr(func, "variables")
-    myparameters <- attr(func, "parameters")
-
-    if (is.null(estimate) & !is.null(fixed)) {
-      mystates <- setdiff(mystates, fixed)
-      myparameters <- setdiff(myparameters, fixed)
-    }
-
-    if (!is.null(estimate)) {
-      mystates <- intersect(mystates, estimate)
-      myparameters <- intersect(myparameters, estimate)
-    }
-
-    s <- sensitivitiesSymb(f,
-                           states = mystates,
-                           parameters = myparameters,
-                           inputs = attr(func, "forcings"),
-                           events = attr(func, "events"),
-                           reduce = TRUE)
-    fs <- c(f, s)
-    outputs <- c(attr(s, "outputs"), attr(func, "outputs"))
+  if (solver == "Sundials") {
+    stop("Sundials support has been removed. If you were an active user of the Sundials implementation, please get in touch.")
+  } 
+  else if (solver == "deSolve") {
     
-    events.sens <- attr(s, "events") 
-    events.func <- attr(func, "events")
-    events <- NULL
-    if (!is.null(events.func)) {
-      if (is.data.frame(events.sens)) {
-        events <- rbind(
-          as.eventlist(events.sens), 
-          as.eventlist(events.func), 
-          straingsAsFactors = FALSE)
-      } else {
-        events <- do.call(rbind, lapply(1:nrow(events.func), function(i) {
-          rbind(
-            as.eventlist(events.sens[[i]]), 
-            as.eventlist(events.func[i,]), 
-            stringsAsFactors = FALSE)
-        }))
+    if (deriv2) {
+      stop(
+        "Second-order sensitivities are not available with the 'deSolve' solver.\n",
+        "Consider using solver = 'boost'."
+      )
+    }
+    
+    if (is.null(gridpoints)) gridpoints <- 2
+    func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
+    extended <- NULL
+    if (deriv) {
+      modelname_s <- paste0(modelname, "_s")
+      mystates <- attr(func, "variables")
+      myparameters <- attr(func, "parameters")
+      
+      if (is.null(estimate) & !is.null(fixed)) {
+        mystates <- setdiff(mystates, fixed)
+        myparameters <- setdiff(myparameters, fixed)
       }
       
+      if (!is.null(estimate)) {
+        mystates <- intersect(mystates, estimate)
+        myparameters <- intersect(myparameters, estimate)
+      }
+      
+      s <- sensitivitiesSymb(f,
+                             states = mystates,
+                             parameters = myparameters,
+                             inputs = attr(func, "forcings"),
+                             events = attr(func, "events"),
+                             reduce = TRUE)
+      fs <- c(f, s)
+      outputs <- c(attr(s, "outputs"), attr(func, "outputs"))
+      
+      events.sens <- attr(s, "events") 
+      events.func <- attr(func, "events")
+      events <- NULL
+      if (!is.null(events.func)) {
+        if (is.data.frame(events.sens)) {
+          events <- rbind(
+            as.eventlist(events.sens), 
+            as.eventlist(events.func), 
+            stringsAsFactors = FALSE)
+        } else {
+          events <- do.call(rbind, lapply(1:nrow(events.func), function(i) {
+            rbind(
+              as.eventlist(events.sens[[i]]), 
+              as.eventlist(events.func[i,]), 
+              stringsAsFactors = FALSE)
+          }))
+        }
+        
+      }
+      
+      extended <- cOde::funC(fs, forcings = forcings, modelname = modelname_s, solver = solver, nGridpoints = gridpoints, events = events, outputs = outputs, ...)
     }
-    
-    extended <- cOde::funC(fs, forcings = forcings, modelname = modelname_s, solver = solver, nGridpoints = gridpoints, events = events, outputs = outputs, ...)
+    out <- list(func = func, extended = extended)
+    class(out) <- c("deSolve", "odemodel")
   }
-
-  out <- list(func = func, extended = extended)
-  attr(out, "class") <- "odemodel"
+  else if (solver == "boost") {
+    # Check and warn about unsupported arguments for boost::rosenbrock4
+    unsupported_args <- list(
+      outputs = outputs,
+      estimate = estimate,
+      gridpoints = gridpoints
+    )
+    
+    # List of arguments that are not supported
+    unsupported <- names(unsupported_args)[
+      sapply(unsupported_args, function(arg) !is.null(arg) && !(is.logical(arg) && arg == FALSE))
+    ]
+    
+    if (length(unsupported) > 0) {
+      warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
+    }
+    func <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = modelname, outdir = getwd(), deriv = FALSE, verbose = verbose, ...)
+    extended <- NULL
+    extended2 <- NULL
+    if (!deriv2 & deriv) {
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
+    } else if (deriv2 & deriv) {
+      extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
+      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s2"), outdir = getwd(), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
+    }
+    out <- list(func = func, extended = extended, extended2 = extended2)
+    class(out) <- c("boost", "odemodel")
+  }
   return(out)
-
-
 }
 
 ## Function classes ------------------------------------------------------
@@ -140,9 +197,9 @@ match.fnargs <- function(arglist, choices) {
 #' as named character vectors.
 #' @param ... mathematical expressions as characters to be coerced,
 #' the right-hand sides of the equations
-#' @return object of class \code{eqnvec}, basically a named character.
+#' @return object of class `eqnvec`, basically a named character.
 #' @example inst/examples/eqnvec.R
-#' @seealso \link{eqnlist}
+#' @seealso [eqnlist]
 #' @export
 eqnvec <- function(...) {
 
@@ -175,10 +232,10 @@ eqnvec <- function(...) {
 #' @param states Character vector. Names of the states.
 #' @param rates Character vector. The rate expressions.
 #' @param volumes Named character, volume parameters for states. Names must be a subset of the states.
-#' Values can be either characters, e.g. "V1", or numeric values for the volume. If \code{volumes} is not
-#' \code{NULL}, missing entries are treated as 1.
+#' Values can be either characters, e.g. "V1", or numeric values for the volume. If `volumes` is not
+#' `NULL`, missing entries are treated as 1.
 #' @param description Character vector. Description of the single processes.
-#' @return An object of class \code{eqnlist}, basically a list.
+#' @return An object of class `eqnlist`, basically a list.
 #' @example inst/examples/eqnlist.R
 eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, volumes = NULL, description = NULL) {
 
@@ -215,74 +272,77 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 
 #' Parameter transformation function
 #'
+#' @description
 #' Generate functions that transform one parameter vector into another
 #' by means of a transformation, pushing forward the jacobian matrix
 #' of the original parameter.
-#' Usually, this function is called internally, e.g. by \link{P}.
+#' Usually, this function is called internally, e.g. by [P].
 #' However, you can use it to add your own specialized parameter
 #' transformations to the general framework.
-#' @param p2p a transformation function for one condition, i.e. a function
-#' \code{p2p(p, fixed, deriv)} which translates a parameter vector \code{p}
-#' and a vector of fixed parameter values \code{fixed} into a new parameter
-#' vector. If \code{deriv = TRUE}, the function should return an attribute
-#' \code{deriv} with the Jacobian matrix of the parameter transformation.
-#' @param parameters character vector, the parameters accepted by the function
-#' @param condition character, the condition for which the transformation is defined
-#' @return object of class \code{parfn}, i.e. a function \code{p(..., fixed, deriv,
-#'  conditions, env)}. The argument \code{pars} should be passed via the \code{...}
-#'  argument.
 #'
-#'  Contains attributes "mappings", a list of \code{p2p}
-#' functions, "parameters", the union of parameters acceted by the mappings and
-#' "conditions", the total set of conditions.
-#' @seealso \link{sumfn}, \link{P}
-#' @example inst/examples/prediction.R
+#' @param p2p Function of the form `p2p(pars, fixed, deriv, deriv2, env)`
+#'   that returns transformed parameters with attached derivative attributes.
+#' @param parameters Character vector of parameter names accepted by `p2p`.
+#' @param condition Character string identifying the experimental condition.
+#' @param env Optional environment used for evaluation (passed to `p2p`).
+#'
+#' @return
+#' A function of class `"parfn"`:
+#' `p(..., fixed, deriv, deriv2, conditions, env)` returning a [parvec]
+#' with optional attributes:
+#' \itemize{
+#'   \item `attr(x, "deriv")` — Jacobian matrix
+#'   \item `attr(x, "deriv2")` — Hessian tensor
+#' }
+#'
+#' @seealso [Pexpl()], [Pimpl()], [sumfn()]
 #' @export
 parfn <- function(p2p, parameters = NULL, condition = NULL) {
-
+  
   force(condition)
   mappings <- list()
   mappings[[1]] <- p2p
   names(mappings) <- condition
-
-  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition, env = NULL) {
-
-
+  
+  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
+                    conditions = condition, verbose = FALSE, env = NULL) {
+    
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
     pars <- arglist[[1]]
-
+    
     overlap <- test_conditions(conditions, condition)
-    # NULL if at least one argument is NULL
-    # character(0) if no overlap
-    # character if overlap
-
+    
     if (is.null(overlap)) conditions <- union(condition, conditions)
-
-    if (is.null(overlap) | length(overlap) > 0)
-      result <- p2p(pars = pars, fixed = fixed, deriv = deriv)
-    else
+    
+    if (is.null(overlap) || length(overlap) > 0) {
+      if (!is.null(env))
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, verbose = verbose, env = env)
+      else
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, verbose = verbose)
+    } else {
       result <- NULL
-
-    # Initialize output object
+    }
+    
     length.out <- max(c(1, length(conditions)))
     outlist <- structure(vector("list", length.out), names = conditions)
-
+    
     if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
     for (C in available[!is.na(available)]) outlist[[C]] <- result
-
-
-    return(outlist)
-
+    
+    outlist
   }
-  attr(outfn, "mappings") <- mappings
+  
+  attr(outfn, "mappings")   <- mappings
   attr(outfn, "parameters") <- parameters
   attr(outfn, "conditions") <- condition
   class(outfn) <- c("parfn", "fn")
+  
   return(outfn)
-
-
 }
+
+
+
 
 #' Generate a parameter frame
 #'
@@ -290,15 +350,15 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
 #' parameter specifications. The columns are divided into three parts. (1) the meta-information
 #' columns (e.g. index, value, constraint, etc.), (2) the attributes of an objective function
 #' (e.g. data contribution and prior contribution) and (3) the parameters.
-#' @seealso \link{profile}, \link{mstrust}
+#' @seealso [profile], [mstrust]
 #' @param x data.frame.
 #' @param parameters character vector, the names of the parameter columns.
 #' @param metanames character vector, the names of the meta-information columns.
 #' @param obj.attributes character vector, the names of the objective function attributes.
-#' @return An object of class \code{parframe}, i.e. a data.frame with attributes for the
+#' @return An object of class `parframe`, i.e. a data.frame with attributes for the
 #' different names. Inherits from data.frame.
-#' @details Parameter frames can be subsetted either by \code{[ , ]} or by \code{subset}. If
-#' \code{[ , index]} is used, the names of the removed columns will also be removed from
+#' @details Parameter frames can be subsetted either by `[ , ]` or by `subset`. If
+#' `[ , index]` is used, the names of the removed columns will also be removed from
 #' the corresponding attributes, i.e. metanames, obj.attributes and parameters.
 #' @example inst/examples/parlist.R
 #' @export
@@ -323,12 +383,12 @@ parframe <- function(x = NULL, parameters = colnames(x), metanames = NULL, obj.a
 #' Parameter list
 #'
 #' @description The special use of a parameter list is to save
-#' the outcome of multiple optimization runs provided by \link{mstrust},
+#' the outcome of multiple optimization runs provided by [mstrust],
 #' into one list.
 #' @param ... Objects to be coerced to parameter list.
 #' @export
 #' @example inst/examples/parlist.R
-#' @seealso \link{load.parlist}, \link{plot.parlist}
+#' @seealso [load.parlist], [plot.parlist]
 parlist <- function(...) {
 
   mylist <- list(...)
@@ -340,35 +400,46 @@ parlist <- function(...) {
 
 #' Parameter vector
 #'
-#' @description A parameter vector is a named numeric vector (the parameter values)
-#' together with a "deriv" attribute
-#' (the Jacobian of a parameter transformation by which the parameter vector was generated).
-#' @param ... objects to be concatenated
-#' @param deriv matrix with rownames (according to names of \code{...}) and colnames
-#' according to the names of the parameter by which the parameter vector was generated.
-#' @return An object of class \code{parvec}, i.e. a named numeric vector with attribute "deriv".
+#' @description 
+#' A parameter vector is a named numeric vector (the parameter values)
+#' together with derivative attributes describing how it was generated by
+#' a parameter transformation.  
+#' The first derivative (Jacobian) is stored in the `"deriv"` attribute,
+#' and, if available, the second derivative (Hessian) is stored in the `"deriv2"` attribute.
+#'
+#' @param ... Objects to be concatenated.
+#' @param deriv Matrix with row names corresponding to the names of `...`
+#'   and column names corresponding to the parameters by which the vector
+#'   was generated (the Jacobian).
+#' @param deriv2 Optional 3D array representing second derivatives
+#'   (the Hessian tensor), with dimensions
+#'   `[n_par × n_par × n_input]` and names matching the parameter vector.
+#'
+#' @return 
+#' An object of class `"parvec"`, i.e. a named numeric vector with
+#' attributes:
+#' \itemize{
+#'   \item `attr(x, "deriv")` — Jacobian matrix
+#'   \item `attr(x, "deriv2")` — Hessian tensor (if available)
+#' }
+#'
 #' @example inst/examples/parvec.R
 #' @export
-parvec <- function(..., deriv = NULL) {
-
+parvec <- function(..., deriv = NULL, deriv2 = NULL) {
+  
   mylist <- list(...)
   if (length(mylist) > 0) {
-    mynames <- paste0("par", 1:length(mylist))
+    mynames <- paste0("par", seq_along(mylist))
     is.available <- !is.null(names(mylist))
     mynames[is.available] <- names(mylist)[is.available]
-
+    
     out <- as.numeric(unlist(mylist))
     names(out) <- mynames
-
-    return(as.parvec(out, deriv = deriv))
-
+    
+    return(as.parvec(out, deriv = deriv, deriv2 = deriv2))
   } else {
-
     return(NULL)
-
   }
-
-
 }
 
 
@@ -376,96 +447,101 @@ parvec <- function(..., deriv = NULL) {
 
 #' Prediction function
 #'
-#' @description A prediction function is a function \code{x(..., fixed, deriv, conditions)}.
-#' Prediction functions are generated by \link{Xs}, \link{Xf} or \link{Xd}. For an example
-#' see the last one.
+#' @description A prediction function is a function 
+#' `x(..., fixed, deriv, deriv2, conditions, env)`.
+#' Prediction functions are generated by [Xs()], [Xf()] or [Xd()].
 #'
-#' @param P2X transformation function as being produced by \link{Xs}.
-#' @param parameters character vector with parameter names
-#' @param condition character, the condition name
-#' @details Prediction functions can be "added" by the "+" operator, see \link{sumfn}. Thereby,
-#' predictions for different conditions are merged or overwritten. Prediction functions can
-#' also be concatenated with other functions, e.g. observation functions (\link{obsfn}) or
-#' parameter transformation functions (\link{parfn}) by the "*" operator, see \link{prodfn}.
-#' @return Object of class \code{prdfn}, i.e. a function \code{x(..., fixed, deriv, conditions, env)}
-#' which returns a \link{prdlist}. The arguments \code{times} and
-#' \code{pars} (parameter values) should be passed via the \code{...} argument, in this order.
+#' @param P2X Transformation function as produced by [Xs()], [Xf()] or [Xd()].
+#' @param parameters Character vector with parameter names.
+#' @param condition Character, the condition name.
+#'
+#' @details
+#' Prediction functions can be "added" by the "+" operator, see [sumfn()]. 
+#' Thereby, predictions for different conditions are merged or overwritten. 
+#' Prediction functions can also be composed with other functions, 
+#' e.g. observation functions ([obsfn()]) or parameter transformation 
+#' functions ([parfn()]) by the "*" operator, see [prodfn()].
+#'
+#' @return Object of class `"prdfn"`, i.e. a function
+#' `x(..., fixed, deriv, deriv2, conditions, env)` returning a [prdlist].
+#' The arguments `times` and `pars` should be passed via `...`, in this order.
+#'
 #' @example inst/examples/prediction.R
 #' @export
 prdfn <- function(P2X, parameters = NULL, condition = NULL) {
-
+  
   mycondition <- condition
   mappings <- list()
   mappings[[1]] <- P2X
   names(mappings) <- condition
-
-  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = mycondition, env = NULL) {
-
+  
+  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = mycondition, env = parent.frame()) {
+    
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
     times <- arglist[[1]]
     pars <- arglist[[2]]
-
+    
     # yields derivatives for all parameters in pars but not in fixed
     pars <- c(as.parvec(pars[setdiff(names(pars), names(fixed))]),
               fixed)
-
-
+    
+    
     overlap <- test_conditions(conditions, condition)
     # NULL if at least one argument is NULL
     # character(0) if no overlap
     # character if overlap
-
-
-
+    
+    
+    
     if (is.null(overlap)) conditions <- union(condition, conditions)
-
-
+    
+    
     if (is.null(overlap) | length(overlap) > 0)
-      result <- P2X(times = times, pars = pars, deriv = deriv)
-
+      result <- P2X(times = times, pars = pars, deriv = deriv, deriv2 = deriv2)
+    
     else
       result <- NULL
-
+    
     # Initialize output object
     length.out <- max(c(1, length(conditions)))
     outlist <- structure(vector("list", length.out), names = conditions)
-
+    
     if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
     for (C in available[!is.na(available)]) outlist[[C]] <- result
     outlist <- as.prdlist(outlist)
-
+    
     #length.out <- max(c(1, length(conditions)))
     #outlist <- as.prdlist(lapply(1:length.out, function(i) result), names = conditions)
     #attr(outlist, "pars") <- pars
-
+    
     return(outlist)
-
+    
   }
   attr(outfn, "mappings") <- mappings
   attr(outfn, "parameters") <- parameters
   attr(outfn, "conditions") <- mycondition
   class(outfn) <- c("prdfn", "fn")
   return(outfn)
-
+  
 }
 
 #' Observation function
 #'
 #' @description An observation function is a function is that is concatenated
-#' with a prediction function via \link{prodfn} to yield a new prediction function,
-#' see \link{prdfn}. Observation functions are generated by \link{Y}. Handling
-#' of the conditions is then organized by the \code{obsfn} object.
-#' @param X2Y the low-level observation function generated e.g. by \link{Y}.
+#' with a prediction function via [prodfn] to yield a new prediction function,
+#' see [prdfn]. Observation functions are generated by [Y]. Handling
+#' of the conditions is then organized by the `obsfn` object.
+#' @param X2Y the low-level observation function generated e.g. by [Y].
 #' @param parameters character vector with parameter names
 #' @param condition character, the condition name
-#' @details Observation functions can be "added" by the "+" operator, see \link{sumfn}. Thereby,
+#' @details Observation functions can be "added" by the "+" operator, see [sumfn]. Thereby,
 #' observations for different conditions are merged or, overwritten. Observation functions can
-#' also be concatenated with other functions, e.g. observation functions (\link{obsfn}) or
-#' prediction functions (\link{prdfn}) by the "*" operator, see \link{prodfn}.
-#' @return Object of class \code{obsfn}, i.e. a function \code{x(..., fixed, deriv, conditions, env)}
-#' which returns a \link{prdlist}. The arguments \code{out} (prediction) and \code{pars} (parameter values)
-#' should be passed via the \code{...} argument.
+#' also be concatenated with other functions, e.g. observation functions ([obsfn]) or
+#' prediction functions ([prdfn]) by the "*" operator, see [prodfn].
+#' @return Object of class `obsfn`, i.e. a function `x(..., fixed, deriv, conditions, env)`
+#' which returns a [prdlist]. The arguments `out` (prediction) and `pars` (parameter values)
+#' should be passed via the `...` argument.
 #' @example inst/examples/prediction.R
 #' @export
 obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
@@ -475,7 +551,7 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
   mappings[[1]] <- X2Y
   names(mappings) <- condition
 
-  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = mycondition, env = NULL) {
+  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = mycondition, env = NULL) {
 
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, c("out", "pars"))]
@@ -502,7 +578,7 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
 
     if (is.null(overlap)) conditions <- union(condition, conditions)
     if (is.null(overlap) | length(overlap) > 0)
-      result <- X2Y(out = out, pars = pars)
+      result <- X2Y(out = out, pars = pars, deriv = deriv, deriv2 = deriv2)
     else
       result <- NULL
 
@@ -532,41 +608,54 @@ obsfn <- function(X2Y, parameters = NULL, condition = NULL) {
 
 #' Prediction frame
 #'
-#' @description A prediction frame is used to store a model prediction in a matrix. The columns
-#' of the matrix are "time" and one column per state. The prediction frame has attributes "deriv",
-#' the matrix of sensitivities with respect to "outer parameters" (see \link{P}), an attribute
-#' "sensitivities", the matrix of sensitivities with respect to the "inner parameters" (the model
-#' parameters, left-hand-side of the parameter transformation) and an attributes "parameters", the
-#' parameter vector of inner parameters to produce the prediction frame.
+#' @description
+#' A prediction frame stores model predictions in a matrix along with sensitivity information.
+#' The columns of the prediction matrix are typically `"time"` and one column per state variable.
+#' The object carries several attributes containing sensitivities and parameter information:
+#' \itemize{
+#'   \item `"deriv"` – 3D array of first-order sensitivities with respect to outer parameters
+#'     (see [P]); dimensions: `(time, state, outer parameter)`
+#'   \item `"deriv2"` – 4D array of second-order sensitivities with respect to outer parameters;
+#'     dimensions: `(time, state, outer parameter, outer parameter)`
+#'   \item `"parameters"` – vector of the inner parameters used to generate the prediction
+#' }
 #'
-#' Prediction frames are usually the constituents of prediction lists (\link{prdlist}). They are
-#' produced by \link{Xs}, \link{Xd} or \link{Xf}. When you define your own prediction functions,
-#' see \code{P2X} in \link{prdfn}, the result should be returned as a prediction frame.
-#' @param prediction matrix of model prediction
-#' @param deriv matrix of sensitivities wrt outer parameters
-#' @param sensitivities matrix of sensitivitie wrt inner parameters
-#' @param parameters names of the outer paramters
-#' @return Object of class \code{prdframe}, i.e. a matrix with other matrices and vectors as attributes.
+#' Prediction frames are usually elements of prediction lists ([prdlist]), produced by
+#' [Xs], [Xd], or [Xf]. When defining custom prediction functions
+#' (see `P2X` in [prdfn]), the result should be returned as a prediction frame.
+#'
+#' @param prediction Numeric matrix of model predictions.
+#' @param deriv 3D numeric array of first-order sensitivities with respect to outer parameters.
+#' @param deriv2 4D numeric array of second-order sensitivities with respect to outer parameters.
+#' @param parameters Named numeric vector of the inner parameters used for the prediction.
+#'
+#' @return
+#' An object of class `"prdframe"` (inheriting from `"matrix"`) with attached arrays of
+#' sensitivities and the corresponding parameter vector as attributes.
+#'
 #' @export
-prdframe <- function(prediction = NULL, deriv = NULL, sensitivities = NULL, parameters = NULL) {
-
-  out <- if (!is.null(prediction)) as.matrix(prediction) else matrix()
-
+prdframe <- function(prediction = NULL,
+                     deriv = NULL,
+                     deriv2 = NULL,
+                     parameters = NULL) {
+  
+  out <- if (!is.null(prediction)) as.matrix(prediction) else matrix(, 0, 0)
+  
   attr(out, "deriv") <- deriv
-  attr(out, "sensitivities") <- sensitivities
+  attr(out, "deriv2") <- deriv2
   attr(out, "parameters") <- parameters
   class(out) <- c("prdframe", "matrix")
-
+  
   return(out)
-
 }
+
 
 #' Prediction list
 #'
 #' @description A prediction list is used to store a list of model predictions
 #' from different prediction functions or the same prediction function with different
-#' parameter specifications. Each entry of the list is a \link{prdframe}.
-#' @param ... objects of class \link{prdframe}
+#' parameter specifications. Each entry of the list is a [prdframe].
+#' @param ... objects of class [prdframe]
 #' conditions.
 #' @export
 prdlist <- function(...) {
@@ -584,19 +673,19 @@ prdlist <- function(...) {
 #'
 #' @description The datalist object stores time-course data in a list of data.frames.
 #' The names of the list serve as identifiers, e.g. of an experimental condition, etc.
-#' @details Datalists can be plotted, see \link{plotData} and merged, see \link{sumdatalist}.
-#' They are the basic structure when combining model prediction and data via the \link{normL2}
+#' @details Datalists can be plotted, see [plotData] and merged, see [sumdatalist].
+#' They are the basic structure when combining model prediction and data via the [normL2]
 #' objective function.
 #' 
 #' The standard columns of the datalist data frames are "name" (observable name), 
 #' "time" (time points), "value" (data value), "sigma" (uncertainty, can be NA), and
-#' "lloq" (lower limit of quantification, \code{-Inf} by default).
+#' "lloq" (lower limit of quantification, `-Inf` by default).
 #'
-#' Datalists carry the attribute \code{condition.grid} which contains additional information about different
-#' conditions, such as dosing information for the experiment. It can be conveniently accessed by the \link{covariates}-function.
-#' Reassigning names to a datalist also renames the rows of the \code{condition.grid}.
+#' Datalists carry the attribute `condition.grid` which contains additional information about different
+#' conditions, such as dosing information for the experiment. It can be conveniently accessed by the [covariates]-function.
+#' Reassigning names to a datalist also renames the rows of the `condition.grid`.
 #' @param ... data.frame objects to be coerced into a list and additional arguments
-#' @return Object of class \code{datalist}.
+#' @return Object of class `datalist`.
 #' @export
 datalist <- function(...) {
   mylist <- list(...)
@@ -615,14 +704,14 @@ datalist <- function(...) {
 #'
 #' Objective lists can contain additional numeric attributes that are preserved or
 #' combined with the corresponding attributes of another objective list when
-#' both are added by the "+" operator, see \link{sumobjlist}.
+#' both are added by the "+" operator, see [sumobjlist].
 #'
 #' Objective lists are returned by objective functions as being generated
-#' by \link{normL2}, \link{constraintL2}, \link{priorL2} and \link{datapointL2}.
+#' by [normL2], [constraintL2], [priorL2] and [datapointL2].
 #' @param value numeric of length 1
 #' @param gradient named numeric
 #' @param hessian matrix with rownames and colnames according to gradient names
-#' @return Object of class \code{objlist}
+#' @return Object of class `objlist`
 #' @export
 #' 
 #' @examples 
@@ -635,32 +724,51 @@ objlist <- function(value, gradient, hessian) {
 
 }
 
+
 #' Objective frame
 #'
-#' @description An objective frame is supposed to store the residuals of a model prediction
-#' with respect to a data frame.
-#' @param mydata data.frame as being generated by \link{res}.
-#' @param deriv matrix of the derivatives of the residuals with respect to parameters.
-#' @param deriv.err matrix of the derivatives of the error model.
-#' @return An object of class \code{objframe}, i.e. a data frame with attribute "deriv".
+#' @description
+#' An objective frame stores residuals and their derivatives with respect to parameters.
+#' It is typically created by [res] and used internally in objective functions.
+#'
+#' @param mydata Data frame produced by [res].
+#' @param deriv numeric matrix of first-order derivatives of residuals (∂ri/∂θ).
+#' @param deriv2 3D numeric array of second-order derivatives of residuals (∂²r/∂²θ).
+#' @param deriv.err numeric matrix of first-order derivatives of the error model (∂σ/∂θ).
+#' @param deriv2.err 3D numeric array of second-order derivatives of the error model (∂²σ/∂²θ).
+#'
+#' @return
+#' An object of class `"objframe"` (data.frame) with attributes `"deriv"`, `"deriv2"`,
+#' `"deriv.err"`, and `"deriv2.err"`.
+#' These arrays have the same parameter axes as those returned by [prdframe] and [res].
+#'
 #' @export
-objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
+objframe <- function(mydata,
+                     deriv = NULL,
+                     deriv2 = NULL,
+                     deriv.err = NULL,
+                     deriv2.err = NULL) {
   
-  # Check column names
+  # Validate structure
   mydata <- as.data.frame(mydata)
-  correct.names <- c("time", "name", "value", "prediction",
-                     "sigma", "residual", "weighted.residual", "bloq", "weighted.0")
+  required.names <- c("time", "name", "value", "prediction",
+                      "sigma", "residual", "weighted.residual",
+                      "bloq", "weighted.0")
+  if (!all(required.names %in% names(mydata)))
+    stop("mydata does not have all required columns.")
   
-  ok <- all(correct.names %in% names(mydata))
-  if (!ok) stop("mydata does not have required names")
+  out <- mydata[, required.names]
   
-  out <- mydata[, correct.names]
-  attr(out, "deriv") <- deriv
-  attr(out, "deriv.err") <- deriv.err
+  # Attach derivative attributes
+  attr(out, "deriv")      <- deriv
+  attr(out, "deriv2")     <- deriv2
+  attr(out, "deriv.err")  <- deriv.err
+  attr(out, "deriv2.err") <- deriv2.err
+  
   class(out) <- c("objframe", "data.frame")
-  
   return(out)
 }
+
 
 
 
@@ -668,15 +776,15 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 
 #' Direct sum of objective functions
 #'
-#' @param x1 function of class \code{objfn}
-#' @param x2 function of class \code{objfn}
+#' @param x1 function of class `objfn`
+#' @param x2 function of class `objfn`
 #' @details The objective functions are evaluated and their results as added. Sometimes,
 #' the evaluation of an objective function depends on results that have been computed
 #' internally in a preceding objective function. Therefore, environments are forwarded
 #' and all evaluations take place in the same environment. The first objective function
 #' in a sum of functions generates a new environment.
-#' @return Object of class \code{objfn}.
-#' @seealso \link{normL2}, \link{constraintL2}, \link{priorL2}, \link{datapointL2}
+#' @return Object of class `objfn`.
+#' @seealso [normL2], [constraintL2], [priorL2], [datapointL2]
 #' @aliases sumobjfn
 #' @example inst/examples/objective.R
 #' @export
@@ -700,7 +808,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   # objfn + objfn
   if (inherits(x1, "objfn") & inherits(x2, "objfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = conditions12, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = conditions12, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("pars"))]
@@ -711,15 +819,15 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
       # 3. If not null & intersection is empty, don't evaluate xi at all
       v1 <- v2 <- NULL
       if (is.null(conditions.x1)) {
-        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions.x1, env = env)
+        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions.x1, env = env)
       } else if (any(conditions %in% conditions.x1)) {
-        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, conditions = intersect(conditions, conditions.x1), env = env)
+        v1 <- x1(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = intersect(conditions, conditions.x1), env = env)
       }
 
       if (is.null(conditions.x2)) {
-        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions.x2, env = env)
+        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions.x2, env = env)
       } else if (any(conditions %in% conditions.x2)) {
-        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, conditions = intersect(conditions, conditions.x2), env = attr(v1, "env"))
+        v2 <- x2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = intersect(conditions, conditions.x2), env = attr(v1, "env"))
       }
 
       out <- v1 + v2
@@ -741,7 +849,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 
 #' Multiplication of objective functions with scalars
 #'
-#' @description The \code{\%.*\%} operator allows to multiply objects of class objlist or objfn with
+#' @description The `\%.*\%` operator allows to multiply objects of class objlist or objfn with
 #' a scalar.
 #'
 #' @param x1 object of class objfn or objlist.
@@ -806,14 +914,14 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 #'
 #' Used to add prediction function, parameter transformation functions or observation functions.
 #'
-#' @param x1 function of class \code{obsfn}, \code{prdfn} or \code{parfn}
-#' @param x2 function of class \code{obsfn}, \code{prdfn} or \code{parfn}
+#' @param x1 function of class `obsfn`, `prdfn` or `parfn`
+#' @param x2 function of class `obsfn`, `prdfn` or `parfn`
 #' @details Each prediction function is associated to a number of conditions. Adding functions
 #' means merging or overwriting the set of conditions.
-#' @return Object of the same class as \code{x1} and \code{x2} which returns results for the
+#' @return Object of the same class as `x1` and `x2` which returns results for the
 #' union of conditions.
 #' @aliases sumfn
-#' @seealso \link{P}, \link{Y}, \link{Xs}
+#' @seealso [P], [Y], [Xs]
 #' @example inst/examples/prediction.R
 #' @export
 "+.fn" <- function(x1, x2) {
@@ -842,7 +950,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   # prdfn + prdfn
   if (inherits(x1, "prdfn") & inherits(x2, "prdfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
@@ -858,7 +966,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       #outpars <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](times = times, pars = pars, deriv = deriv)
+        outlist[[C]] <- mappings[[C]](times = times, pars = pars, deriv = deriv, deriv2 = deriv2)
         #outpars[[C]] <- attr(outlist[[C]], "pars")
         #attr(outlist[[C]], "pars") <- NULL
       }
@@ -876,7 +984,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   # obsfn + obsfn
   if (inherits(x1, "obsfn") & inherits(x2, "obsfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("out", "pars"))]
@@ -891,7 +999,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
       }
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](out = out, pars = pars)
+        outlist[[C]] <- mappings[[C]](out = out, pars = pars, deriv = deriv, deriv2 = deriv2)
       }
 
       out <- as.prdlist(outlist)
@@ -907,7 +1015,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
   # parfn + parfn
   if (inherits(x1, "parfn") & inherits(x2, "parfn")) {
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = names(mappings), env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = names(mappings), env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("pars"))]
@@ -921,7 +1029,7 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
       }
       outlist <- structure(vector("list", length(conditions)), names = conditions)
       for (C in available) {
-        outlist[[C]] <- mappings[[C]](pars = pars, fixed = fixed, deriv = deriv)
+        outlist[[C]] <- mappings[[C]](pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
       }
 
       return(outlist)
@@ -946,12 +1054,12 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL) {
 #'
 #' Used to merge datasets with overlapping conditions.
 #'
-#' @param data1 dataset of class \code{datalist}
-#' @param data2 dataset of class \code{datalist}
+#' @param data1 dataset of class `datalist`
+#' @param data2 dataset of class `datalist`
 #' @details Each data list contains data frames for a number of conditions.
 #' The direct sum of datalist is meant as merging the two data lists and
 #' returning the overarching datalist.
-#' @return Object of class \code{datalist} for the
+#' @return Object of class `datalist` for the
 #' union of conditions.
 #' @aliases sumdatalist
 #' @example inst/examples/sumdatalist.R
@@ -1002,13 +1110,54 @@ test_conditions <- function(c1, c2) {
 #'
 #' Used to concatenate observation functions, prediction functions and parameter transformation functions.
 #'
-#' @param p1 function of class \code{obsfn}, \code{prdfn}, \code{parfn} or \code{idfn}
-#' @param p2 function of class \code{obsfn}, \code{prdfn}, \code{parfn} or \code{idfn}
-#' @return Object of the same class as \code{x1} and \code{x2}.
+#' @param p1 function of class `obsfn`, `prdfn`, `parfn` or `idfn`
+#' @param p2 function of class `obsfn`, `prdfn`, `parfn` or `idfn`
+#' @return Object of the same class as `x1` and `x2`.
 #' @aliases prodfn
 #' @example inst/examples/prediction.R
 #' @export
 "*.fn" <- function(p1, p2) {
+  
+  # ============================================================
+  # Global consistency check for condition handling
+  #
+  # Rules:
+  # - A condition-unspecific function (conditions = NULL) may be
+  #   combined with any other function.
+  # - Two condition-specific functions must cover the same set
+  #   of conditions.
+  # - It is NOT allowed to combine a single-condition function
+  #   with a multi-condition function.
+  # ============================================================
+  
+  conditions.p1 <- attr(p1, "conditions")
+  conditions.p2 <- attr(p2, "conditions")
+  
+  is_unspecific <- function(x) is.null(x)
+  is_specific   <- function(x) !is.null(x) && length(x) == 1
+  is_multiple   <- function(x) !is.null(x) && length(x) > 1
+  
+  if (!is_unspecific(conditions.p1) &&
+      !is_unspecific(conditions.p2)) {
+    
+    # one specific, one multiple -> forbidden
+    if ((is_specific(conditions.p1) && is_multiple(conditions.p2)) ||
+        (is_specific(conditions.p2) && is_multiple(conditions.p1))) {
+      
+      stop(
+        "Invalid composition of functions:\n",
+        "Incompatible condition sets.\n\n",
+        "Left-hand function conditions:  ",
+        paste(conditions.p1, collapse = ", "), "\n",
+        "Right-hand function conditions: ",
+        paste(conditions.p2, collapse = ", "), "\n\n",
+        "A function defined for a single condition cannot be\n",
+        "combined with a function defined for multiple conditions.\n",
+        "Either both functions must cover all conditions,\n",
+        "or one function must be condition-unspecific."
+      )
+    }
+  }
 
   # obsfn * obsfn -> obsfn
   if (inherits(p1, "obsfn") & inherits(p2, "obsfn")) {
@@ -1017,7 +1166,7 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("out", "pars"))]
@@ -1025,8 +1174,8 @@ test_conditions <- function(c1, c2) {
       pars <- arglist[[2]]
 
 
-      step1 <- p2(out = out, pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = step1[[i]], pars = attr(step1[[i]], "parameters"), fixed = fixed, deriv = deriv, conditions = names(step1)[i])))
+      step1 <- p2(out = out, pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = step1[[i]], pars = attr(step1[[i]], "parameters"), fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
 
 
       out <- as.prdlist(step2)
@@ -1069,15 +1218,15 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("out", "pars"))]
       out <- arglist[[1]]
       pars <- arglist[[2]]
 
-      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = out, pars = step1[[i]], fixed = fixed, deriv = deriv, conditions = names(step1)[i])))
+      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = out, pars = step1[[i]], fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
 
       out <- as.prdlist(step2)
 
@@ -1117,15 +1266,15 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
       times <- arglist[[1]]
       pars <- arglist[[2]]
 
-      step1 <- p2(times = times, pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = step1[[i]], pars = attr(step1[[i]], "parameters"), fixed = fixed, deriv = deriv, conditions = names(step1)[i])))
+      step1 <- p2(times = times, pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(out = step1[[i]], pars = attr(step1[[i]], "parameters"), fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
 
       out <- as.prdlist(step2)
 
@@ -1166,16 +1315,15 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
       times <- arglist[[1]]
       pars <- arglist[[2]]
 
-      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(times = times, pars = step1[[i]], deriv = deriv, conditions = names(step1)[i])))
+      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(times = times, pars = step1[[i]], deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
 
       out <- as.prdlist(step2)
 
@@ -1216,14 +1364,14 @@ test_conditions <- function(c1, c2) {
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("pars"))]
       pars <- arglist[[1]]
 
-      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(pars = step1[[i]], fixed = fixed, deriv = deriv, conditions = names(step1)[i])))
+      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(pars = step1[[i]], fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
       return(step2)
 
     }
@@ -1262,14 +1410,14 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-    outfn <- function(...,  fixed = NULL, deriv=TRUE, conditions = NULL, env = NULL) {
+    outfn <- function(...,  fixed = NULL, deriv=TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, "pars")]
       pars <- arglist[[1]]
 
-      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
-      step2 <- Reduce("+", lapply(1:length(step1), function(i) p1(pars = step1[[i]], fixed = NULL, deriv = deriv, conditions = names(step1)[i], env = env)))
+      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
+      step2 <- Reduce("+", lapply(1:length(step1), function(i) p1(pars = step1[[i]], fixed = NULL, deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i], env = env)))
       return(step2)
 
 
@@ -1299,31 +1447,33 @@ test_conditions <- function(c1, c2) {
 
 #' List, get and set controls for different functions
 #'
-#' @description Applies to objects of class \code{objfn},
-#' \code{parfn}, \code{prdfn} and \code{obsfn}. Allows to manipulate
+#' @description Applies to objects of class `objfn`,
+#' `parfn`, `prdfn` and `obsfn`. Allows to manipulate
 #' different arguments that have been set when creating the
 #' objects.
-#' @details If called without further arguments, \code{controls(x)} lists the
-#' available controls within an object. Calling \code{controls()} with \code{name}
-#' and \code{condition} returns the control value. The value can be overwritten. If
+#' @details If called without further arguments, `controls(x)` lists the
+#' available controls within an object. Calling `controls()` with `name`
+#' and `condition` returns the control value. The value can be overwritten. If
 #' a list or data.frame ist returned, elements of those can be manipulated by the
-#' \code{$}- or \code{[]}-operator.
+#' `$`- or `[]`-operator.
 #'
 #' @param x function
 #' @param ... arguments going to the appropriate S3 methods
 #' @return Either a print-out or the values of the control.
 #' @examples
-#' ## parfn with condition
-#' p <- P(eqnvec(x = "-a*x"), method = "implicit", condition = "C1")
-#' controls(p)
-#' controls(p, "C1", "keep.root")
-#' controls(p, "C1", "keep.root") <- FALSE
-#'
-#' ## obsfn with NULL condition
-#' g <- Y(g = eqnvec(y = "s*x"), f = NULL, states = "x", parameters = "s")
-#' controls(g)
-#' controls(g, NULL, "attach.input")
-#' controls(g, NULL, "attach.input") <- FALSE
+#' \dontrun{
+#'   ## parfn with condition
+#'   p <- P(eqnvec(x = "-a*x"), method = "implicit", condition = "C1")
+#'   controls(p)
+#'   controls(p, "C1", "keep.root")
+#'   controls(p, "C1", "keep.root") <- FALSE
+#'   
+#'   ## obsfn with NULL condition
+#'   g <- Y(g = eqnvec(y = "s*x"), f = NULL, states = "x", parameters = "s")
+#'   controls(g)
+#'   controls(g, NULL, "attach.input")
+#'   controls(g, NULL, "attach.input") <- FALSE
+#' }
 #' @export
 controls <- function(x, ...) {
   UseMethod("controls", x)
@@ -1405,16 +1555,38 @@ controls.fn <- function(x, condition = NULL, name = NULL, ...) {
 }
 
 
-#' Extract the derivatives of an object
+#' Extract the first derivatives of an object
 #'
-#' @param x object from which the derivatives should be extracted
-#' @param ... additional arguments (not used right now)
-#' @return The derivatives in a format that depends on the class of \code{x}.
-#' This is
-#' \code{parvec -> matrix},
-#' \code{prdframe -> prdframe},
-#' \code{prdlist -> prdlist},
-#' \code{objlist -> named numeric}.
+#' Generic function to extract first-order derivatives
+#' from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
+#'
+#' The output format depends on the class of the input object.
+#'
+#' @param x Object from which the first derivatives should be extracted.
+#'   Supported classes are `parvec`, `prdframe`, `prdlist`, and `list`.
+#' @param ... Additional arguments passed to specific methods (currently unused).
+#'
+#' @return The structure of the returned object depends on the class of `x`:
+#' \itemize{
+#'   \item `parvec` – a matrix containing first-order parameter derivatives.
+#'   \item `prdframe` – a `prdframe` containing time and first-order sensitivities
+#'     of each model variable with respect to all parameters.
+#'   \item `prdlist` – a `prdlist` whose elements are first-derivative `prdframe`s.
+#'   \item `list` – a list of derivative objects, depending on the elements.
+#'   \item `objlist` – directly returns the stored gradient (named numeric vector).
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Extract sensitivities from a model prediction frame:
+#' d1 <- getDerivs(myprdframe)
+#'
+#' # Extract parameter derivatives from a parameter vector:
+#' getDerivs(myparvec)
+#' }
+#'
+#' @seealso [getDerivs2] for second-order derivatives.
+#'
 #' @export
 getDerivs <- function(x, ...) {
   UseMethod("getDerivs", x)
@@ -1424,17 +1596,40 @@ getDerivs <- function(x, ...) {
 #' @rdname getDerivs
 getDerivs.parvec <- function(x, ...) {
 
-  attr(x, "deriv")
-
+  derivs <- attr(x, "deriv")
+  if (is.null(derivs))
+    stop("Object does not contain first-order derivatives.")
+  
+  return(derivs)
 }
 
 #' @export
 #' @rdname getDerivs
 getDerivs.prdframe <- function(x, ...) {
-
-  prdframe(prediction = attr(x, "deriv"), parameters = attr(x, "parameters"))
-
+  times  <- x[,"time", drop = FALSE]
+  derivs <- attr(x, "deriv")
+  if (is.null(derivs))
+    stop("Object does not contain first-order derivatives.")
+  
+  n <- dim(derivs)[1]  # time
+  v <- dim(derivs)[2]  # variables
+  d <- dim(derivs)[3]  # parameters
+  
+  `%||%` <- function(x, y) if (!is.null(x)) x else y
+  
+  varnames <- dimnames(derivs)[[2]] %||% paste0("var", seq_len(v))
+  derivswide <- times
+  
+  for (var in varnames) {
+    varderivs <- derivs[,var,]
+    colnames(varderivs) <- paste0("∂",var,"/∂",colnames(varderivs))
+    derivswide <- cbind(derivswide, varderivs)
+  }
+  
+  prdframe(prediction = derivswide, parameters = attr(x, "parameters"))
 }
+
+
 
 #' @export
 #' @rdname getDerivs
@@ -1442,7 +1637,7 @@ getDerivs.prdlist <- function(x, ...) {
 
   as.prdlist(
     lapply(x, function(myx) {
-      getDerivs(myx)
+      getDerivs(myx, ...)
     }),
     names = names(x)
   )
@@ -1467,6 +1662,138 @@ getDerivs.objlist <- function(x, ...) {
 }
 
 
+#' Extract the second derivatives of an object
+#'
+#' Generic function to extract second-order derivatives
+#' from various model-related objects such as `parvec`, `prdframe`, or lists thereof.
+#' 
+#' The output format depends on the class of the input object.
+#'
+#' @param x Object from which the second-order derivatives should be extracted.
+#'   Supported classes are `parvec`, `prdframe`, `prdlist`, and `list`.
+#' @param full Logical flag indicating whether to return all second-order derivatives.
+#'   If `FALSE` (default), only the unique upper-triangular parameter pairs
+#'   with `i <= j` are included (since ∂²f/∂pᵢ∂pⱼ = ∂²f/∂pⱼ∂pᵢ).
+#'   If `TRUE`, all parameter pairs (i,j) are returned.
+#'   This argument is only relevant for `prdframe` and `prdlist` objects;
+#'   it is ignored for `parvec` and `objlist` inputs.
+#' @param ... Additional arguments passed to specific methods (currently unused).
+#'
+#' @return The structure of the returned object depends on the class of `x`:
+#' \itemize{
+#'   \item `parvec` – a 3D array representing the Hessian tensor.
+#'   \item `prdframe` – a data frame in wide format containing time and the second derivatives
+#'     of each model variable with respect to all (unique) parameter pairs.
+#'   \item `prdlist` – a `prdlist` whose elements are second-derivative `prdframe`s.
+#'   \item `list` – a list of Hessians or second-derivative objects, depending on the elements.
+#'   \item `objlist` – directly returns the stored Hessian matrix or tensor.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Extract second derivatives from a model prediction frame:
+#' d2 <- getDerivs2(myprdframe)
+#'
+#' # Return all parameter pairs instead of only unique ones:
+#' d2_full <- getDerivs2(myprdframe, full = TRUE)
+#'
+#' # For a parameter vector:
+#' getDerivs2(myparvec)
+#' }
+#'
+#' @seealso [getDerivs] for first-order derivatives.
+#'
+#' @export
+getDerivs2 <- function(x, full = FALSE, ...) {
+  UseMethod("getDerivs2", x)
+}
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.parvec <- function(x, ...) {
+  deriv2 <- attr(x, "deriv2")
+  if (is.null(deriv2))
+    stop("The prdframe does not contain second-order derivatives.")
+  return(deriv2)
+}
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.prdframe <- function(x, full = FALSE, ...) {
+  times  <- x[,"time", drop = FALSE]
+  deriv2 <- attr(x, "deriv2")
+  if (is.null(deriv2))
+    stop("The prdframe does not contain second-order derivatives.")
+  
+  n <- dim(deriv2)[1]  # time
+  v <- dim(deriv2)[2]  # variables
+  d <- dim(deriv2)[3]  # parameters
+  
+  `%||%` <- function(x, y) if (!is.null(x)) x else y
+  varnames <- dimnames(deriv2)[[2]] %||% paste0("var", seq_len(v))
+  parnames <- dimnames(deriv2)[[3]] %||% paste0("p", seq_len(d))
+  
+  # Parameter index pairs
+  pairs <- expand.grid(i = seq_len(d), j = seq_len(d))
+  if (!full) pairs <- subset(pairs, i <= j)
+  pairs <- pairs[order(pairs$i, pairs$j), , drop = FALSE]
+  
+  # Prepare result container
+  derivs2wide <- times
+  
+  for (var in varnames) {
+    varderivs2 <- matrix(NA_real_, nrow = n, ncol = nrow(pairs))
+    colnames_var <- character(nrow(pairs))
+    for (pp in seq_len(nrow(pairs))) {
+      i <- pairs$i[pp]; j <- pairs$j[pp]
+      varderivs2[, pp] <- deriv2[, var, parnames[i], parnames[j]]
+      # Column name: ∂²var/∂p_i∂p_j or ∂²var/∂²p_i if i==j
+      if (i == j) {
+        colnames_var[pp] <- paste0("∂²", var, "/∂²", parnames[i])
+      } else {
+        colnames_var[pp] <- paste0("∂²", var, "/∂", parnames[i], "∂", parnames[j])
+      }
+    }
+    colnames(varderivs2) <- colnames_var
+    derivs2wide <- cbind(derivs2wide, varderivs2)
+  }
+  
+  prdframe(prediction = derivs2wide, parameters = attr(x, "parameters"))
+}
+
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.prdlist <- function(x, full = FALSE, ...) {
+  
+  as.prdlist(
+    lapply(x, function(myx) {
+      getDerivs2(myx, full = full, ...)
+    }),
+    names = names(x)
+  )
+  
+}
+
+#' @export
+#' @rdname getDerivs2
+getDerivs2.list <- function(x, ...) {
+  
+  lapply(x, function(myx) getDerivs2(myx))
+  
+}
+
+
+#' @export
+#' @rdname getDerivs
+getDerivs2.objlist <- function(x, ...) {
+  
+  x$hessian
+  
+}
+
+
+
 
 getEquations <- function(x, ...) {
 
@@ -1480,8 +1807,8 @@ getEquations <- function(x, ...) {
 #'
 #' @param ... objects from which the parameters should be extracted
 #' @param conditions character vector specifying the conditions to
-#' which \code{getParameters} is restricted
-#' @return The parameters in a format that depends on the class of \code{x}.
+#' which `getParameters` is restricted
+#' @return The parameters in a format that depends on the class of `x`.
 #' @export
 getParameters <- function(..., conditions = NULL) {
 
@@ -1571,7 +1898,7 @@ getParameters.eventlist <- function(x) {
 #'
 #' @param x object from which the conditions should be extracted
 #' @param ... additional arguments (not used right now)
-#' @return The conditions in a format that depends on the class of \code{x}.
+#' @return The conditions in a format that depends on the class of `x`.
 #' @export
 getConditions <- function(x, ...) {
   UseMethod("getConditions", x)
@@ -1601,7 +1928,7 @@ getConditions.fn <- function(x, ...) {
 #' a dMod function object like prediction-, parameter transformation- or
 #' objective functions.
 #'
-#' @param ... objects of type \code{prdfn}, \code{parfn}, \code{objfn}
+#' @param ... objects of type `prdfn`, `parfn`, `objfn`
 #' @param conditions character vector of conditions
 #' @return character vector of model names, corresponding to C files
 #' in the local directory.
@@ -1713,9 +2040,9 @@ mname.fn <- function(x, conditions = NULL) {
 #'
 #' @param x object from which the equations should be extracted
 #' @param conditions character or numeric vector specifying the conditions to
-#' which \code{getEquations} is restricted. If \code{conditions} has length one,
+#' which `getEquations` is restricted. If `conditions` has length one,
 #' the result is not returned as a list.
-#' @return The equations as list of \code{eqnvec} objects.
+#' @return The equations as list of `eqnvec` objects.
 #' @export
 getEquations <- function(x, conditions = NULL) {
 

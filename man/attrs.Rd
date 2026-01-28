@@ -9,10 +9,10 @@ attrs(x, atr = NULL, keep = TRUE)
 \arguments{
 \item{x}{The object to work on}
 
-\item{atr}{An optional list of attributes which are either kept or removed. 
+\item{atr}{An optional list of attributes which are either kept or removed.
 This parameter defaults to dim, dimnames, names,  col.names, and row.names.}
 
-\item{keep}{For keep = TRUE, atr is a positive list on attributes which are 
+\item{keep}{For keep = TRUE, atr is a positive list on attributes which are
 kept, for keep = FALSE, \option{atr} are removed.}
 }
 \value{

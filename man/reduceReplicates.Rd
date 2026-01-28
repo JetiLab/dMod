@@ -6,10 +6,10 @@
 \format{
 The following columns are mandatory for the data frame:
 \describe{
- \item{name}{Name of the observed species.}
- \item{time}{Measurement time point.}
- \item{value}{Measurement value.}
- \item{condition}{The condition under which the observation was made.}
+\item{name}{Name of the observed species.}
+\item{time}{Measurement time point.}
+\item{value}{Measurement value.}
+\item{condition}{The condition under which the observation was made.}
 }
 
 In addition to these columns, any number of columns can follow to allow a
@@ -17,7 +17,13 @@ fine-grained definition of conditions. The values of all columns named in
 \code{select} are then merged to get the set of conditions.
 }
 \usage{
-reduceReplicates(data, select = "condition", datatrans = NULL)
+reduceReplicates(
+  data,
+  select = "condition",
+  datatrans = NULL,
+  keep = NULL,
+  weighted = FALSE
+)
 }
 \arguments{
 \item{data}{A data frame containing the measurements. See Format for details.}
@@ -27,20 +33,24 @@ conditions, see Details.}
 
 \item{datatrans}{Character vector describing a function to transform data.
 Use \kbd{x} to refer to data.}
+
+\item{keep}{Character vector with colums, that should not get dropped}
+
+\item{weighted}{Logical flag: if TRUE, calculate weighted standard deviation using 'sigma' column.}
 }
 \value{
 A data frame of the following variables:
 \describe{
- \item{time}{Measurement time point.}
- \item{name}{Name of the observed species.}
- \item{value}{Mean of replicates.}
- \item{sigma}{Standard error of the mean, NA for single measurements.}
- \item{n}{The number of replicates reduced.}
- \item{condition}{The condition for which the value and sigma were calculated. If
-       more than one column was used to define the condition, this variable
-       holds the effective condition which is the combination of all applied
-       single conditions.}
- \item{other columns}{Columns that were stable across replicates are retained and horizontally attached to the resulting data frame.}
+\item{time}{Measurement time point.}
+\item{name}{Name of the observed species.}
+\item{value}{Mean of replicates.}
+\item{sigma}{Standard error of the mean, NA for single measurements.}
+\item{n}{The number of replicates reduced.}
+\item{condition}{The condition for which the value and sigma were calculated. If
+more than one column was used to define the condition, this variable
+holds the effective condition which is the combination of all applied
+single conditions.}
+\item{other columns}{Columns that were stable across replicates are retained and horizontally attached to the resulting data frame.}
 }
 }
 \description{
@@ -56,8 +66,8 @@ columns can be appended to the data. These columns are referred to as
 grouping is user-defined by specifying their names in \code{select}. The mandatory
 column "condition" is always used. The total set of different conditions is
 thus defined by all combinations of values occurring in the selected condition
-identifiers. The replicates of each condition are then reduced to mean and 
-standard deviation. New condition names are derived by merging all conditions 
+identifiers. The replicates of each condition are then reduced to mean and
+standard deviation. New condition names are derived by merging all conditions
 which were used in mean and standard deviation. Columns that are not listed in
 \code{select} but have different values within grouped data are dropped. Columns
 that remain stable across all replicates are retained and horizontally attached

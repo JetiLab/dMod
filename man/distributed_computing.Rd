@@ -2,7 +2,7 @@
 % Please edit documentation in R/toolsSeverin.R
 \name{distributed_computing}
 \alias{distributed_computing}
-\title{Run an any R function on a remote HPC system with SLURM}
+\title{Run any R function on a remote HPC system with SLURM}
 \usage{
 distributed_computing(
   ...,
@@ -16,111 +16,99 @@ distributed_computing(
   machine = "cluster",
   var_values = NULL,
   no_rep = NULL,
-  recover = T,
-  purge_local = F,
-  compile = F,
+  recover = TRUE,
+  purge_local = FALSE,
+  compile = FALSE,
+  link = FALSE,
   custom_folders = NULL,
   resetSeeds = TRUE,
   returnAll = TRUE
 )
 }
 \arguments{
-\item{...}{R code to be remotely executed, parameters to be changed for runs
-must be named \code{var_i} see "Details".}
+\item{...}{R code to be remotely executed. Parameters to be changed for each run
+must be named \code{var_i} (see "Details").}
 
-\item{jobname}{Name in characters for the run must be unique, existing will be overwritten.
-Must not contain the string "Minus".}
+\item{jobname}{Unique name (character) for the run. Existing runs with the same
+name will be overwritten. Must not contain the string "Minus".}
 
-\item{partition}{Define the partition used for the SLURM manager. Default is
-"single". Should only be changed if explicitly wanted.}
+\item{partition}{SLURM partition name to use. Default is \code{"single"}.}
 
-\item{cores}{Number of cores per node to be used. If a value is set to 16 < 
-value < 25, the number of possible nodes isseverely limited. 16 or less is
-possible on all nodes, more on none.}
+\item{cores}{Number of cores per node. Values above 16 may limit available nodes.}
 
-\item{nodes}{Nodes per task. Default is 1, should not be changed since 
-\code{distributed_computing()} is set up to be regulated by number of repititions.}
+\item{nodes}{Number of nodes per task. Default is 1; typically should not be changed.}
 
-\item{mem_per_core}{Memory that is reserved per core in gb. Default is 2gb.}
+\item{mem_per_core}{Memory per CPU core in GB. Default is 2 GB.}
 
-\item{walltime}{Estimated runtime in the format \code{hh:mm:ss}, default is 1h.
-Jobs will be canceled after the defined time.}
+\item{walltime}{Maximum runtime in format \code{"hh:mm:ss"}. Default is 1 hour.}
 
-\item{ssh_passwd}{To be set when the sshpass should be used to automatically 
-authenticate on remote via passphrase. This is an obvious security nightmare...}
+\item{ssh_passwd}{Password string for SSH authentication via \code{sshpass}.
+Optional, and only used if key-based authentication is unavailable.}
 
-\item{machine}{SSH address in the form \code{user@remote_location}.}
+\item{machine}{SSH address of the remote HPC system, e.g. \code{"user@cluster"}.}
 
-\item{var_values}{List of parameter arrays. The number of arrays (i.e. list 
-entries) must correspond to the number of parameters in the function passed 
-to \code{...}. These parameters must be named \code{var_i} where the i must 
-replaced by the indes of the corresponding array in \code{var_values}. The 
-length of the arrays define the number of nodes used with the j-th node use
-the j-th entry of the arrays for the corresponding \code{var_i}. If \code{no_rep}
-is used, \code{var_valus} must be set to \code{NULL}.}
+\item{var_values}{List of parameter arrays. Each array corresponds to one variable
+\code{var_i}. The length of each array determines the number of SLURM array jobs.
+Mutually exclusive with \code{no_rep}.}
 
-\item{no_rep}{Number of repetitions. Usage of this parameter and \code{var_values}
-are mutual exclusive. When used the function passed to \code{...} is executed
-\code{no_rep} times simultaneously using one node per realization.}
+\item{no_rep}{Integer number of repetitions (mutually exclusive with \code{var_values}).}
 
-\item{recover}{Logical parameter, if set to \code{TRUE} nothing is calculated, the
-functions \code{check()}, \code{get()} and \code{purge()} can be used on the
-results generated previously under the same \code{jobname}.}
+\item{recover}{Logical; if \code{TRUE}, no computation is performed. Instead,
+the returned list of functions \code{check()}, \code{get()}, and \code{purge()}
+can be used to interact with previously submitted jobs.}
 
-\item{purge_local}{Logical, if set to \code{TRUE} the \code{purge()} function also removes
-local files.}
+\item{purge_local}{Logical; if \code{TRUE}, the \code{purge()} function also
+deletes local result files.}
 
-\item{compile}{Logical, if set to \code{TRUE} the source files are transferred
-to remote and compiled there. If set to \code{FALSE}, the local shared objects
-are transferred and used instead.}
+\item{compile}{Logical; if \code{TRUE}, all C/C++ source files (\verb{*.c}, \verb{*.cpp})
+are transferred to the cluster and fully recompiled into shared objects (\code{.so}).
+If set to \code{TRUE}, this overrides \code{link = TRUE}.}
 
-\item{custom_folders}{named vector with exact three entries named 'compiled',
-'output' and 'tmp'. The values are strings with relative paths from the current
-working directory to the respective directory of the compiled files, the temporary
-folder from which files will be copied to the cluster and the output folder in
-which the calculated result from the cluster will be saved.
-The default is \code{NULL}, then everything is done from the current working directory.
-If only a subset of the folders should be changed, all other need to be set to
-\code{./}.}
+\item{link}{Logical; if \code{TRUE}, only existing object files (\verb{*.o}) are
+transferred to the cluster and linked into shared objects (\code{.so}),
+skipping compilation. If no \code{.o} files are found, an error is raised.
+This option is ignored if \code{compile = TRUE}.}
 
-\item{resetSeeds}{logical, if set to \code{TRUE} (default) the parameter vector
-with random seeds \code{.Random.seeds} from the transferred work space is deleted
-on remote. This ensures that each node has uses a different set of  (pseudo) random
-numbers. Set to FALSE at own risk.}
+\item{custom_folders}{Named vector with exactly three elements: \code{"compiled"},
+\code{"output"}, and \code{"tmp"}. Each value is a relative path specifying where
+compiled files, temporary data, and output results should be stored.
+If \code{NULL}, all operations occur in the current working directory.}
 
-\item{returnAll}{logical if set to \code{TRUE} (default) all results are returned, if set
-to \code{FALSE} only the \code{*result.RData} files are returned.}
+\item{resetSeeds}{Logical; if \code{TRUE} (default), removes \code{.Random.seed}
+from the transferred workspace to ensure each node has independent random seeds.}
+
+\item{returnAll}{Logical; if \code{TRUE} (default), retrieves all remote files.
+If \code{FALSE}, only result files (\verb{*result.RData}) are fetched.}
 }
 \value{
-List of functions \code{check()}, \code{get()} and \code{purge()}. 
-\code{check()} checks, if the result is ready. 
-\code{get()} copies all files from the remote working directory to local and 
-loads all present results (even if not all nodes where done) in the current 
-active workspace as the object \code{cluster_result} which is a list with the
-results of each node as entries.
-\code{purge()} deletes the temporary folder on remote and if \code{purge_local}
-is set to \code{TRUE}.
+A list containing three functions:
+\itemize{
+\item \code{check()} – Checks whether all remote results are complete.
+\item \code{get()} – Downloads results and loads them into
+\code{cluster_result} in the local workspace.
+\item \code{purge()} – Deletes temporary remote files; optionally removes local ones.
+}
 }
 \description{
-Generates R and bash scrips, transfers them to remote via ssh.
-'sshpass' needs to be installed on your local machine to circumvent password entry.
+Generates R and bash scripts, transfers them to a remote HPC system via SSH,
+and executes the given R code in parallel using the SLURM batch manager.
+The function handles workspace export, job submission, and result retrieval.
 }
 \details{
-\code{distribute_computing()} generates R and bash scrips designed to run
-on a HPC system managed by the SLURM batch manager. The current workspace 
-together with the scripts are exported and transferred to remote via SSH. If
-ssh-key authentication is not possible, the ssh-password can be passed and
-is used by sshpass (which has to be installed on the local machine).
+\code{distributed_computing()} generates R and bash scripts designed to run
+on an HPC system managed by SLURM. The current R workspace together with the
+scripts are exported and transferred to the remote system via SSH.
+If ssh-key authentication is not possible, the SSH password can be provided and
+is used by \code{sshpass} (which must be installed locally).
 
-The code to be executed remotely is passed to the \code{...} argument, its final
-output is stored in \code{cluster_result}, which is loaded in the local
-workspace by the \code{get()} function.
+The code to be executed remotely is passed to the \code{...} argument; its final
+output is stored in \code{cluster_result}, which can be loaded in the local
+workspace via the \code{get()} function.
 
-It is possible to either run repetitions of the same program realization (by 
-use of the \code{no_rep} parameter), or to pass a list of parameter arrays
-via \code{var_values}. The parameters to be changed for every run *must* be
-named \code{var_i} where i corresponds to the i-th array in the \code{var_values}
-parameter.
+It is possible to run multiple repetitions of the same program (via \code{no_rep})
+or to pass a list of parameter arrays through \code{var_values}. Parameters that
+vary between runs must be named \code{var_i}, where \emph{i} matches the index
+of the corresponding array in \code{var_values}.
 }
 \examples{
 \dontrun{
@@ -149,7 +137,8 @@ machine = "cluster",
 var_values = NULL,
 no_rep = 20,
 recover = F,
-compile = F
+compile = F,
+link = F
 )
 out_distributed_computing$check()
 out_distributed_computing$get()
@@ -192,7 +181,8 @@ profiles_distributed_computing <- distributed_computing(
   var_values = var_list,
   no_rep = NULL,
   recover = F,
-  compile = F
+  compile = F,
+  link = F
 )
 profiles_distributed_computing$check()
 profiles_distributed_computing$get()

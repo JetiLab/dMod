@@ -48,49 +48,50 @@ columns (e.g. index, value, constraint, etc.), (2) the attributes of an objectiv
 (e.g. data contribution and prior contribution) and (3) the parameters.
 }
 \details{
-Parameter frames can be subsetted either by \code{[ , ]} or by \code{subset}. If
-\code{[ , index]} is used, the names of the removed columns will also be removed from
+Parameter frames can be subsetted either by \verb{[ , ]} or by \code{subset}. If
+\verb{[ , index]} is used, the names of the removed columns will also be removed from
 the corresponding attributes, i.e. metanames, obj.attributes and parameters.
 }
 \examples{
-## Generate a prediction function
-regfn <- c(y = "sin(a*time)")
-
-g <- Y(regfn, parameters = "a")
-x <- Xt(condition = "C1")
-
-## Generate data
-data <- datalist(
-  C1 = data.frame(
-    name = "y",
-    time = 1:5,
-    value = sin(1:5) + rnorm(5, 0, .1),
-    sigma = .1
+\dontrun{
+  ## Generate a prediction function
+  regfn <- c(y = "sin(a*time)")
+  
+  g <- Y(regfn, parameters = "a")
+  x <- Xt(condition = "C1")
+  
+  ## Generate data
+  data <- datalist(
+    C1 = data.frame(
+      name = "y",
+      time = 1:5,
+      value = sin(1:5) + rnorm(5, 0, .1),
+      sigma = .1
+    )
   )
-)
-
-## Initialize parameters and time 
-pars <- c(a = 1)
-times <- seq(0, 5, .1)
-
-plot((g*x)(times, pars), data)
-
-## Do many fits from random positions and store them into parlist
-out <- as.parlist(lapply(1:50, function(i) {
-  trust(normL2(data, g*x), pars + rnorm(length(pars), 0, 1), rinit = 1, rmax = 10)
-}))
-
-summary(out)
-
-## Reduce parlist to parframe
-parframe <- as.parframe(out)
-plotValues(parframe)
-
-## Reduce parframe to best fit
-bestfit <- as.parvec(parframe)
-plot((g*x)(times, bestfit), data)
-
-
+  
+  ## Initialize parameters and time 
+  pars <- c(a = 1)
+  times <- seq(0, 5, .1)
+  
+  plot((g*x)(times, pars), data)
+  
+  ## Do many fits from random positions and store them into parlist
+  out <- as.parlist(lapply(1:50, function(i) {
+    trust(normL2(data, g*x), pars + rnorm(length(pars), 0, 1), rinit = 1, rmax = 10)
+  }))
+  
+  summary(out)
+  
+  ## Reduce parlist to parframe
+  parframe <- as.parframe(out)
+  plotValues(parframe)
+  
+  ## Reduce parframe to best fit
+  bestfit <- as.parvec(parframe)
+  plot((g*x)(times, bestfit), data)
+  
+}
 }
 \seealso{
 \link{profile}, \link{mstrust}

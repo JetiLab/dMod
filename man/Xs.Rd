@@ -4,28 +4,19 @@
 \alias{Xs}
 \title{Model prediction function for ODE models.}
 \usage{
-Xs(
-  odemodel,
-  forcings = NULL,
-  events = NULL,
-  names = NULL,
-  condition = NULL,
-  optionsOde = list(method = "lsoda"),
-  optionsSens = list(method = "lsodes"),
-  fcontrol = NULL
-)
+Xs(odemodel, ...)
 }
 \arguments{
-\item{odemodel}{object of class \link{odemodel}}
+\item{odemodel}{object of class 'odemodel' or 'odemodel++', see \link{odemodel}}
 
 \item{forcings}{data.frame with columns name (factor), time (numeric) and value (numeric).
-The ODE forcings.}
+The ODE forcings. Not (yet) implemented for boost::odeint::rosenbrock4}
 
 \item{events}{data.frame of events with columns "var" (character, the name of the state to be
 affected), "time" (numeric, time point), "value" (numeric, value), "method" (character, either
-"replace", "add" or "multiply"). See \link[deSolve]{events}.
+"replace", "add" or "multiply"). See \link[deSolve:events]{events}.
 ATTENTION: Sensitivities for event states will only be correctly computed if defined within
-\code{\link{odemodel}()}. Specify events within \code{Xs()} only for forward simulation.}
+\code{\link[=odemodel]{odemodel()}}. Specify events within \code{Xs()} only for forward simulation.}
 
 \item{names}{character vector with the states to be returned. If NULL, all states are returned.}
 
@@ -36,14 +27,14 @@ the condition for which the function makes a prediction.}
 
 \item{optionsSens}{list with arguments to be passed to odeC() for integration of the extended system}
 
-\item{fcontrol}{list with additional fine-tuning arguments for the forcing interpolation. 
-See \link[stats]{approxfun} for possible arguments.}
+\item{fcontrol}{list with additional fine-tuning arguments for the forcing interpolation.
+See \link[stats:approxfun]{approxfun} for possible arguments.}
 }
 \value{
 Object of class \link{prdfn}. If the function is called with parameters that
 result from a parameter transformation (see \link{P}), the Jacobian of the parameter transformation
 and the sensitivities of the ODE are multiplied according to the chain rule for
-differentiation. The result is saved in the attributed "deriv", 
+differentiation. The result is saved in the attributed "deriv",
 i.e. in this case the attibutes "deriv" and "sensitivities" do not coincide.
 }
 \description{

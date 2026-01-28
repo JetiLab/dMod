@@ -4,28 +4,32 @@
 \alias{plotProfilesAndPaths}
 \title{Profile likelihood: plot profiles along with their parameter paths}
 \usage{
-plotProfilesAndPaths(profs, whichpars, npars = 5, normalizePaths = FALSE)
+plotProfilesAndPaths(
+  profs,
+  whichpars,
+  npars = 5,
+  ncols = 3,
+  normalizePaths = FALSE,
+  ...
+)
 }
 \arguments{
-\item{profs}{Lists of profiles as being returned by \link{profile}.}
+\item{profs}{List of profiles as returned by \code{\link[=profile]{profile()}}.}
 
 \item{whichpars}{Character vector of parameter names for which the profile paths should be generated.}
 
-\item{npars}{Numeric vector of colored and named parameter paths.}
+\item{npars}{Numeric indicating number of colored and named parameter paths.}
 
-\item{normalizePaths}{Logical indicating whether the paths should be normalized to absolute values of 1. Default \code{FALSE}; \code{TRUE} only useful in corner cases when you know why to do so.}
+\item{ncols}{Number of columns in the resulting plot grid.}
+
+\item{normalizePaths}{Logical indicating whether the paths should be normalized to absolute values of 1.
+Default \code{FALSE}.}
+
+\item{...}{Additional arguments passed to \code{\link[cowplot:plot_grid]{cowplot::plot_grid()}}.}
 }
 \value{
-A plot object of class \code{ggplot}.
+A combined \code{ggplot} object containing the profiles and paths (no shared legend).
 }
 \description{
-Profile likelihood: plot profiles along with their parameter paths
-}
-\examples{
-\dontrun{
- plotProfilesAndPaths(myprofiles, c("mypar1", "mypar2"), npars = 5) 
-}
-}
-\author{
-Svenja Kemmer, \email{svenja.kemmer@fdm.uni-freiburg.de}
+Generates combined plots of profile likelihoods and their parameter paths without a shared legend.
 }

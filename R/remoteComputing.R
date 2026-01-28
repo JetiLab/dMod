@@ -1,6 +1,6 @@
 #' Detect number of free cores (on UNIX)
 #' 
-#' @description Read \code{/proc/loadavg} and subtract from the number of cores
+#' @description Read `/proc/loadavg` and subtract from the number of cores
 #' @param machine character, e.g. "user@@localhost".
 #' @export 
 detectFreeCores <- function(machine = NULL) {
@@ -27,44 +27,44 @@ detectFreeCores <- function(machine = NULL) {
 
 #' Run an R expression in the background (only on UNIX)
 #' 
-#' @description Generate an R code of the expression that is copied via \code{scp}
+#' @description Generate an R code of the expression that is copied via `scp`
 #' to any machine (ssh-key needed). Then collect the results.
-#' @details \code{runbg()} generates a workspace from the \code{input} argument
+#' @details `runbg()` generates a workspace from the `input` argument
 #' and copies the workspace and all C files or .so files to the remote machines via
-#' \code{scp}. This will only work if *an ssh-key had been generated and added
+#' `scp`. This will only work if *an ssh-key had been generated and added
 #' to the authorized keys on the remote machine*. The
-#' code snippet, i.e. the \code{...} argument, can include several intermediate results
+#' code snippet, i.e. the `...` argument, can include several intermediate results
 #' but only the last call which is not redirected into a variable is returned via the
-#' variable \code{.runbgOutput}, see example below.
+#' variable `.runbgOutput`, see example below.
 #' @param ... Some R code
 #' @param filename Character, defining the filename of the temporary file. Random
 #' file name ist chosen if NULL.
-#' @param machine Character vector, e.g. \code{"localhost"} or \code{"knecht1.fdm.uni-freiburg.de"}
-#' or \code{c(localhost, localhost)}.
+#' @param machine Character vector, e.g. `"localhost"` or `"knecht1.fdm.uni-freiburg.de"`
+#' or `c(localhost, localhost)`.
 #' @param input Character vector, the objects in the workspace that are stored
 #' into an R data file and copied to the remove machine.
-#' @param compile Logical. If \code{TRUE}, C files are copied and compiled on the remote machine.
+#' @param compile Logical. If `TRUE`, C files are copied and compiled on the remote machine.
 #' Otherwise, the .so files are copied.
-#' @param wait Logical. Wait until executed. If \code{TRUE}, the code checks if the result file
-#' is already present in which case it is loaded. If not present, \code{runbg()} starts, produces
-#' the result and loads it as \code{.runbgOutput} directly into the workspace. If \code{wait = FALSE},
-#' \code{runbg()} starts in the background and the result is only loaded into the workspace
-#' when the \code{get()} function is called, see Value section. 
+#' @param wait Logical. Wait until executed. If `TRUE`, the code checks if the result file
+#' is already present in which case it is loaded. If not present, `runbg()` starts, produces
+#' the result and loads it as `.runbgOutput` directly into the workspace. If `wait = FALSE`,
+#' `runbg()` starts in the background and the result is only loaded into the workspace
+#' when the `get()` function is called, see Value section. 
 #' @param recover Logical. This option is useful to recover the three functions check(), get() and purge(), 
 #' e.g. when a session has crashed. Then, the three functions are recreated without restarting the job.
 #' They can then be used to get the results of a job wihtout having to do it manually. 
 #' Requires the correct filename, so if the previous runbg was run with filename = NULL, you have to 
 #' specify the tmp_filename manually.
 #' @param walltime Optional. Maximum runtime in the format "HH:MM:SS". If exceeded, the job will be terminated.
-#' @return List of functions \code{check()}, \code{get()}, \code{purge()} and \code{terminate()}. 
-#' \code{check()} checks if the result is ready.
-#' \code{get()} copies the result file
-#' to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+#' @return List of functions `check()`, `get()`, `purge()` and `terminate()`. 
+#' `check()` checks if the result is ready.
+#' `get()` copies the result file
+#' to the working directory and loads it into the workspace as an object called `.runbgOutput`. 
 #' This object is a list named according to the machines that contains the results returned by each
 #' machine.
-#' \code{purge()} deletes the temporary folder
+#' `purge()` deletes the temporary folder
 #' from the working directory and the remote machines.
-#' \code{terminate()} kills all running processes associated with this job on the remote machines.
+#' `terminate()` kills all running processes associated with this job on the remote machines.
 #' @export
 #' @examples
 #' \dontrun{
@@ -322,37 +322,37 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 
 #' Run an R expression on the bwForCluster
 #' 
-#' @description Generate an R code of the expression that is copied via \code{scp}
+#' @description Generate an R code of the expression that is copied via `scp`
 #' to the bwForCluster (ssh-key needed). Then collect the results.
-#' @details \code{runbg()} generates a workspace from the \code{input} argument
+#' @details `runbg()` generates a workspace from the `input` argument
 #' and copies the workspace and all C files or .so files to the remote machines via
-#' \code{scp}. This will only work if *an ssh-key had been generated and added
+#' `scp`. This will only work if *an ssh-key had been generated and added
 #' to the authorized keys on the remote machine*. The
-#' code snippet, i.e. the \code{...} argument, can include several intermediate results
+#' code snippet, i.e. the `...` argument, can include several intermediate results
 #' but only the last call which is not redirected into a variable is returned via the
-#' variable \code{.runbgOutput}, see example below.
+#' variable `.runbgOutput`, see example below.
 #' @param ... Some R code
-#' @param machine e.g. \code{fr_dk846@@bwfor.cluster.uni-mannheim.de}
+#' @param machine e.g. `fr_dk846@@bwfor.cluster.uni-mannheim.de`
 #' @param filename Character, defining the filename of the temporary file. Random
 #' file name ist chosen if NULL.
 #' @param nodes Number of nodes, e.g. 10
 #' @param cores Number of cores, e.g. 16
-#' @param walltime estimated runtime in the format \code{hh:mm:ss}, e.g. \code{01:30:00}.
+#' @param walltime estimated runtime in the format `hh:mm:ss`, e.g. `01:30:00`.
 #' Jobs with a walltime up to 30 min are sent to a quick queue. When the walltime
 #' is exceeded, all jobs are automatically killed by the queue.
 #' @param input Character vector, the objects in the workspace that are stored
 #' into an R data file and copied to the remove machine.
-#' @param compile Logical. If \code{TRUE}, C files are copied and compiled on the remote machine.
+#' @param compile Logical. If `TRUE`, C files are copied and compiled on the remote machine.
 #' Otherwise, the .so files are copied.
-#' @param recover Logical, If \code{TRUE}, the scripts will not be started again.
+#' @param recover Logical, If `TRUE`, the scripts will not be started again.
 #' Can be used to get back the check and get functions for an already started process, e.g. after local session has aborted.
-#' @return List of functions \code{check()}, \code{get()} and \code{purge()}. 
-#' \code{check()} checks, if the result is ready.
-#' \code{get()} copies the result file
-#' to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+#' @return List of functions `check()`, `get()` and `purge()`. 
+#' `check()` checks, if the result is ready.
+#' `get()` copies the result file
+#' to the working directory and loads it into the workspace as an object called `.runbgOutput`. 
 #' This object is a list named according to the machines that contains the results returned by each
 #' machine.
-#' \code{purge()} deletes the temporary folder
+#' `purge()` deletes the temporary folder
 #' from the working directory and the remote machines.
 #' @examples
 #' \dontrun{
@@ -527,39 +527,39 @@ runbg_bwfor <- function(..., machine, filename = NULL, nodes = 1, cores = 1, wal
 
 #' Run an R expression on the bwForCluster via sshpass
 #' 
-#' @description Generate an R code of the expression that is copied via \code{scp}
+#' @description Generate an R code of the expression that is copied via `scp`
 #' to the bwForCluster. Then collect the results. ssh-key not needed. Password can be provided via an additional argument.
 #' sshpass needs to be installed on your local machine.
-#' @details \code{runbg()} generates a workspace from the \code{input} argument
+#' @details `runbg()` generates a workspace from the `input` argument
 #' and copies the workspace and all C files or .so files to the remote machines via
-#' \code{scp}. This will only work if *an ssh-key had been generated and added
+#' `scp`. This will only work if *an ssh-key had been generated and added
 #' to the authorized keys on the remote machine*. The
-#' code snippet, i.e. the \code{...} argument, can include several intermediate results
+#' code snippet, i.e. the `...` argument, can include several intermediate results
 #' but only the last call which is not redirected into a variable is returned via the
-#' variable \code{.runbgOutput}, see example below.
+#' variable `.runbgOutput`, see example below.
 #' @param ... Some R code
-#' @param machine e.g. \code{fr_dk846@@bwfor.cluster.uni-mannheim.de}
+#' @param machine e.g. `fr_dk846@@bwfor.cluster.uni-mannheim.de`
 #' @param filename Character, defining the filename of the temporary file. Random
 #' file name ist chosen if NULL.
 #' @param nodes Number of nodes, e.g. 10
 #' @param cores Number of cores, e.g. 16
-#' @param walltime estimated runtime in the format \code{hh:mm:ss}, e.g. \code{01:30:00}.
+#' @param walltime estimated runtime in the format `hh:mm:ss`, e.g. `01:30:00`.
 #' Jobs with a walltime up to 30 min are sent to a quick queue. When the walltime
 #' is exceeded, all jobs are automatically killed by the queue.
 #' @param input Character vector, the objects in the workspace that are stored
 #' into an R data file and copied to the remove machine.
-#' @param compile Logical. If \code{TRUE}, C files are copied and compiled on the remote machine.
+#' @param compile Logical. If `TRUE`, C files are copied and compiled on the remote machine.
 #' Otherwise, the .so files are copied.
-#' @param recover Logical, If \code{TRUE}, the scripts will not be started again.
+#' @param recover Logical, If `TRUE`, the scripts will not be started again.
 #' Can be used to get back the check and get functions for an already started process, e.g. after local session has aborted.
 #' @param password Your ssh password in plain text (yes, no joke unfortunately), the password is handed over to sshpass for automatic login on the cluster.
-#' @return List of functions \code{check()}, \code{get()} and \code{purge()}. 
-#' \code{check()} checks, if the result is ready.
-#' \code{get()} copies the result file
-#' to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+#' @return List of functions `check()`, `get()` and `purge()`. 
+#' `check()` checks, if the result is ready.
+#' `get()` copies the result file
+#' to the working directory and loads it into the workspace as an object called `.runbgOutput`. 
 #' This object is a list named according to the machines that contains the results returned by each
 #' machine.
-#' \code{purge()} deletes the temporary folder
+#' `purge()` deletes the temporary folder
 #' from the working directory and the remote machines.
 #' @examples
 #' \dontrun{
@@ -735,40 +735,40 @@ runbg_bwfor_sshpass <- function(..., machine, filename = NULL, nodes = 1, cores 
 
 #' Run an R expression on the bwForCluster via sshpass and slurm
 #' 
-#' @description Generate an R code of the expression that is copied via \code{scp}
+#' @description Generate an R code of the expression that is copied via `scp`
 #' to the bwForCluster. Then collect the results. ssh-key not needed. Password can be provided via an additional argument.
 #' sshpass needs to be installed on your local machine.
-#' @details \code{runbg()} generates a workspace from the \code{input} argument
+#' @details `runbg()` generates a workspace from the `input` argument
 #' and copies the workspace and all C files or .so files to the remote machines via
-#' \code{scp}. This will only work if *an ssh-key had been generated and added
+#' `scp`. This will only work if *an ssh-key had been generated and added
 #' to the authorized keys on the remote machine*. The
-#' code snippet, i.e. the \code{...} argument, can include several intermediate results
+#' code snippet, i.e. the `...` argument, can include several intermediate results
 #' but only the last call which is not redirected into a variable is returned via the
-#' variable \code{.runbgOutput}, see example below.
+#' variable `.runbgOutput`, see example below.
 #' @param ... Some R code
-#' @param machine e.g. \code{fr_dk846@@bwfor.cluster.uni-mannheim.de}
+#' @param machine e.g. `fr_dk846@@bwfor.cluster.uni-mannheim.de`
 #' @param filename Character, defining the filename of the temporary file. Random
 #' file name ist chosen if NULL. Must not contain the string "Minus".
 #' @param nodes Number of nodes, e.g. 10
 #' @param cores Number of cores, e.g. 16
 #' @param partition character, the partition where to start the job
-#' @param walltime estimated runtime in the format \code{hh:mm:ss}, e.g. \code{01:30:00}.
+#' @param walltime estimated runtime in the format `hh:mm:ss`, e.g. `01:30:00`.
 #' Jobs with a walltime up to 30 min are sent to a quick queue. When the walltime
 #' is exceeded, all jobs are automatically killed by the queue.
 #' @param input Character vector, the objects in the workspace that are stored
 #' into an R data file and copied to the remove machine.
-#' @param compile Logical. If \code{TRUE}, C files are copied and compiled on the remote machine.
+#' @param compile Logical. If `TRUE`, C files are copied and compiled on the remote machine.
 #' Otherwise, the .so files are copied.
-#' @param recover Logical, If \code{TRUE}, the scripts will not be started again.
+#' @param recover Logical, If `TRUE`, the scripts will not be started again.
 #' Can be used to get back the check and get functions for an already started process, e.g. after local session has aborted.
 #' @param password Your ssh password in plain text (yes, no joke unfortunately), the password is handed over to sshpass for automatic login on the cluster. If NULL, the standard ssh/scp is used and you will be asked for your password multiple times while uploading the scripts.
-#' @return List of functions \code{check()}, \code{get()} and \code{purge()}. 
-#' \code{check()} checks, if the result is ready.
-#' \code{get()} copies the result file
-#' to the working directory and loads it into the workspace as an object called \code{.runbgOutput}. 
+#' @return List of functions `check()`, `get()` and `purge()`. 
+#' `check()` checks, if the result is ready.
+#' `get()` copies the result file
+#' to the working directory and loads it into the workspace as an object called `.runbgOutput`. 
 #' This object is a list named according to the machines that contains the results returned by each
 #' machine.
-#' \code{purge()} deletes the temporary folder
+#' `purge()` deletes the temporary folder
 #' from the working directory and the remote machines.
 #' @examples
 #' \dontrun{

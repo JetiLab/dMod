@@ -2,11 +2,14 @@
 % Please edit documentation in R/parameters.R
 \name{Pexpl}
 \alias{Pexpl}
-\title{Parameter transformation}
+\title{Parameter transformation (explicit)}
 \usage{
 Pexpl(
   trafo,
   parameters = NULL,
+  deriv = TRUE,
+  deriv2 = FALSE,
+  fixed = NULL,
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -15,46 +18,70 @@ Pexpl(
 )
 }
 \arguments{
-\item{trafo}{Named character vector. Names correspond to the parameters being fed into
-the model (the inner parameters). The elements of tafo are equations that express 
-the inner parameters in terms of other parameters (the outer parameters)}
+\item{trafo}{\code{eqnvec} or named character vector.
+Names correspond to \strong{inner parameters}; each element defines how it depends
+on \strong{outer parameters}.}
 
-\item{parameters}{Character vector. Optional. If given, the generated parameter
-transformation returns values for each element in \code{parameters}. If elements of
-\code{parameters} are not in \code{names(trafo)} the identity transformation is assumed.}
+\item{parameters}{Character vector of outer parameter names. If omitted,
+all symbols in \code{trafo} are used.}
 
-\item{attach.input}{attach those incoming parameters to output which are not overwritten by
-the parameter transformation.}
+\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian of the transformation.}
 
-\item{condition}{character, the condition for which the transformation is generated}
+\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian as well.
+Implies \code{deriv = TRUE}.}
 
-\item{compile}{Logical, compile the function (see \link{funC0})}
+\item{attach.input}{Logical. If \code{TRUE}, include unchanged input parameters
+in the output vector (identity mapping).}
 
-\item{modelname}{Character, used if \code{compile = TRUE}, sets a fixed filename for the
-C file.}
+\item{condition}{Character label for which the transformation is generated.}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{compile}{Logical. If \code{TRUE}, compile the transformation via \link[CppODE:funCpp]{CppODE::funCpp}
+for faster evaluation.}
+
+\item{modelname}{Base name for generated C++ code if \code{compile = TRUE}.}
+
+\item{verbose}{Logical. Print compiler messages.}
 }
 \value{
-a function \code{p2p(p, fixed = NULL, deriv = TRUE)} representing the parameter 
-transformation. Here, \code{p} is a named numeric vector with the values of the outer parameters,
-\code{fixed} is a named numeric vector with values of the outer parameters being considered
-as fixed (no derivatives returned) and \code{deriv} is a logical determining whether the Jacobian
-of the parameter transformation is returned as attribute "deriv".
+A function
+\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
+that evaluates the parameter transformation.
+The result is an object of class \link{parvec}, which contains
+\itemize{
+\item the transformed parameters (\code{numeric} vector)
+\item attribute \code{"deriv"}: the Jacobian matrix
+\item attribute \code{"deriv2"}: the Hessian tensor (if requested)
+}
 }
 \description{
-Parameter transformation
+The explicit parameter transformation defines a direct, algebraic mapping
+
+\deqn{p_{\text{inner}} = \mathrm{parfn}(p_{\text{outer}}),}
+
+where \eqn{\mathrm{parfn}} is a vector-valued function composed from symbolic
+expressions. Each element of \code{trafo} defines one component of
+\eqn{p_{\text{inner}}}.
+
+Derivatives are obtained by \strong{symbolic differentiation}:
+\itemize{
+\item The \strong{Jacobian}
+\deqn{J_{ij} = \dfrac{\partial p_{\text{inner},i}}{\partial p_{\text{outer},j}}}
+is computed from the transformation expressions.
+\item If \code{deriv2 = TRUE}, the \strong{Hessian tensor}
+\deqn{H_{ijk} = \dfrac{\partial^2 p_{\text{inner},i}}{\partial p_{\text{outer},j}\,\partial p_{\text{outer},k}}}
+is also precomputed symbolically.
 }
-\examples{
 
-logtrafo <- c(k1 = "exp(logk1)", k2 = "exp(logk2)", 
-              A = "exp(logA)", B = "exp(logB)")
-p_log <- P(logtrafo)
-
-pars <- c(logk1 = 1, logk2 = -1, logA = 0, logB = 0)
-out <- p_log(pars)
-getDerivs(out)
+These derivatives are attached as attributes \code{"deriv"} and \code{"deriv2"}
+to the resulting function output and automatically composed when
+transformations are combined via the \link{parfn} interface.
+}
+\details{
+Constructs a parameter transformation function that maps \strong{outer parameters}
+\eqn{p_{\text{outer}}} to \strong{inner parameters} \eqn{p_{\text{inner}}}
+according to symbolic expressions.
 }
 \seealso{
-\link{Pimpl} for implicit parameter transformations
+\link{Pimpl} for implicit (steady-state) parameter transformations,
+\link{P} for automatic mode selection.
 }

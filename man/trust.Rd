@@ -12,8 +12,8 @@ trust(
   rmax,
   parscale,
   iterlim = 100,
-  fterm = sqrt(.Machine$double.eps),
-  mterm = sqrt(.Machine$double.eps),
+  fterm = 1e-06,
+  mterm = 1e-06,
   minimize = TRUE,
   blather = FALSE,
   parupper = Inf,
@@ -33,8 +33,8 @@ trustL1(
   rmax,
   parscale,
   iterlim = 100,
-  fterm = sqrt(.Machine$double.eps),
-  mterm = sqrt(.Machine$double.eps),
+  fterm = 1e-06,
+  mterm = 1e-06,
   minimize = TRUE,
   blather = FALSE,
   blather2 = FALSE,
@@ -45,37 +45,37 @@ trustL1(
 )
 }
 \arguments{
-\item{objfun}{an R function that computes value, gradient, and Hessian of the 
-function to be minimized or maximized and returns them as a list with 
-components value, gradient, and hessian. Its first argument should be a 
-vector of the length of parinit followed by any other arguments specified 
+\item{objfun}{an R function that computes value, gradient, and Hessian of the
+function to be minimized or maximized and returns them as a list with
+components value, gradient, and hessian. Its first argument should be a
+vector of the length of parinit followed by any other arguments specified
 by the \code{...} argument.}
 
-\item{parinit}{starting parameter values for the optimization. Must be 
+\item{parinit}{starting parameter values for the optimization. Must be
 feasible (in the domain).}
 
-\item{rinit}{starting trust region radius. The trust region radius 
-(see details below) is adjusted as the algorithm proceeds. A bad initial 
-value wastes a few steps while the radius is adjusted, but does not keep 
+\item{rinit}{starting trust region radius. The trust region radius
+(see details below) is adjusted as the algorithm proceeds. A bad initial
+value wastes a few steps while the radius is adjusted, but does not keep
 the algorithm from working properly.}
 
-\item{rmax}{maximum allowed trust region radius. This may be set very large. 
-If set small, the algorithm traces a steepest descent path (steepest ascent, 
+\item{rmax}{maximum allowed trust region radius. This may be set very large.
+If set small, the algorithm traces a steepest descent path (steepest ascent,
 when minimize = FALSE).}
 
-\item{parscale}{an estimate of the size of each parameter at the minimum. 
-The algorithm operates as if optimizing function(x, ...) objfun(x / parscale, ...). 
+\item{parscale}{an estimate of the size of each parameter at the minimum.
+The algorithm operates as if optimizing function(x, ...) objfun(x / parscale, ...).
 May be missing in which case no rescaling is done. See also the details section below.}
 
-\item{iterlim}{a positive integer specifying the maximum number of iterations 
+\item{iterlim}{a positive integer specifying the maximum number of iterations
 to be performed before the program is terminated.}
 
-\item{fterm}{a positive scalar giving the tolerance at which the difference 
-in objective function values in a step is considered close enough to zero to 
+\item{fterm}{a positive scalar giving the tolerance at which the difference
+in objective function values in a step is considered close enough to zero to
 terminate the algorithm.}
 
-\item{mterm}{a positive scalar giving the tolerance at which the two-term 
-Taylor-series approximation to the difference in objective function values in 
+\item{mterm}{a positive scalar giving the tolerance at which the two-term
+Taylor-series approximation to the difference in objective function values in
 a step is considered close enough to zero to terminate the algorithm.}
 
 \item{minimize}{If TRUE minimize. If FALSE maximize.}
@@ -105,48 +105,48 @@ A list containing the following components:
 \item{gradient: }{the gradient returned by objfun at the final iterate.}
 \item{hessian: }{the Hessian returned by objfun at the final iterate.}
 \item{argument: }{the final iterate}
-\item{converged: }{if TRUE the final iterate was deemed optimal by the 
+\item{converged: }{if TRUE the final iterate was deemed optimal by the
 specified termination criteria.}
-\item{iterations: }{number of trust region subproblems done (including those 
+\item{iterations: }{number of trust region subproblems done (including those
 whose solutions are not accepted).}
-\item{argpath: }{(if blather == TRUE) the sequence of iterates, not including 
+\item{argpath: }{(if blather == TRUE) the sequence of iterates, not including
 the final iterate.}
-\item{argtry: }{(if blather == TRUE) the sequence of solutions of the trust 
+\item{argtry: }{(if blather == TRUE) the sequence of solutions of the trust
 region subproblem.}
-\item{steptype: }{(if blather == TRUE) the sequence of cases that arise in 
-solutions of the trust region subproblem. "Newton" means the Newton step 
-solves the subproblem (lies within the trust region). Other values mean the 
-subproblem solution is constrained. "easy-easy" means the eigenvectors 
-corresponding to the minimal eigenvalue of the rescaled Hessian are not all 
-orthogonal to the gradient. The other cases are rarely seen. "hard-hard" means 
-the Lagrange multiplier for the trust region constraint is minus the minimal 
+\item{steptype: }{(if blather == TRUE) the sequence of cases that arise in
+solutions of the trust region subproblem. "Newton" means the Newton step
+solves the subproblem (lies within the trust region). Other values mean the
+subproblem solution is constrained. "easy-easy" means the eigenvectors
+corresponding to the minimal eigenvalue of the rescaled Hessian are not all
+orthogonal to the gradient. The other cases are rarely seen. "hard-hard" means
+the Lagrange multiplier for the trust region constraint is minus the minimal
 eigenvalue of the rescaled Hessian; "hard-easy" means it isn't.}
-\item{accept: }{(if blather == TRUE) indicates which of the sequence of 
-solutions of the trust region subproblem were accepted as the next iterate. 
-(When not accepted the trust region radius is reduced, and the previous iterate 
+\item{accept: }{(if blather == TRUE) indicates which of the sequence of
+solutions of the trust region subproblem were accepted as the next iterate.
+(When not accepted the trust region radius is reduced, and the previous iterate
 is kept.)}
 \item{r: }{(if blather == TRUE) the sequence of trust region radii.}
-\item{rho: }{(if blather == TRUE) the sequence of ratios of actual over 
-predicted decrease in the objective function in the trust region subproblem, 
-where predicted means the predicted decrease in the two-term Taylor series model 
+\item{rho: }{(if blather == TRUE) the sequence of ratios of actual over
+predicted decrease in the objective function in the trust region subproblem,
+where predicted means the predicted decrease in the two-term Taylor series model
 used in the subproblem.}
-\item{valpath: }{(if blather == TRUE) the sequence of objective function values 
+\item{valpath: }{(if blather == TRUE) the sequence of objective function values
 at the iterates.}
-\item{valtry: }{(if blather == TRUE) the sequence of objective function values 
+\item{valtry: }{(if blather == TRUE) the sequence of objective function values
 at the solutions of the trust region subproblem.}
-\item{preddiff: }{(if blather == TRUE) the sequence of predicted differences using 
-the two-term Taylor-series model between the function values at the current iterate 
+\item{preddiff: }{(if blather == TRUE) the sequence of predicted differences using
+the two-term Taylor-series model between the function values at the current iterate
 and at the solution of the trust region subproblem.}
-\item{stepnorm: }{(if blather == TRUE) the sequence of norms of steps, that is 
-distance between current iterate and proposed new iterate found in the trust region 
+\item{stepnorm: }{(if blather == TRUE) the sequence of norms of steps, that is
+distance between current iterate and proposed new iterate found in the trust region
 subproblem.}
 }
 }
 \description{
-This function carries out a minimization or maximization of a function 
+This function carries out a minimization or maximization of a function
 using a trust region algorithm. See the references for details.
 }
 \details{
-See Fletcher (1987, Section 5.1) or Nocedal and Wright (1999, Section 4.2) 
+See Fletcher (1987, Section 5.1) or Nocedal and Wright (1999, Section 4.2)
 for detailed expositions.
 }

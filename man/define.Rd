@@ -4,138 +4,272 @@
 \alias{define}
 \alias{insert}
 \alias{branch}
-\title{Define parameter transformations by \code{define()}, \code{branch()} and \code{insert()}}
+\title{Construct parameter transformations}
 \usage{
 define(trafo, expr, ..., conditionMatch = NULL)
 
 insert(trafo, expr, ..., conditionMatch = NULL)
 
-branch(trafo, table = NULL, conditions = rownames(table))
+branch(
+  trafo,
+  table = NULL,
+  conditions = rownames(table),
+  apply = c("nothing", "insert", "define")
+)
 }
 \arguments{
-\item{trafo}{named character vector of parametric expressions or object 
-of class \code{eqnvec}}
+\item{trafo}{A named character vector, an object of class \code{eqnvec}, or a list
+thereof representing parameter transformations.}
 
-\item{expr}{character of the form \code{"lhs ~ rhs"} where both \code{lhs}
-and \code{rhs} can contain a number of symbols for which vaues are passed
-by the \code{...} argument}
+\item{expr}{Character string of the form \code{"lhs ~ rhs"} defining a symbolic
+transformation or substitution.}
 
-\item{...}{used to pass values for symbols as named arguments}
+\item{...}{Named values used to substitute symbols occurring in \code{expr}.}
 
-\item{conditionMatch}{optional character, Use as regular expression to apply the reparameterization only to conditions containing conditionMatch}
+\item{conditionMatch}{Optional character string (regular expression). If provided, the operation
+is applied only to conditions whose names match this expression.}
 
-\item{table}{table of covariates as data frame. Rownames are used as unique identifier,
-usually called "conditions", and columns represent covariates associated with these conditions.}
+\item{table}{Optional data frame specifying condition-specific substitutions. Rownames
+identify conditions; columns correspond to parameter names.}
 
-\item{conditions}{character vector with condition names. Overwrites the rownames of table.}
+\item{conditions}{Character vector of condition names. If supplied, overrides
+\code{rownames(table)}.}
+
+\item{apply}{Character string specifying whether and how entries of \code{table} are
+applied when branching:
+\describe{
+\item{"nothing"}{Only duplicate the transformation (default).}
+\item{"insert"}{Apply entries via \code{\link[=insert]{insert()}}.}
+\item{"define"}{Apply entries via \code{\link[=define]{define()}}.}
+}}
 }
 \value{
-object of the same class as trafo or list thereof, if \code{branch()} has been
-used.
+An object of the same type as \code{trafo}, possibly expanded to a list if
+branching has been applied.
 }
 \description{
-Define parameter transformations by \code{define()}, \code{branch()} and \code{insert()}
+Helper functions to construct and modify symbolic parameter transformations
+used by prediction functions such as \code{\link[=P]{P()}} and \code{\link[=Xs]{Xs()}}.
+}
+\details{
+The functions \code{\link[=define]{define()}}, \code{\link[=insert]{insert()}} and \code{\link[=branch]{branch()}} operate exclusively on
+the symbolic level. They are used to build transformation objects that
+describe how \emph{outer parameters} are expressed in terms of \emph{inner parameters}
+or constants.
+
+No model evaluation, sensitivity calculation or parameter checking is
+performed by these functions. The resulting transformations are interpreted
+later when prediction or objective functions are constructed.
+
+\describe{
+\item{define}{
+Reset or redefine a transformation rule by explicitly specifying a new
+right-hand side.
+}
+\item{insert}{
+Insert symbolic substitutions into existing transformation rules without
+resetting them.
+}
+\item{branch}{
+Duplicate a transformation for multiple conditions and optionally apply
+condition-specific substitutions.
+}
+}
+
+When transformations are branched, a condition table is stored as metadata
+(attribute \code{"tree"}) and may be used to restrict subsequent calls to
+\code{\link[=define]{define()}} or \code{\link[=insert]{insert()}} to specific conditions.
 }
 \examples{
-# Define some parameter names
-parameters <- c("A", "B", "k1", "k2")
-# Define a covariate table
-covtable <- data.frame(dose = c(1, 1, 10), 
-                       inhibitor = c("no", "inh", "no"), 
-                       row.names = c("Low_noInh", "Low_Inh", "High_noInh"))
-
-# Start with an empty transformation
-trans <- NULL
-
-# Generate the identity transformation for parameters
-trans <- define(trans, "x ~ x", x = parameters); print(trans)
-
-# Insert exp(x) wherever you find x
-trans <- insert(trans, "x ~ exp(x)", x = parameters); print(trans)
-
-# Some new expressions instead of k1 and k2
-trans <- insert(trans, "x ~ y", x = c("k1", "k2"), y = c("q1 + q2", "q1 - q2")); print(trans)
-
-# Define some parameters as 0
-trans <- define(trans, "x ~ 0", x = "B"); print(trans)
-
-# The parameter name can also be directly used in the formula
-trans <- insert(trans, "q1 ~ Q"); print(trans)
-
-# Replicate the transformation 3 times with the rownames of covtable as list names
-trans <- branch(trans, table = covtable); print(trans)
-
-# Insert the rhs wherever the lhs is found in the transformation
-# column names of covtable can be used to perform specific replacements
-# for each transformation
-trans <- insert(trans, "x ~ x_inh", x = c("Q", "q2"), inh = inhibitor); print(trans)
-
-# Also numbers can be inserted
-trans <- define(trans, "A ~ dose", dose = dose); print(trans)
-
-
-# Turn that into a parameter transformation function
-p <- P(trans)
-parnames <- getParameters(p)
-pars <- rnorm(length(parnames))
-names(pars) <- parnames
-
-p(pars)
-
-
-# Advanced tricks exploiting the quoting-mechanism when capturing "..."
-
-mydataframe <- data.frame(
-  name = rep(letters[1:2], each = 3),
-  value = 1:6,
-  time = rep(1:3, 2),
-  sigma = 0.1,
-  par1 = rep(0:1, each = 3),
-  par2 = rep(9:10, each = 3),
-  par3 = rep(1:3, each = 2),
-  stringsAsFactors = FALSE
-)
-
-parameters <- c("a", "b", "par1", "par2", "par3")
-pars_to_insert <- c("par1", "par2")
-
-# this would be the usual way when setting up a model
-# pars_to_insert <- intersect(getParameters(g*x), names(data)) 
-
-trafo <- define(NULL, "x~x", x = parameters) 
-trafo <- branch(trafo, covariates(as.datalist(mydataframe)))
-
-# Trick 1: Access values from covariates()-Table with get/mget. 
-    # The names of the parameters which are supplied in the covariates()-table 
-    # have to be supplied manually.
-trafo <- insert(trafo, "name ~ value", value = unlist(mget(pars_to_insert)), name = pars_to_insert)
-
-# Trick 2: Access symbols from current condition-specific trafo with .currentSymbols, access 
-    # current condition-specific trafo by .currentTrafo
-    # The input passed by the dots is "quoted" (substituted) and eval()'ed in the environment 
-    # of the lapply(1:length(conditions), function(i) {})
-trafo <- insert(trafo, "x~exp(X)", x = .currentSymbols, X = toupper(.currentSymbols))
-
-# Trick 3: Condition specificity. There are two ways to do this
-  # 1. Apply reparametrization only for specific conditions using Regular Expressions for the 
-  # conditionMatch argument. This matches the condition name agains a regex
-trafo <- define(NULL, "x~x", x = parameters) 
-trafo <- branch(trafo, covariates(as.datalist(mydataframe)))
-
-# Conditions starting with 0_9
-insert(trafo, "x~x_par3", x = "a", conditionMatch = "^0_9", par3 = par3)  
-# Conditions NOT starting with 0_9
-insert(trafo, "x~0", x = "a", conditionMatch = "^(?!0_9)")
-  # 2. Specify conditions by boolean arguments
-  #    Conditions which satisfy par1 == 0
-insert(trafo, "x~x_par2", par1 == 0, x = parameters, par2 = par2)       
-  # Special case: Pass two arguments with the same name. This is only possible if one of them 
-  # is logical and the other is not.
-  # Conditions which satisfy par2 == 9
-insert(trafo, "x~x_par2", par2 == 9, x = .currentSymbols, par2 = par2)       
-
-
-
-
-
+## -------------------------------------------------------------------------
+## Basic construction of parameter transformations
+## -------------------------------------------------------------------------
+\dontrun{
+  # Define some parameter names
+  parameters <- c("A", "B", "k1", "k2")
+  
+  # Define a covariate table
+  covtable <- data.frame(
+    dose      = c(1, 1, 10),
+    inhibitor = c("no", "inh", "no"),
+    row.names = c("Low_noInh", "Low_Inh", "High_noInh"),
+    stringsAsFactors = FALSE
+  )
+  
+  # Start with an empty transformation
+  trans <- NULL
+  
+  # Generate the identity transformation for parameters
+  trans <- define(trans, "x ~ x", x = parameters)
+  print(trans)
+  
+  # Insert exp(x) wherever you find x
+  trans <- insert(trans, "x ~ exp(x)", x = parameters)
+  print(trans)
+  
+  # Replace k1 and k2 by expressions in q1 and q2
+  trans <- insert(
+    trans,
+    "x ~ y",
+    x = c("k1", "k2"),
+    y = c("q1 + q2", "q1 - q2")
+  )
+  print(trans)
+  
+  # Fix parameter B to zero
+  trans1 <- define(trans, "B ~ 0")
+  print(trans1)
+  
+  # Rename q1 to Q
+  trans2 <- insert(trans, "q1 ~ Q")
+  print(trans2)
+  
+  ## -------------------------------------------------------------------------
+  ## Branching with immediate application (NEW)
+  ## -------------------------------------------------------------------------
+  
+  # Condition-specific substitutions and fixed values
+  condition.grid <- data.frame(
+    dose      = covtable$dose,
+    inhibitor = covtable$inhibitor,
+    A         = c(NA, NA, "A_high"),
+    q2        = c(NA, "q2_inh", NA),
+    B         = c(NA, NA, 0),
+    row.names = rownames(covtable),
+    stringsAsFactors = FALSE
+  )
+  
+  # Branch transformation and apply substitutions directly
+  transL1 <- branch(
+    trans,
+    table = condition.grid,
+    apply = "insert"
+  )
+  print(transL1)
+  
+  # Define A = dose per condition (numeric values)
+  transL2 <- branch(
+    trans,
+    table = covtable["dose"],
+    apply = "define"
+  )
+  print(transL2)
+  
+  ## -------------------------------------------------------------------------
+  ## Turn into a parameter transformation function
+  ## -------------------------------------------------------------------------
+  
+  p <- P(trans)
+  
+  parnames <- getParameters(p)
+  pars <- rnorm(length(parnames))
+  names(pars) <- parnames
+  
+  p(pars)
+  
+  ## -------------------------------------------------------------------------
+  ## Advanced tricks exploiting the quoting mechanism in "..."
+  ## -------------------------------------------------------------------------
+  
+  mydataframe <- data.frame(
+    name  = rep(letters[1:2], each = 3),
+    value = 1:6,
+    time  = rep(1:3, 2),
+    sigma = 0.1,
+    par1  = rep(0:1, each = 3),
+    par2  = rep(9:10, each = 3),
+    par3  = rep(1:3, each = 2),
+    stringsAsFactors = FALSE
+  )
+  
+  parameters <- c("a", "b", "par1", "par2", "par3")
+  pars_to_insert <- c("par1", "par2")
+  
+  # Identity transformation
+  trafo <- define(NULL, "x ~ x", x = parameters)
+  
+  # Branch using covariates table
+  trafo <- branch(
+    trafo,
+    table = covariates(as.datalist(mydataframe)),
+    apply = "nothing"
+  )
+  
+  ## Trick 1: Access values from covariates() table via get / mget
+  trafo <- insert(
+    trafo,
+    "name ~ value",
+    value = unlist(mget(pars_to_insert)),
+    name  = pars_to_insert
+  )
+  
+  ## Trick 2: Use .currentSymbols and .currentTrafo
+  trafo <- insert(
+    trafo,
+    "x ~ exp(X)",
+    x = .currentSymbols,
+    X = toupper(.currentSymbols)
+  )
+  
+  ## -------------------------------------------------------------------------
+  ## Condition specificity
+  ## -------------------------------------------------------------------------
+  
+  trafo <- define(NULL, "x ~ x", x = parameters)
+  trafo <- branch(
+    trafo,
+    table = covariates(as.datalist(mydataframe)),
+    apply = "nothing"
+  )
+  
+  # 1) Condition selection via regular expressions
+  # Conditions starting with "0_9"
+  trafo <- insert(
+    trafo,
+    "x ~ x_par3",
+    x = "a",
+    conditionMatch = "^0_9",
+    par3 = par3
+  )
+  
+  # Conditions NOT starting with "0_9"
+  trafo <- insert(
+    trafo,
+    "x ~ 0",
+    x = "a",
+    conditionMatch = "^(?!0_9)"
+  )
+  
+  # 2) Condition selection via logical arguments
+  # Conditions with par1 == 0
+  trafo <- insert(
+    trafo,
+    "x ~ x_par2",
+    par1 == 0,
+    x = parameters,
+    par2 = par2
+  )
+  
+  # Special case: same argument name used twice
+  # Conditions with par2 == 9
+  trafo <- insert(
+    trafo,
+    "x ~ x_par2",
+    par2 == 9,
+    x = .currentSymbols,
+    par2 = par2
+  )
+  
+  ## -------------------------------------------------------------------------
+  ## Final transformation function
+  ## -------------------------------------------------------------------------
+  
+  p <- P(trafo)
+  
+  parnames <- getParameters(p)
+  pars <- rnorm(length(parnames))
+  names(pars) <- parnames
+  
+  p(pars)
+}
 }

@@ -1,81 +1,72 @@
-#' Run an any R function on a remote HPC system with SLURM
-#' 
-#' @description Generates R and bash scrips, transfers them to remote via ssh.
-#' 'sshpass' needs to be installed on your local machine to circumvent password entry.
-#' @details \code{distribute_computing()} generates R and bash scrips designed to run
-#' on a HPC system managed by the SLURM batch manager. The current workspace 
-#' together with the scripts are exported and transferred to remote via SSH. If
-#' ssh-key authentication is not possible, the ssh-password can be passed and
-#' is used by sshpass (which has to be installed on the local machine).
-#' 
-#' The code to be executed remotely is passed to the \code{...} argument, its final
-#' output is stored in \code{cluster_result}, which is loaded in the local
-#' workspace by the \code{get()} function.
-#' 
-#' It is possible to either run repetitions of the same program realization (by 
-#' use of the \code{no_rep} parameter), or to pass a list of parameter arrays
-#' via \code{var_values}. The parameters to be changed for every run *must* be
-#' named \code{var_i} where i corresponds to the i-th array in the \code{var_values}
-#' parameter.
-#' 
-#' @param ... R code to be remotely executed, parameters to be changed for runs
-#' must be named \code{var_i} see "Details".
-#' @param jobname Name in characters for the run must be unique, existing will be overwritten.
-#' Must not contain the string "Minus".
-#' @param partition Define the partition used for the SLURM manager. Default is
-#' "single". Should only be changed if explicitly wanted.
-#' @param cores Number of cores per node to be used. If a value is set to 16 < 
-#' value < 25, the number of possible nodes isseverely limited. 16 or less is
-#' possible on all nodes, more on none.
-#' @param nodes Nodes per task. Default is 1, should not be changed since 
-#' \code{distributed_computing()} is set up to be regulated by number of repititions.
-#' @param mem_per_core Memory that is reserved per core in gb. Default is 2gb.
-#' @param walltime Estimated runtime in the format \code{hh:mm:ss}, default is 1h.
-#' Jobs will be canceled after the defined time.
-#' @param ssh_passwd To be set when the sshpass should be used to automatically 
-#' authenticate on remote via passphrase. This is an obvious security nightmare...
-#' @param machine SSH address in the form \code{user@@remote_location}.
-#' @param var_values List of parameter arrays. The number of arrays (i.e. list 
-#' entries) must correspond to the number of parameters in the function passed 
-#' to \code{...}. These parameters must be named \code{var_i} where the i must 
-#' replaced by the indes of the corresponding array in \code{var_values}. The 
-#' length of the arrays define the number of nodes used with the j-th node use
-#' the j-th entry of the arrays for the corresponding \code{var_i}. If \code{no_rep}
-#' is used, \code{var_valus} must be set to \code{NULL}.
-#' @param no_rep Number of repetitions. Usage of this parameter and \code{var_values}
-#' are mutual exclusive. When used the function passed to \code{...} is executed
-#' \code{no_rep} times simultaneously using one node per realization. 
-#' @param recover Logical parameter, if set to \code{TRUE} nothing is calculated, the
-#' functions \code{check()}, \code{get()} and \code{purge()} can be used on the
-#' results generated previously under the same \code{jobname}.
-#' @param purge_local Logical, if set to \code{TRUE} the \code{purge()} function also removes
-#' local files.
-#' @param compile Logical, if set to \code{TRUE} the source files are transferred
-#' to remote and compiled there. If set to \code{FALSE}, the local shared objects
-#' are transferred and used instead.
-#' @param custom_folders named vector with exact three entries named 'compiled',
-#' 'output' and 'tmp'. The values are strings with relative paths from the current
-#' working directory to the respective directory of the compiled files, the temporary
-#' folder from which files will be copied to the cluster and the output folder in
-#' which the calculated result from the cluster will be saved.
-#' The default is \code{NULL}, then everything is done from the current working directory.
-#' If only a subset of the folders should be changed, all other need to be set to
-#' \code{./}.
-#' @param resetSeeds logical, if set to \code{TRUE} (default) the parameter vector
-#' with random seeds \code{.Random.seeds} from the transferred work space is deleted
-#' on remote. This ensures that each node has uses a different set of  (pseudo) random
-#' numbers. Set to FALSE at own risk.
-#' @param returnAll logical if set to \code{TRUE} (default) all results are returned, if set
-#' to \code{FALSE} only the \code{*result.RData} files are returned.
-#'  
-#' @return List of functions \code{check()}, \code{get()} and \code{purge()}. 
-#' \code{check()} checks, if the result is ready. 
-#' \code{get()} copies all files from the remote working directory to local and 
-#' loads all present results (even if not all nodes where done) in the current 
-#' active workspace as the object \code{cluster_result} which is a list with the
-#' results of each node as entries.
-#' \code{purge()} deletes the temporary folder on remote and if \code{purge_local}
-#' is set to \code{TRUE}.
+#' Run any R function on a remote HPC system with SLURM
+#'
+#' @description
+#' Generates R and bash scripts, transfers them to a remote HPC system via SSH,
+#' and executes the given R code in parallel using the SLURM batch manager.
+#' The function handles workspace export, job submission, and result retrieval.
+#'
+#' @details
+#' `distributed_computing()` generates R and bash scripts designed to run
+#' on an HPC system managed by SLURM. The current R workspace together with the
+#' scripts are exported and transferred to the remote system via SSH.  
+#' If ssh-key authentication is not possible, the SSH password can be provided and
+#' is used by `sshpass` (which must be installed locally).
+#'
+#' The code to be executed remotely is passed to the `...` argument; its final
+#' output is stored in `cluster_result`, which can be loaded in the local
+#' workspace via the `get()` function.
+#'
+#' It is possible to run multiple repetitions of the same program (via `no_rep`)
+#' or to pass a list of parameter arrays through `var_values`. Parameters that
+#' vary between runs must be named `var_i`, where *i* matches the index
+#' of the corresponding array in `var_values`.
+#'
+#' @param ... R code to be remotely executed. Parameters to be changed for each run
+#' must be named `var_i` (see "Details").
+#' @param jobname Unique name (character) for the run. Existing runs with the same
+#' name will be overwritten. Must not contain the string "Minus".
+#' @param partition SLURM partition name to use. Default is `"single"`.
+#' @param cores Number of cores per node. Values above 16 may limit available nodes.
+#' @param nodes Number of nodes per task. Default is 1; typically should not be changed.
+#' @param mem_per_core Memory per CPU core in GB. Default is 2 GB.
+#' @param walltime Maximum runtime in format `"hh:mm:ss"`. Default is 1 hour.
+#' @param ssh_passwd Password string for SSH authentication via `sshpass`.
+#' Optional, and only used if key-based authentication is unavailable.
+#' @param machine SSH address of the remote HPC system, e.g. `"user@@cluster"`.
+#' @param var_values List of parameter arrays. Each array corresponds to one variable
+#' `var_i`. The length of each array determines the number of SLURM array jobs.
+#' Mutually exclusive with `no_rep`.
+#' @param no_rep Integer number of repetitions (mutually exclusive with `var_values`).
+#' @param recover Logical; if `TRUE`, no computation is performed. Instead,
+#' the returned list of functions `check()`, `get()`, and `purge()`
+#' can be used to interact with previously submitted jobs.
+#' @param purge_local Logical; if `TRUE`, the `purge()` function also
+#' deletes local result files.
+#' @param compile Logical; if `TRUE`, all C/C++ source files (`*.c`, `*.cpp`)
+#' are transferred to the cluster and fully recompiled into shared objects (`.so`).
+#' If set to `TRUE`, this overrides `link = TRUE`.
+#' @param link Logical; if `TRUE`, only existing object files (`*.o`) are
+#' transferred to the cluster and linked into shared objects (`.so`),
+#' skipping compilation. If no `.o` files are found, an error is raised.
+#' This option is ignored if `compile = TRUE`.
+#' @param custom_folders Named vector with exactly three elements: `"compiled"`,
+#' `"output"`, and `"tmp"`. Each value is a relative path specifying where
+#' compiled files, temporary data, and output results should be stored.
+#' If `NULL`, all operations occur in the current working directory.
+#' @param resetSeeds Logical; if `TRUE` (default), removes `.Random.seed`
+#' from the transferred workspace to ensure each node has independent random seeds.
+#' @param returnAll Logical; if `TRUE` (default), retrieves all remote files.
+#' If `FALSE`, only result files (`*result.RData`) are fetched.
+#'
+#' @return
+#' A list containing three functions:
+#' \itemize{
+#'   \item `check()` – Checks whether all remote results are complete.
+#'   \item `get()` – Downloads results and loads them into
+#'         `cluster_result` in the local workspace.
+#'   \item `purge()` – Deletes temporary remote files; optionally removes local ones.
+#' }
+#'
 #' @examples
 #' \dontrun{
 #' out_distributed_computing <- distributed_computing(
@@ -103,7 +94,8 @@
 #' var_values = NULL,
 #' no_rep = 20,
 #' recover = F,
-#' compile = F
+#' compile = F,
+#' link = F
 #' )
 #' out_distributed_computing$check()
 #' out_distributed_computing$get()
@@ -146,7 +138,8 @@
 #'   var_values = var_list,
 #'   no_rep = NULL,
 #'   recover = F,
-#'   compile = F
+#'   compile = F,
+#'   link = F
 #' )
 #' profiles_distributed_computing$check()
 #' profiles_distributed_computing$get()
@@ -159,25 +152,25 @@
 #' 
 #' @export
 distributed_computing <- function(
-  ...,
-  jobname,
-  partition = "single",
-  cores = 16,
-  nodes = 1,
-  mem_per_core = 2,
-  walltime = "01:00:00",
-  ssh_passwd = NULL,
-  machine = "cluster",
-  var_values = NULL,
-  no_rep = NULL,
-  recover = T,
-  purge_local = F,
-  compile = F,
-  custom_folders = NULL,
-  resetSeeds = TRUE,
-  returnAll = TRUE
-  # called_function = "func(a = var_1, b = var_1, name = jobname,id = 01)",
-) {
+    ...,
+    jobname,
+    partition = "single",
+    cores = 16,
+    nodes = 1,
+    mem_per_core = 2,
+    walltime = "01:00:00",
+    ssh_passwd = NULL,
+    machine = "cluster",
+    var_values = NULL,
+    no_rep = NULL,
+    recover = TRUE,
+    purge_local = FALSE,
+    compile = FALSE,
+    link = FALSE,
+    custom_folders = NULL,
+    resetSeeds = TRUE,
+    returnAll = TRUE
+){
   original_wd <- getwd()
   if (is.null(custom_folders)) {
     output_folder_abs <- "./"
@@ -198,6 +191,10 @@ distributed_computing <- function(
     setwd(original_wd)
     setwd(tmp_folder)
   }
+  
+  # Safety rule: never compile and link at the same time
+  if (compile) link <- FALSE
+  
   
   on.exit(setwd(original_wd))
   
@@ -278,7 +275,7 @@ distributed_computing <- function(
         )
       )
     }
-
+    
     
     # get list of all currently available output files
     # setwd(paste0(jobname,"_folder/results"))
@@ -486,6 +483,8 @@ distributed_computing <- function(
       paste0("#SBATCH --mem-per-cpu=", mem_per_core, "gb"),
       "",
       "",
+      "# Load compiler modules",
+      "module load compiler/gnu/13.3",
       "# Load R modules",
       "module load math/R",
       # paste0("export OPENBLAS_NUM_THREADS=",cores),
@@ -501,55 +500,52 @@ distributed_computing <- function(
   
   
   if (compile) {
+    # --- FULL RECOMPILATION (.cpp/.c -> .so) ---
     compile_files <- Sys.glob(paste0("*.cpp"))
     compile_files <- append(compile_files, Sys.glob(paste0("*.c")))
     compile_files <- paste(compile_files, collapse = " ")
     
-    tar_locale <- paste0(
-      "tar -jcf - ", compile_files, " ",wd_path, "*"
-    )
-    tar_remote <- paste0(
-      "tar -C ./ -jxf - ; mv -t ./", jobname, "_folder ",compile_files,"; "
-    )
+    tar_locale <- paste0("tar -jcf - ", compile_files, " ", wd_path, "*")
+    tar_remote <- paste0("tar -C ./ -jxf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
     
-    # list of files to compile
     sourcefiles <- paste(
-      paste0( 
-        # jobname, "_folder/",
-        c(list.files(pattern = glob2rx("*.c")), list.files(pattern = glob2rx("*.cpp")))
-      ), 
+      c(list.files(pattern = glob2rx("*.c")), list.files(pattern = glob2rx("*.cpp"))),
       collapse = " "
     )
     
     compile_remote <- paste0(
-      # " module load math/R; R CMD SHLIB  -o ", jobname, "_shared_object.so ", sourcefiles," ; "
-      " module load math/R; R CMD SHLIB ", sourcefiles, " -o ", jobname, "_shared_object.so; "
+      "module load math/R; R CMD SHLIB ", sourcefiles, " -o ", jobname, "_shared_object.so; "
     )
-    # compile_remote <- paste0(
-    #   " module load math/R; R CMD cat(getwd()) "
-    # )
+    
+  } else if (link) {
+    # --- LINK ONLY (.o -> .so) ---
+    object_files <- Sys.glob("*.o")
+    if (length(object_files) == 0)
+      stop("No .o files found for linking! You must compile first.")
+    
+    # Remove any old .so files before linking
+    # unlink(list.files(pattern = "(\\.so)$"))
+    
+    compile_files <- paste(object_files, collapse = " ")
+    tar_locale <- paste0("tar -jcf - ", compile_files, " ", wd_path, "*")
+    tar_remote <- paste0("tar -C ./ -jxf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
+    
+    compile_remote <- paste0(
+      "module load math/R; R CMD SHLIB ", paste(object_files, collapse = " "),
+      " -o ", jobname, "_shared_object.so; "
+    )
+    
   } else {
+    # --- NO BUILD ACTION (.so/.o already available) ---
     compile_files <- Sys.glob(paste0("*.so"))
     compile_files <- append(compile_files, Sys.glob(paste0("*.o")))
     compile_files <- paste(compile_files, collapse = " ")
     
-    tar_locale <- paste0(
-      "tar -jcf - ", compile_files, " ",wd_path, "*"
-    )
-    tar_remote <- paste0(
-      "tar -C ./ -jxf - ; mv -t ./", jobname, "_folder ",compile_files,"; "
-    )
-    
-    # list of files to compile
-    sourcefiles <- paste(
-      paste0( 
-        # jobname, "_folder/",
-        c(list.files(pattern = glob2rx("*.c")), list.files(pattern = glob2rx("*.cpp")))
-      ), 
-      collapse = " "
-    )
+    tar_locale <- paste0("tar -jcf - ", compile_files, " ", wd_path, "*")
+    tar_remote <- paste0("tar -C ./ -jxf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
     compile_remote <- ""
   }
+  
   ##
   # transfer and run files
   system(
@@ -573,7 +569,7 @@ distributed_computing <- function(
 
 #' Generate parameter list for distributed profile calculation
 #' 
-#' @description Generates list of \code{WhichPar} entries to facillitate distribute
+#' @description Generates list of `WhichPar` entries to facillitate distribute
 #' profile calculation.
 #' @details Lists to split the parameters for which the profiles are calculated
 #' on the different nodes.
@@ -582,8 +578,8 @@ distributed_computing <- function(
 #' @param fits_per_node numerical, number of parameters that will be send to each node.
 #' @param side determine if both sides are calculated (default) or if the profiles are split in 'left' and 'right' for calculation
 #' 
-#' @return List with two arrays: \code{from} contains the number of the starting
-#' parameter, while \code{to} stores the respective upper end of the parameter list
+#' @return List with two arrays: `from` contains the number of the starting
+#' parameter, while `to` stores the respective upper end of the parameter list
 #' per node.
 #' @examples
 #' \dontrun{
@@ -643,13 +639,14 @@ profile_pars_per_node <- function(parameters, fits_per_node, side = c("both", "s
 #' @description Installs Julia and the necessary julia packages
 #' 
 #' 
-#' @param installJulia boolean, default \code{false}. If set to true, juliaup and via this then Julia is installed. 
-#' @param installJuliaPackages boolean, default \code{true}. If set to true, the necessary packages are installed.
+#' @param installJulia boolean, default `false`. If set to true, juliaup and via this then Julia is installed. 
+#' @param installJuliaPackages boolean, default `true`. If set to true, the necessary packages are installed.
+#' @param JuliaProjectPath string, default `NULL`. Allows for installing the required packages to a separate project environment instead of the global package environment. Also need to specify same JuliaProjectPath to steadyStateToolJulia().
 #' 
 #' @return nothing
 #' 
 #' @export
-installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackages = TRUE) {
+installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackages = TRUE, JuliaProjectPath = NULL) {
   
   tryCatch(
     {
@@ -666,28 +663,33 @@ installJuliaForSteadyStates <- function(installJulia = FALSE, installJuliaPackag
     system("juliaup add release")
     try(system("source ~/.bashrc"))
   }
-  
+
+  # install packages
   if (installJuliaPackages) {
-    # install packages
-    system("julia -e 'using Pkg; Pkg.add(\"CSV\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"DataFrames\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Symbolics\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Catalyst\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"SymbolicUtils\")'")
-    system("julia -e 'using Pkg; Pkg.add(\"Graphs\")'")
+    # Sensible to use JuliaProjectPath = "~/.JuliaSteadyStates/"
+    if(!is.null(JuliaProjectPath)){
+      ProjectPathSetter = paste0("--project='", JuliaProjectPath, "' ")
+    } else {
+      ProjectPathSetter = ""
+    }
+    system(paste0("julia ", ProjectPathSetter, "-e 'using Pkg; Pkg.add([\"CSV\", \"DataFrames\", \"Symbolics\", \"SymbolicUtils\", \"Catalyst\", \"Graphs\"])'"))
   }
   
 }
 
 
-#' Calculated the steady states of a given model  
+#' Calculate the steady states of a given model  
 #' 
 #' @description Uses julia to calculate the steady state transformations
 #' 
 #' @param el the equation list
-#' @param forcings vector of strings, default \code{c("","")}. The names of the forcings which will be set to zero.
-#' @param neglect vector of strings, default \code{c("","")}. The names of the variables which will be neglected as fluxParameters and therefore will not be solved for.
-#' @param verboseLevel integer, default \code{1}. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implementes.
+#' @param forcings vector of strings, default `c("","")`. The names of the forcings which will be set to zero before solving for the steady state equations.
+#' @param neglect vector of strings, default `c("","")`. The names of the variables which will be neglected as fluxParameters and therefore will not be solved for.
+#' @param verboseLevel integer, default `1`. The level of verbosity of the output, right now only 1 (all) and 0 (no) is implemented.
+#' @param testSteadyState boolean, default `true`
+#' @param JuliaPath string, default `NULL`. If specified, uses julia executable from given path.
+#' @param FileExportPath string, default `getwd()`. Directory to which .csv files for transfer of equations between R and Julia are saved.
+#' @param JuliaProjectPath string, default `NULL`. If specified, uses julia local project environment from given path, otherwise uses global package environment for code execution.
 #' 
 #' @return named vector with the steady state transformations. The names are the inner, the values are the outer parameters
 #' 
@@ -697,13 +699,20 @@ steadyStateToolJulia <- function(
     forcings = NULL,
     neglect = NULL,
     verboseLevel = 1,
-    testSteadyState = TRUE
+    testSteadyState = TRUE,
+    JuliaPath = NULL,
+    FileExportPath = NULL,
+    JuliaProjectPath = NULL
 ) {
   # prepare things:
-  myWD <- getwd()
+  if (is.null(FileExportPath)) {
+    myWD <- getwd()
+  } else {
+    myWD <- FileExportPath
+  }
   dModEqnFileName = "EquationsForSteadyStates"
   
-  dMod::write.eqnlist(el, file = paste0(dModEqnFileName, ".csv"))
+  dMod::write.eqnlist(el, file = file.path(myWD, paste0(dModEqnFileName, ".csv")))
   
   inputPath <- file.path(myWD, paste0(dModEqnFileName, ".csv"))
   fileName <- "SteadyStatesFromJulia"
@@ -721,7 +730,14 @@ steadyStateToolJulia <- function(
     warning("The 'JuliaCall' package must be installed.")
     return(NULL)
   }
-  if (dir.exists(file.path(Sys.getenv("HOME"),".juliaup/bin"))) {
+  
+  if (!is.null(JuliaProjectPath)) {
+    Sys.setenv(JULIA_PROJECT = JuliaProjectPath)
+  }
+  
+  if (!is.null(JuliaPath)) {
+    JuliaCall::julia_setup(JULIA_HOME = JuliaPath)
+  } else if (dir.exists(file.path(Sys.getenv("HOME"),".juliaup/bin"))) {
     JuliaCall::julia_setup(JULIA_HOME = file.path(Sys.getenv("HOME"),".juliaup/bin"))
   } else if (file.exists("/usr/bin/julia")) {
     JuliaCall::julia_setup(JULIA_HOME = "/usr/bin/")
@@ -762,10 +778,10 @@ steadyStateToolJulia <- function(
 #' 
 #' 
 #' @param profs parframe with the profiles, as returned from the \link{dMod::profile} function
-#' @param trafo parameter transformation for the steady states, as returned by \code{P(steadystateTrafo)}. Currently no ther formulation is supported.
-#' @param rescale character, default \code{"lin"} (no rescaling). The rescaling of the transformed parameters to the model scale, can be \code{"lin"}, \code{"log"}, \code{"log10"} or \code{"log2"}.
+#' @param trafo parameter transformation for the steady states, as returned by `P(steadystateTrafo)`. Currently no ther formulation is supported.
+#' @param rescale character, default `"lin"` (no rescaling). The rescaling of the transformed parameters to the model scale, can be `"lin"`, `"log"`, `"log10"` or `"log2"`.
 #' 
-#' @return \code{parframe} of the input \code{profs} with the added columns of \code{trafo} applied to the parameters.
+#' @return `parframe` of the input `profs` with the added columns of `trafo` applied to the parameters.
 #' 
 #' @export
 addTrafoForPaths <- function(

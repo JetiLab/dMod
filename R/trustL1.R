@@ -1,5 +1,5 @@
 
-norm <- function(x) sqrt(sum(x^2))
+norm <- function(x) sqrt(crossprod(x))
 
 
 #' @export
@@ -9,9 +9,8 @@ norm <- function(x) sqrt(sum(x^2))
 #' @param one.sided logical. One-sided penalization.
 #' @param lambda strength of the L1 penalty 
 trustL1 <- function(objfun, parinit, mu = 0*parinit, one.sided=FALSE, lambda = 1, rinit, rmax, parscale,
-    iterlim = 100, fterm = sqrt(.Machine$double.eps),
-    mterm = sqrt(.Machine$double.eps),
-    minimize = TRUE, blather = FALSE, blather2 = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, ...)
+    iterlim = 100, fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, 
+    blather2 = FALSE, parupper = Inf, parlower = -Inf, printIter = FALSE, ...)
 {
   
   # Guarantee that pars is named numeric without deriv attribute
@@ -421,41 +420,53 @@ check.objfun.output <- function(obj, minimize, dimen)
 
 constraintL1 <- function(p, mu, lambda = 1, fixed = NULL) {
   
-  ## Augment sigma if length = 1
-  if(length(lambda) == 1) 
-    lambda <- structure(rep(lambda, length(mu)), names = names(mu)) 
+  ## --- setup --------------------------------------------------------------
+  if (length(lambda) == 1)
+    lambda <- setNames(rep(lambda, length(mu)), names(mu))
   
-  ## Extract contribution of fixed pars and delete names for calculation of gr and hs  
-  par.fixed <- intersect(names(mu), names(fixed))
-  sumOfFixed <- 0
-  if(!is.null(par.fixed)) sumOfFixed <- sum(lambda[par.fixed]*abs(fixed[par.fixed] - mu[par.fixed]))
+  idx <- intersect(names(p), names(mu))
+  d   <- length(p)
   
-  ## Compute constraint value and derivatives
-  parameters <- intersect(names(p), names(mu))
+  ## --- value --------------------------------------------------------------
+  value <- sum(lambda[idx] * abs(p[idx] - mu[idx]))
   
-  value <- sum(lambda[parameters]*abs(p[parameters] - mu[parameters])) + sumOfFixed
+  if (!is.null(fixed)) {
+    fidx <- intersect(names(fixed), names(mu))
+    if (length(fidx))
+      value <- value + sum(lambda[fidx] * abs(fixed[fidx] - mu[fidx]))
+  }
   
-  gradient <- rep(0, length(p)); names(gradient) <- names(p)
-  gradient[parameters][p[parameters] >  mu[parameters]] <-  lambda[parameters][p[parameters] >  mu[parameters]]
-  gradient[parameters][p[parameters] <  mu[parameters]] <- -lambda[parameters][p[parameters] <  mu[parameters]]
+  ## --- inner gradient -----------------------------------------------------
+  gradient <- numeric(d); names(gradient) <- names(p)
+  diff <- p[idx] - mu[idx]
+  gradient[idx][diff > 0] <-  lambda[idx][diff > 0]
+  gradient[idx][diff < 0] <- -lambda[idx][diff < 0]
   
-  hessian <- matrix(0, length(p), length(p), dimnames = list(names(p), names(p)))
-  diag(hessian)[parameters] <- 0
+  ## --- inner hessian (zero for L1) ----------------------------------------
+  hessian <- matrix(0, d, d, dimnames = list(names(p), names(p)))
   
-  dP <- attr(p, "deriv") 
-  if(!is.null(dP)) {
-    gradient <- as.vector(gradient %*% dP)
-    names(gradient) <- colnames(dP)
+  ## --- chain rule ---------------------------------------------------------
+  dP  <- attr(p, "deriv",  exact = TRUE)
+  dP2 <- attr(p, "deriv2", exact = TRUE)
+  
+  if (!is.null(dP)) {
+    
+    ## gradient: g_outer = g_inner %*% J
+    gradient <- drop(gradient %*% dP)
+    
+    ## hessian: J^T H J + sum_i g_i * H_trafo[i]
     hessian <- t(dP) %*% hessian %*% dP
-    colnames(hessian) <- colnames(dP)
-    rownames(hessian) <- colnames(dP)
+    
+    if (!is.null(dP2)) {
+      nz <- which(gradient != 0)
+      if (length(nz))
+        hessian <- hessian + Reduce(`+`, gradient[nz] * dP2[nz, , , drop = FALSE])
+    }
   }
   
   out <- list(value = value, gradient = gradient, hessian = hessian)
   class(out) <- c("obj", "list")
-  
-  return(out)
-  
-  
+  out
 }
+
 

@@ -2,61 +2,81 @@
 % Please edit documentation in R/classes.R
 \name{odemodel}
 \alias{odemodel}
-\title{Generate the model objects for use in Xs (models with sensitivities)}
+\title{Generate model objects for use in Xs (models with sensitivities)}
 \usage{
 odemodel(
   f,
   deriv = TRUE,
+  deriv2 = FALSE,
   forcings = NULL,
   events = NULL,
   outputs = NULL,
   fixed = NULL,
   estimate = NULL,
   modelname = "odemodel",
-  solver = c("deSolve", "Sundials"),
+  solver = c("deSolve", "Sundials", "boost"),
   gridpoints = NULL,
   verbose = FALSE,
   ...
 )
 }
 \arguments{
-\item{f}{Something that can be converted to \link{eqnvec},
-e.g. a named character vector with the ODE}
+\item{f}{Something that can be converted to \link{eqnvec}, e.g. a named character vector
+specifying the right-hand sides of the ODE system.}
 
-\item{deriv}{logical, generate sensitivities or not}
+\item{deriv}{Logical. If \code{TRUE}, generate first-order sensitivities.
+Defaults to \code{TRUE}.}
 
-\item{forcings}{Character vector with the names of the forcings}
+\item{deriv2}{Logical. If \code{TRUE}, generate second-order sensitivities.
+Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.}
 
-\item{events}{data.frame of events with columns "var" (character, the name of the state to be
-affected), "time" (character or numeric, time point), "value" (character or numeric, value),
-"method" (character, either
-"replace" or "add"). See \link[deSolve]{events}. Events need to be defined here if they contain
-parameters, like the event time or value. If both, time and value are purely numeric, they
-can be specified in \code{\link{Xs}()}, too.}
+\item{forcings}{Character vector with the names of external forcings.}
+
+\item{events}{\code{data.frame} specifying discrete events during integration.
+Must contain the columns \code{"var"} (character, name of the affected state),
+\code{"time"} (character or numeric, time point),
+\code{"value"} (character or numeric, value to apply), and
+\code{"method"} (character, either \code{"replace"} or \code{"add"}).
+Events must be defined here if they depend on parameters (e.g., event time or value).
+If both \code{time} and \code{value} are purely numeric, such events may alternatively
+be specified in \code{\link[=Xs]{Xs()}}, but this is only supported for
+\code{solver = "deSolve"}.
+See \link[deSolve:events]{events} for details on the \code{deSolve} implementation, or
+\code{\link[CppODE:CppODE]{CppODE::CppODE()}} for information on event handling in the \code{boost} solver.}
 
 \item{outputs}{Named character vector for additional output variables.}
 
-\item{fixed}{Character vector with the names of parameters (initial values and dynamic) for which
-no sensitivities are required (will speed up the integration).}
+\item{fixed}{Character vector with the names of parameters (initial values and dynamic)
+for which no sensitivities are required (this speeds up integration).}
 
-\item{estimate}{Character vector specifying parameters (initial values and dynamic) for which
-sensitivities are returned. If estimate is specified, it overwrites `fixed`.}
+\item{estimate}{Character vector specifying parameters (initial values and dynamic)
+for which sensitivities are returned. If specified, \code{estimate} overwrites \code{fixed}.}
 
-\item{modelname}{Character, the name of the C file being generated.}
+\item{modelname}{Character. The base name of the generated C/C++ file.}
 
-\item{solver}{Solver for which the equations are prepared.}
+\item{solver}{Character string specifying the solver backend.
+One of \code{"deSolve"}, \code{"Sundials"} (deprecated), or \code{"boost"}.}
 
-\item{gridpoints}{Integer, the minimum number of time points where the ODE is evaluated internally}
+\item{gridpoints}{Integer specifying the minimum number of internal time points
+where the ODE is evaluated.}
 
-\item{verbose}{Print compiler output to R command line.}
+\item{verbose}{Logical. If \code{TRUE}, print compiler output to the R console.}
 
-\item{...}{Further arguments being passed to funC.}
+\item{...}{Additional arguments passed to \code{\link[cOde:funC]{cOde::funC()}} or
+\code{\link[CppODE:CppODE]{CppODE::CppODE()}}.}
 }
 \value{
-list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
+A list containing the generated model objects.
+For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
+and optionally \code{extended} (ODE + sensitivities object).
+For \code{solver = "boost"}, the list contains compiled C++ solvers:
+\code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
 }
 \description{
-Generate the model objects for use in Xs (models with sensitivities)
+Creates and compiles model objects for systems of ordinary differential equations (ODEs)
+with optional first- and second-order sensitivities. Depending on the selected solver,
+the function interfaces either to \code{\link[cOde:funC]{cOde::funC()}} (for \code{solver = "deSolve"})
+or to \code{\link[CppODE:CppODE]{CppODE::CppODE()}} (for \code{solver = "boost"}).
 }
 \examples{
 
@@ -99,4 +119,7 @@ plot(pred)
 
 
 }
+}
+\seealso{
+\code{\link[cOde:funC]{cOde::funC()}}, \code{\link[CppODE:CppODE]{CppODE::CppODE()}}
 }

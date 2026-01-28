@@ -2,18 +2,14 @@
 % Please edit documentation in R/parClass.R
 \name{print.parvec}
 \alias{print.parvec}
-\title{Pretty printing for a parameter vector}
+\title{Pretty printing for parvec objects}
 \usage{
-\method{print}{parvec}(x, ...)
+\method{print}{parvec}(x)
 }
 \arguments{
-\item{x}{object of class \code{parvec}}
-
-\item{...}{not used yet.}
+\item{x}{parvec object}
 }
 \description{
-Pretty printing for a parameter vector
-}
-\author{
-Wolfgang Mader, \email{Wolfgang.Mader@fdm.uni-freiburg.de}
+Prints a parameter vector along with information about
+its attached derivative matrices (\code{deriv}, \code{deriv2}).
 }

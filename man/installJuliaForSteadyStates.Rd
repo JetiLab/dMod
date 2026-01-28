@@ -4,12 +4,18 @@
 \alias{installJuliaForSteadyStates}
 \title{Install the julia setup}
 \usage{
-installJuliaForSteadyStates(installJulia = FALSE, installJuliaPackages = TRUE)
+installJuliaForSteadyStates(
+  installJulia = FALSE,
+  installJuliaPackages = TRUE,
+  JuliaProjectPath = NULL
+)
 }
 \arguments{
 \item{installJulia}{boolean, default \code{false}. If set to true, juliaup and via this then Julia is installed.}
 
 \item{installJuliaPackages}{boolean, default \code{true}. If set to true, the necessary packages are installed.}
+
+\item{JuliaProjectPath}{string, default \code{NULL}. Allows for installing the required packages to a separate project environment instead of the global package environment. Also need to specify same JuliaProjectPath to steadyStateToolJulia().}
 }
 \value{
 nothing

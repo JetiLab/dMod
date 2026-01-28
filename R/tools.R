@@ -1,4 +1,3 @@
-
 #' Compare two objects and return differences
 #' 
 #' Works eigher on a list or on two arguments. In case of a list,
@@ -6,12 +5,12 @@
 #' objects themselves also some of their attributes are compared,
 #' i.e. "equations", "parameters" and "events" and "forcings".
 #' 
-#' @param vec1 object of class \link{eqnvec}, \code{character} or
-#' \code{data.frame}. Alternatively, a list of such objects.
+#' @param vec1 object of class [eqnvec], `character` or
+#' `data.frame`. Alternatively, a list of such objects.
 #' @param vec2 same as vec1. Not used if vec1 is a list.
 #' @param reference numeric of length one, the reference entry.
 #' @param ... arguments going to the corresponding methods
-#' @return \code{data.frame} or list of data.frames with the differences. 
+#' @return `data.frame` or list of data.frames with the differences. 
 #' 
 #' @export
 #' @examples
@@ -164,9 +163,9 @@ compare.data.frame <- function(vec1, vec2 = NULL, ...) {
 #' @param ... data.frames or matrices with not necessarily overlapping colnames
 #' @details This function is useful when separating models into independent csv model files,
 #' e.g.~a receptor model and several downstream pathways. Then, the models can be recombined 
-#' into one model by \code{combine()}.
+#' into one model by `combine()`.
 #' 
-#' @return A \code{data.frame}
+#' @return A `data.frame`
 #' @export
 #' @examples
 #' data1 <- data.frame(Description = "reaction 1", Rate = "k1*A", A = -1, B = 1)
@@ -218,7 +217,7 @@ combine <- function(...) {
 #' @param M matrix
 #' @param rows Index vector
 #' @param cols Index vector
-#' @return The matrix \code{M[rows, cols]}, keeping/adjusting attributes like ncol nrow and dimnames.
+#' @return The matrix `M[rows, cols]`, keeping/adjusting attributes like ncol nrow and dimnames.
 #' @export
 submatrix <- function(M, rows = 1:nrow(M), cols = 1:ncol(M)) {
   
@@ -269,16 +268,30 @@ blockdiagSymb <- function(M, N) {
 
 
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
+#' Translate wide output format (e.g., from ODE solver) into long format
+#'
+#' Converts simulation output in wide format into a tidy long format suitable for
+#' plotting or further analysis (e.g., with \pkg{ggplot2}). The function assumes
+#' that the first column of \code{out} represents a time-like variable and the
+#' remaining columns contain values.
+#'
+#' @param out A \code{data.frame}, \code{matrix}, or a \code{list} of matrices in wide format.
+#' @param keep Integer vector specifying the column indices to keep (default is \code{1}).
+#' @param na.rm Logical. If \code{TRUE}, missing values are removed in the long-format output.
+#'
+#' @details
+#' If \code{out} is a list, the list names are added as an additional column named
+#' \code{"condition"}. This is particularly useful for plotting results from multiple
+#' simulation conditions with \pkg{ggplot2}.
+#'
+#' @return A \code{data.frame} in long format with the following columns:
+#' \itemize{
+#'   \item \code{"time"} — values from \code{out[, 1]}.
+#'   \item \code{"name"} — column names from \code{out[, -1]}.
+#'   \item \code{"value"} — corresponding numeric values.
+#'   \item \code{"condition"} — if \code{out} was a list, contains the list names.
+#' }
+#'
 #' @export
 wide2long <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -287,17 +300,7 @@ wide2long <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.data.frame
+#' @rdname wide2long
 #' @export
 wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -305,17 +308,7 @@ wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out data.frame or matrix or list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.matrix
+#' @rdname wide2long
 #' @export
 wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -336,17 +329,7 @@ wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
   
 }
 
-#' Translate wide output format (e.g. from ode) into long format 
-#' 
-#' @param out list of matrices in wide format 
-#' @param keep Index vector, the columns to keep
-#' @param na.rm Logical, if \code{TRUE}, missing values are removed in the long format.
-#' @details The function assumes that out[,1] represents a time-like vector
-#' whereas out[,-1] represents the values. Useful for plotting with ggplot. If 
-#' a list is supplied, the names of the list are added as extra column names "condition"
-#' @return data.frame in long format, i.e. columns "time" (out[,1]), "name" (colnames(out[,-1])), 
-#' "value" (out[,-1]) and, if out was a list, "condition" (names(out))
-#' @export wide2long.list
+#' @rdname wide2long
 #' @export
 wide2long.list <- function(out, keep = 1, na.rm = FALSE) {
   
@@ -388,7 +371,7 @@ long2wide <- function(out) {
 #' 
 #' @param mylist A named list of data.frame. The data.frames are expected to have the same structure.
 #' @details Each data.frame ist augented by a "condition" column containing the name attributed of
-#' the list entry. Subsequently, the augmented data.frames are bound together by \code{rbind}.
+#' the list entry. Subsequently, the augmented data.frames are bound together by `rbind`.
 #' @return data.frame with the originial columns augmented by a "condition" column.
 #' @export
 lbind <- function(mylist) {
@@ -421,72 +404,137 @@ lbind <- function(mylist) {
 #' Alternative version of expand.grid
 #' @param seq1 Vector, numeric or character
 #' @param seq2 Vector, numeric or character
-#' @return Matrix ob combinations of elemens of \code{seq1} and \code{seq2}
+#' @return Matrix ob combinations of elemens of `seq1` and `seq2`
 expand.grid.alt <- function(seq1, seq2) {
   cbind(Var1=rep.int(seq1, length(seq2)), Var2=rep(seq2, each=length(seq1)))
 }
 
 
-
-#' Compile one or more prdfn, obsfn or parfn objects
-#' 
-#' @param ... Objects of class parfn, obsfn or prdfn
-#' @param output Optional character of the file to be produced. If several objects were
-#' passed, the different C files are all compiled into one shared object file.
-#' @param args Additional arguments for the R CMD SHLIB call, e.g. \code{-leinspline}.
-#' @param verbose Print compiler output to R command line.
-#' @param cores Number of cores used for compilation when several files are compiled.
-#' 
+#' Compile model-related C/C++ code
+#'
+#' @description
+#' Compiles one or more model-related objects of class `parfn`, `obsfn`, or
+#' `prdfn` into dynamically loadable shared libraries (`.so` on Unix-alike
+#' systems, `.dll` on Windows).
+#'
+#' The function automatically detects C and C++ source files associated
+#' with each object based on its `modelname`, compiles them, and links them
+#' into shared libraries which are loaded into the current R session.
+#'
+#' @param ... One or more objects of class `parfn`, `obsfn`, or `prdfn`.
+#'   Corresponding source files (e.g. `model.c`) are detected
+#'   automatically based on the current `modelname`.
+#' @param output Optional character string. If provided, all detected source
+#'   files are compiled and linked into a single shared library named
+#'   `paste0(output, .Platform$dynlib.ext)`. If `NULL`, each source file is
+#'   compiled and linked into its own shared library.
+#' @param args Optional character string of additional compiler or linker
+#'   flags passed to `R CMD SHLIB`. If `NULL` or empty, compilation defaults
+#'   to `-O3 -DNDEBUG`.
+#' @param cores Integer specifying the number of CPU cores used for parallel
+#'   compilation of individual source files. Parallel compilation is enabled
+#'   when `cores > 1`.
+#' @param verbose Logical. If `TRUE`, compiler and linker output is printed
+#'   to the R console.
+#'
+#' @details
+#' Any previously loaded shared libraries with matching names are unloaded
+#' prior to linking. Successfully linked libraries are loaded automatically.
+#'
+#' When `output` is specified, the `modelname` of each input object is
+#' overwritten with `output` to ensure consistent symbol naming across all
+#' compiled routines. In addition, the attributes `sourcefiles` (C/C++
+#' source files) and `objfiles` (corresponding object files) are added to
+#' each object for diagnostic purposes.
+#'
+#' @return
+#' Invisibly returns `TRUE` if compilation and linking succeed.
+#'
+#' @examples
+#' \dontrun{
+#' ## Compile a single model into separate shared libraries
+#' x <- odemodel(reactions)
+#' compile(x)
+#'
+#' ## Compile multiple models into a single shared library
+#' compile(x, g, output = "combined")
+#' }
+#'
 #' @export
-compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = F) {
+compile <- function(..., output=NULL, args=NULL, cores=1, verbose=FALSE){
   
-  objects <- list(...)
+  ## save & restore env
+  old <- Sys.getenv(c("PKG_CFLAGS","PKG_CXXFLAGS","PKG_CPPFLAGS"), unset=NA)
+  on.exit({
+    for(n in names(old))
+      if(is.na(old[n])) Sys.unsetenv(n) else Sys.setenv(structure(old[n],names=n))
+  }, add=TRUE)
+  
+  objs <- list(...); if(!length(objs)) stop("No objects")
   obj.names <- as.character(substitute(list(...)))[-1]
-  # Get full list of .c and .cpp files for the obsfn, parfn and prdfn objects in ...
-  files <- NULL
-  for (i in 1:length(objects)) {
-    
-    if (inherits(objects[[i]], c("obsfn", "parfn", "prdfn"))) {
-      # Get and reset modelname
-      filename <- modelname(objects[[i]])
-      # Expand modelname by possible endings and check if file exists
-      filename <- outer(filename, c("", "_deriv", "_s", "_sdcv", "_dfdx", "_dfdp"), paste0)
-      files.obj <- c(paste0(filename, ".c"), paste0(filename, ".cpp"))
-      files.obj <- files.obj[file.exists(files.obj)]
-      files <- union(files, files.obj)
-    }
+  Rbin <- shQuote(file.path(R.home("bin"),"R"))
+  so   <- .Platform$dynlib.ext
+  
+  files <- unique(unlist(lapply(objs, \(o){
+    if(!inherits(o,c("obsfn","parfn","prdfn"))) return(NULL)
+    b <- outer(modelname(o),
+               c("","_deriv","_s","_s2","_sdcv","_dfdx","_dfdp"),
+               paste0)
+    f <- c(paste0(b,".c"),paste0(b,".cpp"))
+    f[file.exists(f)]
+  })))
+  if(!length(files)) stop("No source files found")
+  
+  files <- normalizePath(files, winslash="/", mustWork=TRUE)
+  roots <- sub("\\.(c|cpp)$","",basename(files))
+  
+  pic <- if(.Platform$OS.type=="windows") "" else "-fPIC"
+  base <- paste("-O3 -ffp-contract=fast", pic)
+  if(!is.null(args) && nzchar(args)) base <- paste(base, args)
+  
+  Sys.setenv(
+    PKG_CFLAGS   = base,
+    PKG_CXXFLAGS = paste("-std=c++20", base),
+    PKG_CPPFLAGS = paste0("-I", shQuote(system.file("include",package="CppODE")))
+  )
+  
+  ## toolchain report
+  cfg <- \(x) system(paste(shQuote(file.path(R.home("bin"),"R")),"CMD config",x),intern=TRUE)
+  strip <- \(x) trimws(gsub("(^| )-std=[^ ]+","",x))
+  
+  if(any(grepl("\\.c$",files)))
+    cat(sprintf("using C compiler:   %s [%s]\n",
+                strip(cfg("CC")), trimws(Sys.getenv("PKG_CFLAGS"))))
+  
+  if(any(grepl("\\.cpp$",files)))
+    cat(sprintf("using C++ compiler: %s [%s]\n",
+                strip(cfg("CXX")), trimws(Sys.getenv("PKG_CXXFLAGS"))))
+  
+  invisible(lapply(c(roots,output),\(x)
+                   if(!is.null(x)) try(dyn.unload(paste0(x,so)),silent=TRUE)))
+  
+  run <- \(cmd){
+    if(verbose) cat(cmd,"\n")
+    if(system(cmd,ignore.stdout=!verbose,ignore.stderr=!verbose)!=0)
+      stop("Compilation failed")
   }
   
-  
-  roots <- sapply(files, function(f) {
-    l <- strsplit(f, split = ".", fixed = TRUE)[[1]]
-    paste(l[1:(length(l)-1)], collapse = ".")
-  })
-  
-  .so <- .Platform$dynlib.ext
-  #print(files)
-  
-  # Sanitize cores on windows
-  if (Sys.info()[['sysname']] == "Windows") cores <- 1
-  
-  #return(files)
-  if (is.null(output)) {
-    compilation_out <- mclapply(1:length(files), function(i) {
-      try(dyn.unload(paste0(roots[i], .so)), silent = TRUE)
-      system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", files[i], " ", args), intern = !verbose)
-    }, mc.cores = cores, mc.silent = FALSE)
-    for (r in roots) dyn.load(paste0(r, .so))
+  if(is.null(output)){
+    if(.Platform$OS.type=="unix" && cores>1)
+      parallel::mclapply(files, \(f) run(paste(Rbin,"CMD SHLIB",shQuote(f))), mc.cores=cores)
+    else
+      for(f in files) run(paste(Rbin,"CMD SHLIB",shQuote(f)))
+    for(r in roots) dyn.load(paste0(r,so))
   } else {
-    for (i in 1:length(objects)) {
-      eval(parse(text = paste0("modelname(", obj.names[i], ") <<- '", output, "'")))
-    }
-    for (r in roots) try(dyn.unload(paste0(r, .so)), silent = TRUE)
-    try(dyn.unload(output), silent = TRUE)
-    system(paste0(R.home(component = "bin"), "/R CMD SHLIB ", paste(files, collapse = " "), " -o ", output, .so, " ", args), intern = !verbose)
-    dyn.load(paste0(output, .so))
+    out <- paste0(dirname(files[1]),"/",output,so)
+    run(paste(Rbin,"CMD SHLIB",paste(shQuote(files),collapse=" "),"-o",shQuote(out)))
+    dyn.load(out)
+    for(nm in obj.names)
+      eval.parent(parse(text=paste0("modelname(",nm,") <- '",output,"'")))
   }
+  
+  invisible(TRUE)
 }
-
 
 
 #' Determine loaded DLLs available in working directory
@@ -505,8 +553,8 @@ getLocalDLLs <- function() {
 #' Load shared object for a dMod object
 #' 
 #' Usually when restarting the R session, although all objects are saved in
-#' the workspace, the dynamic libraries are not linked any more. \code{loadDLL}
-#' is a wrapper for \code{dyn.load} that uses the "modelname" attribute of
+#' the workspace, the dynamic libraries are not linked any more. `loadDLL`
+#' is a wrapper for `dyn.load` that uses the "modelname" attribute of
 #' dMod objects like prediction functions, observation functions, etc. to
 #' load the corresponding shared object.
 #' 
@@ -517,19 +565,14 @@ loadDLL <- function(...) {
   
   .so <- .Platform$dynlib.ext
   models <- modelname(...)
-  files <- paste0(outer(models, c("", "_s", "_sdcv", "_deriv", "_dfdx", "_dfdp"), paste0), .so)
+  files <- paste0(outer(models, c("", "_s", "_s2", "_sdcv", "_deriv", "_dfdx", "_dfdp"), paste0), .so)
   files <- files[file.exists(files)]
   
   for (f in files) {
     try(dyn.unload(f), silent = TRUE)
     dyn.load(f)
   }
-  
-  
   message("The following local files were dynamically loaded: ", paste(files, collapse = ", "))
-  
-  
-  
 }
 
 
@@ -665,7 +708,7 @@ attrs <- function(x, atr = NULL, keep = TRUE) {
 #'   TRUE
 #'   
 #' @details Before the \option{x} is printed by print.default, all its arguments
-#'   not in the default list of \code{\link{attrs}} are removed.
+#'   not in the default list of [attrs()] are removed.
 #'   
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
 #' @author Mirjam Fehling-Kaschek, 

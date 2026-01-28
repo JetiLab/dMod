@@ -58,13 +58,10 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                     verbose = FALSE,
                     cores = 1,
                     cautiousMode = FALSE,
-                    side = c("both", "left", "right")[1],
+                    side = c("both", "left", "right"),
                     ...) {
   # Ensure that obj is defined in this environment such that it is copied to the parallel workers
   force(obj)
-  
-  # sanitize "side" argument, must be either "left", "right" or "both"
-  if (!(side %in% c("left", "right", "both"))) stop("side must be either 'left', 'right' or 'both'")
   
   # Guarantee that pars is named numeric without deriv attribute
   dotArgs <- list(...)
@@ -75,15 +72,18 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   
   # Initialize control parameters depending on method
   method  <- match.arg(method)
+  side <- match.arg(side)
+  
+  
   if (method == "integrate") {
     sControl <- list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 500, stop = "value")
     aControl <- list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = 1e-6, mterm = 1e-6)
   }
   if (method == "optimize") {
     sControl <- list(stepsize = 1e-2, min = 1e-4, max = Inf, atol = 1e-1, rtol = 1e-1, limit = 100, stop = "value")
     aControl <- list(gamma = 0, W = "identity", reoptimize = TRUE, correction = 1, reg = 0)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = sqrt(.Machine$double.eps), mterm = sqrt(.Machine$double.eps))
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = 1e-6, mterm = 1e-6)
   }
   
   # Check if on Windows
@@ -547,6 +547,8 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   
 }
 
+
+
 #' Progress bar
 #' 
 #' @param percentage Numeric between 0 and 100
@@ -567,7 +569,7 @@ progressBar <- function(percentage, size = 50, number = TRUE) {
 #' Profile uncertainty extraction
 #' 
 #' @description extract parameter uncertainties from profiles
-#' @param object object of class \code{parframe}, returned from \link{profile} function.
+#' @param object object of class `parframe`, returned from [profile] function.
 #' @param parm a specification of which parameters are to be given confidence intervals, 
 #' either a vector of numbers or a vector of names. If missing, all parameters are considered.
 #' @param level the confidence level required.
@@ -729,28 +731,28 @@ vcov <- function(fit, parupper = NULL, parlower = NULL) {
 
 #' Non-Linear Optimization, multi start
 #' 
-#' @description Wrapper around \code{\link{trust}} allowing for multiple fits 
+#' @description Wrapper around [trust()] allowing for multiple fits 
 #'   from randomly chosen initial values.
 #'   
-#' @param objfun Objective function, see \code{\link{trust}}.
+#' @param objfun Objective function, see [trust()].
 #' @param center Parameter values around which the initial values for each fit 
-#'   are randomly sampled. The initial values handed to \link{trust} are the sum
+#'   are randomly sampled. The initial values handed to [trust] are the sum
 #'   of center and the output of \option{samplefun}, center + 
-#'   \option{samplefun}. See \code{\link{trust}}, parinit.
-#'   \code{center} Can also be a parframe, then the parameter values are taken 
-#'   from the parframe. In this case, the \code{fits} argument is overwritten.
+#'   \option{samplefun}. See [trust()], parinit.
+#'   `center` Can also be a parframe, then the parameter values are taken 
+#'   from the parframe. In this case, the `fits` argument is overwritten.
 #'   To use a reproducible set of initial guesses, generate center with 
-#'   \code{\link{msParframe}}
+#'   [msParframe()]
 #' @param studyname The names of the study or fit. This name is used to 
 #'   determine filenames for interim and final results. See Details.
-#' @param rinit Starting trust region radius, see \code{\link{trust}}.
-#' @param rmax Maximum allowed trust region radius, see \code{\link{trust}}.
+#' @param rinit Starting trust region radius, see [trust()].
+#' @param rmax Maximum allowed trust region radius, see [trust()].
 #' @param fits Number of fits (jobs).
 #' @param cores Number of cores for job parallelization.
 #' @param samplefun Function to sample random initial values. It is assumed, 
 #'   that \option{samplefun} has a named parameter "n" which defines how many 
-#'   random numbers are to be returned, such as for \code{\link{rnorm}} or 
-#'   \code{\link{runif}}. By default \code{\link{rnorm}} is used. Parameteres 
+#'   random numbers are to be returned, such as for [rnorm()] or 
+#'   [runif()]. By default [rnorm()] is used. Parameteres 
 #'   for samplefun are simply appended as named parameters to the mstrust call 
 #'   and automatically handed to samplefun by matching parameter names.
 #' @param resultPath character indicating the folder where the results should 
@@ -766,9 +768,9 @@ vcov <- function(fit, parupper = NULL, parlower = NULL) {
 #'   
 #' @details By running multiple fits starting at randomly chosen inital 
 #'   parameters, the chisquare landscape can be explored using a deterministic 
-#'   optimizer. Here, \code{\link{trust}} is used for optimization. The standard
+#'   optimizer. Here, [trust()] is used for optimization. The standard
 #'   procedure to obtain random initial values is to sample random variables 
-#'   from a uniform distribution (\code{\link{rnorm}}) and adding these to 
+#'   from a uniform distribution ([rnorm()]) and adding these to 
 #'   \option{center}. It is, however, possible, to employ any other sampling 
 #'   strategy by handing the respective function to mstrust(), 
 #'   \option{samplefun}.
@@ -786,17 +788,17 @@ vcov <- function(fit, parupper = NULL, parlower = NULL) {
 #'   \option{studyname} of the form "trial-x-date" is created. "x" is the number
 #'   of the trial, date is the current time stamp. In this folder, the
 #'   intermediate results are stored. These intermediate results can be loaded
-#'   by \code{\link{load.parlist}}. These are removed on successfull completion
+#'   by [load.parlist()]. These are removed on successfull completion
 #'   of mstrust. In this case, the final list of fit parameters
 #'   (parameterList.Rda) and the fit log (mstrust.log) are found instead.
 #'   
 #' @return A parlist holding errored and converged fits.
 #'   
-#' @seealso 1. \code{\link{trust}}, for the used optimizer,
-#'   2. \code{\link{rnorm}}, \code{\link{runif}} for two common sampling functions,
-#'   3. \code{\link{msParframe}} for passing a reproducible set of random initial 
+#' @seealso 1. [trust()], for the used optimizer,
+#'   2. [rnorm()], [runif()] for two common sampling functions,
+#'   3. [msParframe()] for passing a reproducible set of random initial 
 #'   guesses to mstrust,
-#'   4. \code{\link{as.parframe}} for formatting the output to a handy table
+#'   4. [as.parframe()] for formatting the output to a handy table
 #'   
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
 #'  
@@ -962,6 +964,10 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
       }
     }
     
+    # Invalidate warm-start caches (e.g. in Pimpl) so each fit uses its own 
+    # initial values instead of inheriting solutions from previous fits
+    options(.dMod.fit_token = paste0("fit_", i, "_", as.numeric(Sys.time())))
+    
     # Check if traceFile is requested. In that case combine tracefile, with logfolder and fit number
     if (!is.null(argstrust[["traceFile"]])) {
       digits <- floor(log10(fits))
@@ -1095,19 +1101,19 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
 
 #' Reproducibly construct "random" parframes
 #' 
-#' The output of this function can be used for the \code{center} - argument of \code{\link{mstrust}}
+#' The output of this function can be used for the `center` - argument of [mstrust()]
 #'
-#' @param pars Named vector. If \code{samplefun} has a "mean"-argument, values of pars will used as mean
+#' @param pars Named vector. If `samplefun` has a "mean"-argument, values of pars will used as mean
 #' @param n Integer how many lines should the parframe have
 #' @param seed Seed for the random number generator
-#' @param samplefun random number generator: \code{\link{rnorm}}, \code{\link{runif}}, etc...
-#' @param keepfirst boolean, if set to \code{TRUE} the first row of the parframe will be the pars
+#' @param samplefun random number generator: [rnorm()], [runif()], etc...
+#' @param keepfirst boolean, if set to `TRUE` the first row of the parframe will be the pars
 #' @param ... arguments going to samplefun
 #'
 #' @return parframe (without metanames)
 #' @export
 #' 
-#' @seealso \code{\link{mstrust}} and \code{\link{parframe}}
+#' @seealso [mstrust()] and [parframe()]
 #'
 #' @examples
 #' msParframe(c(a = 0, b = 100000), 5)
@@ -1150,20 +1156,20 @@ msParframe <- function(pars, n = 20, seed = 12345, samplefun = stats::rnorm, kee
 
 #' Construct fitlist from temporary files.
 #'
-#' @description An aborted \code{\link{mstrust}}
+#' @description An aborted [mstrust()]
 #'   leaves behind results of already completed fits. This command loads these
 #'   fits into a fitlist.
 #'
 #' @param folder Path to the folder where the fit has left its results.
 #'
-#' @details The command \code{\link{mstrust}} saves
+#' @details The command [mstrust()] saves
 #'   each completed fit along the multi-start sequence such that the results can
 #'   be resurected on abortion. This command loads a fitlist from these
 #'   intermediate results.
 #'
 #' @return An object of class parlist.
 #'
-#' @seealso \code{\link{mstrust}}
+#' @seealso [mstrust()]
 #'
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
 #'
@@ -1189,6 +1195,8 @@ load.parlist <- function(folder) {
 #'        conditions, see Details.
 #' @param datatrans Character vector describing a function to transform data.
 #'        Use \kbd{x} to refer to data.
+#' @param keep Character vector with colums, that should not get dropped
+#' @param weighted Logical flag: if TRUE, calculate weighted standard deviation using 'sigma' column.
 #'
 #' @format
 #' The following columns are mandatory for the data frame:
@@ -1201,7 +1209,7 @@ load.parlist <- function(folder) {
 #'
 #' In addition to these columns, any number of columns can follow to allow a
 #' fine-grained definition of conditions. The values of all columns named in
-#' \code{select} are then merged to get the set of conditions.
+#' `select` are then merged to get the set of conditions.
 #'
 #' @details
 #' Experiments are usually repeated multiple times possibly under different
@@ -1210,13 +1218,13 @@ load.parlist <- function(folder) {
 #' fine-grained grouping is desirable. In this case, any number of additional
 #' columns can be appended to the data. These columns are referred to as
 #' "condition identifiers". Which of the condition identifiers are used for
-#' grouping is user-defined by specifying their names in \code{select}. The mandatory
+#' grouping is user-defined by specifying their names in `select`. The mandatory
 #' column "condition" is always used. The total set of different conditions is
 #' thus defined by all combinations of values occurring in the selected condition
 #' identifiers. The replicates of each condition are then reduced to mean and 
 #' standard deviation. New condition names are derived by merging all conditions 
 #' which were used in mean and standard deviation. Columns that are not listed in
-#' \code{select} but have different values within grouped data are dropped. Columns
+#' `select` but have different values within grouped data are dropped. Columns
 #' that remain stable across all replicates are retained and horizontally attached
 #' to the resulting data frame.
 #'
@@ -1239,17 +1247,22 @@ load.parlist <- function(folder) {
 #' @author Simon Beyer, \email{simon.beyer@@fdm.uni-freiburg.de}
 #'
 #' @export
-reduceReplicates <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates <- function(data, select = "condition", datatrans = NULL, keep = NULL, weighted = FALSE) {
   UseMethod("reduceReplicates")
 }
 
 #' Method for data frames
 #' @export
-reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates.data.frame <- function(data, select = "condition", datatrans = NULL, keep = NULL, weighted = FALSE) {
   # File format definition
   fmtnames <- c("name", "time", "value", "condition")
   if (length(intersect(names(data), fmtnames)) != length(fmtnames)) {
     stop(paste("Mandatory column names are:", paste(fmtnames, collapse = ", ")))
+  }
+  
+  # Check if sigma column is present if weighted = TRUE
+  if (weighted && !"sigma" %in% names(data)) {
+    stop("Column 'sigma' is required for weighted = TRUE but was not found in the data.")
   }
   
   # Transform data if requested
@@ -1265,9 +1278,21 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
   
   # Identify columns that are consistent across replicates
   potential_cols <- setdiff(names(data), c("value", "sigma", "n", select))
-  stable_cols <- potential_cols[sapply(potential_cols, function(col) {
-    all(tapply(data[[col]], condidnt, function(x) length(unique(x)) == 1))
-  })]
+  if (length(potential_cols) == 0) {
+    stable_cols <- character(0)
+  } else {
+    stable_cols <- potential_cols[which(sapply(potential_cols, function(col) {
+      res <- tapply(data[[col]], condidnt, function(x) length(unique(x)) == 1)
+      all(as.logical(res))
+    }))]
+  }
+  
+  # Add columns from 'keep' (if any), even if unstable
+  if (!is.null(keep)) {
+    keep <- intersect(keep, names(data))  # Make sure the columns exist
+    stable_cols <- union(stable_cols, keep)
+  }
+  
   dropped_cols <- setdiff(names(data), c("time", "value", "sigma", "n", stable_cols))
   
   # Reduce data
@@ -1275,18 +1300,28 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
     conddata <- data[condidnt == cond, ]
     mergecond <- paste(unique(conddata[setdiff(select, c("name", "time"))]), collapse = "_")
     
+    # Determine value and sigma
+    if (weighted && nrow(conddata) > 1) {
+      weights <- 1 / conddata$sigma^2
+      mean_val <- sum(weights * conddata$value) / sum(weights)
+      sigma_val <- sqrt(sum(weights * (conddata$value - mean_val)^2) / 
+                          (sum(weights) - sum(weights^2) / sum(weights))) / sqrt(nrow(conddata))
+    } else if (nrow(conddata) > 1) {
+      mean_val <- mean(conddata$value)
+      sigma_val <- sd(conddata$value) / sqrt(nrow(conddata))
+    } else {
+      mean_val <- conddata$value
+      sigma_val <- NA
+    }
+    
     data.frame(
       time = conddata[1, "time"],
-      value = mean(conddata$value),
-      sigma = if (nrow(conddata) > 1) {
-        sd(conddata$value) / sqrt(nrow(conddata)) # Standard Error of the Mean (SEM)
-      } else {
-        NA
-      },
+      value = mean_val,
+      sigma = sigma_val,
       n = nrow(conddata),
       name = conddata[1, "name"],
       condition = mergecond,
-      conddata[1, stable_cols, drop = FALSE] # Retain only stable columns
+      conddata[1, stable_cols, drop = FALSE]
     )
   }))
   
@@ -1297,7 +1332,7 @@ reduceReplicates.data.frame <- function(data, select = "condition", datatrans = 
 
 #' Method for files (character)
 #' @export
-reduceReplicates.character <- function(data, select = "condition", datatrans = NULL) {
+reduceReplicates.character <- function(data, select = "condition", datatrans = NULL, keep = NULL) {
   # Ensure the file exists
   if (!file.exists(data)) {
     stop("The specified file does not exist.")
@@ -1321,6 +1356,8 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 }
 
 
+
+
 #' Fit an error model using maximum likelihood estimation
 #'
 #' @description Fit an error model to reduced replicate data using maximum 
@@ -1338,14 +1375,14 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #' @param par Named numeric vector of initial values for the parameters in 
 #'   \option{errorModel}.
 #' @param lower Optional named numeric vector specifying lower bounds for 
-#'   parameters. Defaults to \code{NULL} (no bounds).
+#'   parameters. Defaults to `NULL` (no bounds).
 #' @param upper Optional named numeric vector specifying upper bounds for 
-#'   parameters. Defaults to \code{NULL} (no bounds).
-#' @param plotting Logical. If \code{TRUE}, a plot of the pooled variance and 
+#'   parameters. Defaults to `NULL` (no bounds).
+#' @param plotting Logical. If `TRUE`, a plot of the pooled variance and 
 #'   the fitted error model is displayed.
-#' @param blather Logical. If \code{TRUE}, additional information is returned, 
-#'   including fitted parameter values, original \code{sigma} values, and confidence intervals.
-#' @param ... Additional arguments passed to the optimizer \code{\link[optimx]{optimr}}.
+#' @param blather Logical. If `TRUE`, additional information is returned, 
+#'   including fitted parameter values, original `sigma` values, and confidence intervals.
+#' @param ... Additional arguments passed to the optimizer [optimx::optimr()].
 #'
 #' @details The model assumes that the sample variance of replicate measurements 
 #'   follows a chi-square distribution with \eqn{n-1} degrees of freedom. The 
@@ -1357,8 +1394,8 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #'   It should be expressed as a character string, using \kbd{x} to represent 
 #'   the mean.
 #'
-#'   The optimization is performed using \code{\link[optimx]{optimr}} with the 
-#'   \code{"L-BFGS-B"} method, which supports bound constraints. If \option{lower} 
+#'   The optimization is performed using [optimx::optimr()] with the 
+#'   `"L-BFGS-B"` method, which supports bound constraints. If \option{lower} 
 #'   and \option{upper} are not specified, the parameters are assumed to be 
 #'   unconstrained.
 #'
@@ -1367,12 +1404,12 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #'   and 68\% and 95\% confidence bounds.
 #'
 #' @return By default, a data frame is returned, containing the original data 
-#'   with updated \code{sigma} values estimated from the error model.
+#'   with updated `sigma` values estimated from the error model.
 #'
 #'   If \option{blather = TRUE}, additional information is returned, including:
 #'   - The fitted parameter values.
 #'   - The error model used.
-#'   - Confidence intervals for \code{sigma} at 68\% and 95\% levels.
+#'   - Confidence intervals for `sigma` at 68\% and 95\% levels.
 #'   - Effective pooling conditions.
 #'
 #' @author Wolfgang Mader, \email{Wolfgang.Mader@@fdm.uni-freiburg.de}
