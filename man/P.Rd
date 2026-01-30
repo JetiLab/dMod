@@ -5,108 +5,43 @@
 \title{Generate a parameter transformation function}
 \usage{
 P(
-  x = NULL,
-  method = c("explicit", "implicit"),
+  trafo = NULL,
   parameters = NULL,
-  deriv = TRUE,
-  deriv2 = FALSE,
-  fixed = NULL,
-  keep.root = TRUE,
-  positive = TRUE,
-  givenCQ = NULL,
-  parlower = NULL,
-  parupper = NULL,
-  nstart = 100L,
-  optionsSolver = list(),
-  attach.input = FALSE,
   condition = NULL,
+  attach.input = FALSE,
+  keep.root = TRUE,
   compile = FALSE,
   modelname = NULL,
+  method = c("explicit", "implicit"),
   verbose = FALSE
 )
 }
 \arguments{
-\item{x}{Either an \code{eqnlist} or an object of class \code{eqnvec} or a named character vector,
-or a list thereof. If a list is provided, \code{P()} is called on each
-element and conditions are taken from the list names.}
+\item{trafo}{object of class \code{eqnvec} or named character or list thereof. In case,
+trafo is a list, \code{P()} is called on each element and conditions are assumed to be
+the list names.}
 
-\item{method}{Character, either \code{"explicit"} or \code{"implicit"}.
-Determines whether to use \link{Pexpl} or \link{Pimpl}.}
+\item{parameters}{character vector}
 
-\item{parameters}{Character vector of outer parameters.}
+\item{condition}{character, the condition for which the transformation is generated}
 
-\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian of the
-transformation as attribute \code{"deriv"}.}
+\item{attach.input}{attach those incoming parameters to output which are not overwritten by
+the parameter transformation.}
 
-\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian as
-attribute \code{"deriv2"}. Implies \code{deriv = TRUE}.}
+\item{keep.root}{logical, applies for \code{method = "implicit"}. The root of the last
+evaluation of the parameter transformation function is saved as guess for the next
+evaluation.}
 
-\item{fixed}{Character vector of parameter names treated as fixed (no
-derivatives returned with respect to them).}
+\item{compile}{logical, compile the function (see \link{funC0})}
 
-\item{keep.root}{Logical. Applies to \code{method = "implicit"} only.
-If \code{TRUE}, reuse the root from the previous call as a warm-start guess
-for faster convergence.}
+\item{modelname}{character, see \link{funC0}}
 
-\item{positive}{Logical or named logical vector. Applies to \code{method = "implicit"} only.
-If \code{TRUE}, the steady-state solver is performed in log-space
-(\eqn{p_{\text{ini}} = \exp(z_{\text{ini}})}) to enforce positive solutions.
-If a named logical vector, only the states with \code{TRUE} values are constrained
-to be positive.}
+\item{method}{character, either \code{"explicit"} or \code{"implicit"}}
 
-\item{givenCQ}{Named character vector of conservation quantity replacements.
-Applies to \code{method = "implicit"} only. Names are states whose ODEs will be
-replaced by algebraic constraints. Values are expressions for those states.
-Example: \code{c(pAKT = "totAKT - AKT")} replaces pAKT's ODE with the constraint
-\code{pAKT - (totAKT - AKT) = 0}, effectively enforcing \code{pAKT = totAKT - AKT}.
-Default NULL means no conservation constraints are applied.}
-
-\item{parlower}{Named numeric vector of lower bounds for dependent states.
-Used for multistart initialization on cold starts. Names must match
-dependent state names. States not mentioned use default bounds
-(1e-6 for positive states, -1e6 otherwise).}
-
-\item{parupper}{Named numeric vector of upper bounds for dependent states.
-Used for multistart initialization on cold starts. Names must match
-dependent state names. States not mentioned use default bound of 1e6.}
-
-\item{nstart}{Integer. Number of random starting points for multistart
-root finding (default 100). Only used on cold starts when \code{parlower}
-and \code{parupper} are provided.}
-
-\item{optionsSolver}{List. Applies to \code{method = "implicit"} only.
-Options passed to \link[nleqslv:nleqslv]{nleqslv::nleqslv}. Recognized entries include:
-\itemize{
-\item \code{method}: solver method, either \code{"Newton"} or \code{"Broyden"} (default \code{"Newton"})
-\item \code{global}: globalization strategy, one of \code{"dbldog"} (double dogleg, default),
-\code{"pwldog"} (Powell dogleg), \code{"qline"} (quadratic line search),
-\code{"gline"} (geometric line search), \code{"none"} (pure local method)
-\item \code{control}: list with \code{ftol} (function tolerance, default \code{1e-10}),
-\code{xtol} (step tolerance, default \code{1e-10}), \code{maxit} (max iterations, default \code{200})
-\item Top-level \code{ftol}, \code{xtol}, \code{maxit} are also accepted for convenience.
-}}
-
-\item{attach.input}{Logical. Attach input parameters to the output if they
-are not overwritten by the transformation (identity mapping).}
-
-\item{condition}{Character. Condition label for which the transformation is
-generated. If \code{trafo} is a list, this is inferred from list names.}
-
-\item{compile}{Logical. If \code{TRUE}, compile the transformation via
-\link[CppODE:funCpp]{CppODE::funCpp} for improved performance.}
-
-\item{modelname}{Character. Used when \code{compile = TRUE} to define the
-base name of the generated C code file.}
-
-\item{verbose}{Logical. Print compiler output and diagnostic messages to the
-R console.}
+\item{verbose}{Print out information during compilation}
 }
 \value{
 An object of class \link{parfn}, representing the parameter transformation.
-The returned function
-\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE)}
-computes inner parameters and attaches derivatives as attributes
-\code{"deriv"} and \code{"deriv2"} when requested.
 }
 \description{
 This function provides a unified interface for generating condition-specific

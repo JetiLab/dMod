@@ -22,7 +22,6 @@ A function of class \code{"parfn"}:
 with optional attributes:
 \itemize{
 \item \code{attr(x, "deriv")} — Jacobian matrix
-\item \code{attr(x, "deriv2")} — Hessian tensor
 }
 }
 \description{

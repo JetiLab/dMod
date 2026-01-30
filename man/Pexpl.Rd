@@ -7,9 +7,6 @@
 Pexpl(
   trafo,
   parameters = NULL,
-  deriv = TRUE,
-  deriv2 = FALSE,
-  fixed = NULL,
   attach.input = FALSE,
   condition = NULL,
   compile = FALSE,
@@ -25,11 +22,6 @@ on \strong{outer parameters}.}
 \item{parameters}{Character vector of outer parameter names. If omitted,
 all symbols in \code{trafo} are used.}
 
-\item{deriv}{Logical. If \code{TRUE}, compute and attach the Jacobian of the transformation.}
-
-\item{deriv2}{Logical. If \code{TRUE}, compute and attach the Hessian as well.
-Implies \code{deriv = TRUE}.}
-
 \item{attach.input}{Logical. If \code{TRUE}, include unchanged input parameters
 in the output vector (identity mapping).}
 
@@ -43,15 +35,7 @@ for faster evaluation.}
 \item{verbose}{Logical. Print compiler messages.}
 }
 \value{
-A function
-\code{p2p(p, fixed = NULL, deriv = TRUE, deriv2 = FALSE, verbose = FALSE)}
-that evaluates the parameter transformation.
-The result is an object of class \link{parvec}, which contains
-\itemize{
-\item the transformed parameters (\code{numeric} vector)
-\item attribute \code{"deriv"}: the Jacobian matrix
-\item attribute \code{"deriv2"}: the Hessian tensor (if requested)
-}
+A function of class \link{parfn}.
 }
 \description{
 The explicit parameter transformation defines a direct, algebraic mapping

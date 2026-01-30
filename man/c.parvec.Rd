@@ -10,9 +10,14 @@
 \item{...}{\code{parvec} objects to concatenate.}
 }
 \value{
-A combined \code{parvec} object.
+A combined \code{parvec} object with a consistent Jacobian attribute.
 }
 \description{
-Combines multiple \code{parvec} objects into one, preserving first (\code{deriv})
-and second (\code{deriv2}) derivatives when available.
+Combines multiple \code{parvec} objects into one by concatenating their
+numeric values. If first-derivative information (\code{deriv}) is present,
+the resulting Jacobian is constructed as a block-diagonal matrix.
+}
+\details{
+If some inputs do not carry derivative information, their corresponding
+Jacobian blocks are assumed to be zero.
 }

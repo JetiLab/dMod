@@ -7,7 +7,6 @@
 odemodel(
   f,
   deriv = TRUE,
-  deriv2 = FALSE,
   forcings = NULL,
   events = NULL,
   outputs = NULL,
@@ -26,9 +25,6 @@ specifying the right-hand sides of the ODE system.}
 
 \item{deriv}{Logical. If \code{TRUE}, generate first-order sensitivities.
 Defaults to \code{TRUE}.}
-
-\item{deriv2}{Logical. If \code{TRUE}, generate second-order sensitivities.
-Only available with the \code{"boost"} solver and requires \code{deriv = TRUE}.}
 
 \item{forcings}{Character vector with the names of external forcings.}
 
@@ -66,11 +62,7 @@ where the ODE is evaluated.}
 \code{\link[CppODE:CppODE]{CppODE::CppODE()}}.}
 }
 \value{
-A list containing the generated model objects.
-For \code{solver = "deSolve"}, the list includes \code{func} (ODE object)
-and optionally \code{extended} (ODE + sensitivities object).
-For \code{solver = "boost"}, the list contains compiled C++ solvers:
-\code{boostODE}, \code{boostODE_sens}, and (if requested) \code{boostODE_sens2}.
+list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
 }
 \description{
 Creates and compiles model objects for systems of ordinary differential equations (ODEs)

@@ -29,22 +29,12 @@ Xs <- function(odemodel, ...) {
 }
 
 #' @export
-#' @importFrom einsum einsum
-Xs.deSolve <- function(odemodel, 
-                       forcings=NULL, 
-                       events=NULL, 
-                       names = NULL, 
-                       condition = NULL, 
-                       optionsOde=list(method = "lsoda"), 
-                       optionsSens=list(method = "lsodes"), 
-                       fcontrol = NULL) {
+#' @importFrom data.table CJ
+Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condition = NULL, optionsOde=list(method = "lsoda"), optionsSens=list(method = "lsodes"), fcontrol = NULL) {
   
   func <- odemodel$func
   extended <- odemodel$extended
-  if (is.null(extended)){
-    warning("Element 'extended' empty. ODE model does not contain sensitivities.")
-    deriv = FALSE
-  }
+  if (is.null(extended)) warning("Element 'extended' empty. ODE model does not contain sensitivities.")
   
   myforcings <- forcings
   myevents <- events
@@ -69,23 +59,20 @@ Xs.deSolve <- function(odemodel,
   senssplit.2 <- unlist(lapply(senssplit, function(v) paste(v[-1], collapse = ".")))
   svariables <- intersect(senssplit.2, variables)
   sparameters <- setdiff(senssplit.2, variables)
+  senspars <- c(svariables, sparameters)
   
   # Initial values for sensitivities
   yiniSens <- as.numeric(senssplit.1 == senssplit.2)
   names(yiniSens) <- sensvar
   
   # Names for deriv output
-  sensGrid <- expand.grid(variables, c(svariables, sparameters), stringsAsFactors=FALSE)
-  sensNames <- paste(sensGrid[,1], sensGrid[,2], sep=".")  
+  sensGrid <- data.table::CJ(variables, senspars, sort = FALSE)
   
   # Only a subset of all variables/forcings is returned
   if (is.null(names)) names <- c(variables, forcnames)
   
   # Update sensNames when names are set
-  select <- sensGrid[, 1] %in% names
-  sensNames <- paste(sensGrid[,1][select], sensGrid[,2][select], sep = ".")  
-  
-  
+  sensGrid <- sensGrid[sensGrid[[1]] %in% names]
   
   # Controls to be modified from outside
   controls <- list(
@@ -94,17 +81,12 @@ Xs.deSolve <- function(odemodel,
     names = names,
     optionsOde = optionsOde,
     optionsSens = optionsSens,
-    fcontrol = myfcontrol
+    fcontrol = myfcontrol,
+    sensGrid = sensGrid
   )
   
-  P2X <- function(times, pars, deriv=TRUE, deriv2 = FALSE, env = parent.frame()){
+  P2X <- function(times, pars, deriv=TRUE, fixedIndiv = NULL) {
     
-    if (deriv2) {
-      stop(
-        "Second-order sensitivities are not available with the 'deSolve' solver.\n",
-        "Consider using solver = 'boost' in odemodel()."
-      )
-    }
     
     yini <- unclass(pars)[variables]
     mypars <- unclass(pars)[parameters]
@@ -115,52 +97,59 @@ Xs.deSolve <- function(odemodel,
     optionsSens <- controls$optionsSens
     fcontrol <- controls$fcontrol
     names <- controls$names
+    sensGrid <- controls$sensGrid
     
     # Add event time points (required by integrator) 
-    event.times <- unique(events$time)
-    times <- sort(union(event.times, times))
+    times <- sort(union(unique(events$time), times))
     
     # Sort event time points
     if (!is.null(events)) events <- events[order(events$time),]
-
     
-    dX <- NULL
-    mysensitivities <- NULL
+    if (!is.null(fixedIndiv))
+      senspars <- setdiff(senspars, fixedIndiv)
+      sensGrid <- sensGrid[!sensGrid[[2]] %in% fixedIndiv]
+    
+    
+    myderivs <- NULL
     if (!deriv) {
       
       # Evaluate model without sensitivities
-      # loadDLL(func)
       if (!is.null(forcings)) forc <- setForcings(func, forcings) else forc <- NULL
       out <- suppressWarnings(do.call(odeC, c(list(y = unclass(yini), times = times, func = func, parms = mypars, forcings = forc, events = list(data = events), fcontrol = fcontrol), optionsOde)))
       out <- submatrix(out, cols = c("time", names))
       
-      
     } else {
       
+      # Evaluate extended model
       if (!is.null(forcings)) forc <- setForcings(extended, forcings) else forc <- NULL
-      
       outSens <- suppressWarnings(do.call(odeC, c(list(y = c(unclass(yini), yiniSens), times = times, func = extended, parms = mypars, 
-                                      forcings = forc, fcontrol = fcontrol,
-                                      events = list(data = events)), optionsSens)))
+                                                       forcings = forc, fcontrol = fcontrol,
+                                                       events = list(data = events)), optionsSens)))
       
       out <- submatrix(outSens, cols = c("time", names))
-      mysensitivities <- reshapeSens(submatrix(outSens, cols = !colnames(outSens) %in% c(variables, forcnames, "time")), variables, c(svariables, sparameters))
       
-      # --- Apply parameter transformation to sensitivities (chain rule) ---
-      variables <- intersect(variables, names)
+      # Apply parameter transformation to the derivatives
+      sensNames <- paste(sensGrid[[1]], sensGrid[[2]], sep=".")  
+      sensLong <- matrix(outSens[,sensNames], nrow = nrow(outSens)*length(sensGrid[[1]]))
       dP <- attr(pars, "deriv")
-      
       if (!is.null(dP)) {
-        dPsub <- submatrix(dP, rows = c(svariables, sparameters))
-        dX <- einsum::einsum("aik,kj->aij", mysensitivities, dPsub)
-        dimnames(dX) <- list(NULL, dimnames(mysensitivities)[[2]], colnames(dPsub))
+        myderiv <- array(
+          data = sensLong %*% dP[senspars,],
+          dim = c(nrow(outSens), length(svariables), ncol(dP)),
+          dimnames = list(NULL, svariables, colnames(dP))
+        )
       } else {
-        dX <- mysensitivities
+        myderiv <- array(
+          data = sensLong,
+          dim = c(nrow(outSens), length(svariables), length(senspars)),
+          dimnames = list(NULL, svariables, senspars)
+        )
       }
       
     }
     
-    return(prdframe(out, deriv = dX, parameters = pars))
+    prdframe(out, deriv = myderivs, parameters = pars)
+    
   }
   
   attr(P2X, "parameters") <- c(variables, parameters)
@@ -171,50 +160,7 @@ Xs.deSolve <- function(odemodel,
   
   
   prdfn(P2X, c(variables, parameters), condition) 
-}
-
-#' Reshape ODE sensitivities from wide matrix (var.par) to 3D array
-#'
-#' @description
-#' Converts a flat sensitivity matrix (as produced by deSolve-based ODE integrations)
-#' with column names of the form "variable.parameter" into a structured 3D array.
-#'
-#' @param sensMatrix A numeric matrix of sensitivities with column names
-#'   formatted as "variable.parameter". Rows correspond to time points.
-#' @param variables Character vector of state variable names.
-#' @param parameters Character vector of parameter names.
-#'
-#' @return A numeric 3D array with dimensions: time, variable, parameter,
-#'   and proper `dimnames` for variables and parameters.
-#'
-#' @examples
-#' \dontrun{
-#'   # Example column names: "A.k1", "A.k2", "B.k1", "B.k2"
-#'   mysens <- matrix(runif(40), nrow = 10)
-#'   colnames(mysens) <- c("A.k1", "A.k2", "B.k1", "B.k2")
-#'   reshapeSens(mysens, variables = c("A", "B"), parameters = c("k1", "k2"))
-#' }
-#' @keywords internal
-reshapeSens <- function(sensMatrix, variables, parameters) {
-  n_times <- nrow(sensMatrix)
-  n_vars <- length(variables)
-  n_pars <- length(parameters)
   
-  # Expected column order: var1.par1, var2.par1, ..., varN.par1, var1.par2, var2.par2, ...
-  expected_cols <- as.vector(outer(variables, parameters, paste, sep = "."))
-  
-  # Reorder columns if necessary
-  sensMatrix_ordered <- sensMatrix[, expected_cols, drop = FALSE]
-  
-  # Convert directly to array - array() fills column-wise
-  # This matches the data structure perfectly: all vars for par1, then all vars for par2, etc.
-  sensArray <- array(
-    data = as.matrix(sensMatrix_ordered),
-    dim = c(n_times, n_vars, n_pars),
-    dimnames = list(NULL, variables, parameters)
-  )
-  
-  return(sensArray)
 }
 
 #' @export

@@ -10,7 +10,7 @@ parvec(..., deriv = NULL, deriv2 = NULL)
 
 as.parvec(x, ...)
 
-\method{as.parvec}{numeric}(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
+\method{as.parvec}{numeric}(x, names = NULL, deriv = NULL, ...)
 }
 \arguments{
 \item{...}{Objects to be concatenated.}

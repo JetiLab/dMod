@@ -12,8 +12,6 @@
 #'   specifying the right-hand sides of the ODE system.
 #' @param deriv Logical. If `TRUE`, generate first-order sensitivities.
 #'   Defaults to `TRUE`.
-#' @param deriv2 Logical. If `TRUE`, generate second-order sensitivities.
-#'   Only available with the `"boost"` solver and requires `deriv = TRUE`.
 #' @param forcings Character vector with the names of external forcings.
 #' @param events `data.frame` specifying discrete events during integration.
 #'   Must contain the columns `"var"` (character, name of the affected state),
@@ -40,39 +38,23 @@
 #' @param ... Additional arguments passed to [cOde::funC()] or
 #'   [CppODE::CppODE()].
 #'
-#' @return A list containing the generated model objects.
-#'   For `solver = "deSolve"`, the list includes `func` (ODE object)
-#'   and optionally `extended` (ODE + sensitivities object).
-#'   For `solver = "boost"`, the list contains compiled C++ solvers:
-#'   `boostODE`, `boostODE_sens`, and (if requested) `boostODE_sens2`.
+#' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object)
 #'
 #' @seealso [cOde::funC()], [CppODE::CppODE()]
 #'
 #' @example inst/examples/odemodel.R
 #' @export
-odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NULL, outputs = NULL, 
+odemodel <- function(f, deriv = TRUE, forcings=NULL, events = NULL, outputs = NULL, 
                      fixed = NULL, estimate = NULL, modelname = "odemodel", solver = c("deSolve", "Sundials", "boost"), 
                      gridpoints = NULL, verbose = FALSE, ...) {
 
   f <- as.eqnvec(f)
   solver <- match.arg(solver)
-  
-  if (deriv2 && !deriv) {
-    warning("deriv2 = TRUE requires deriv = TRUE. Setting deriv = TRUE automatically.")
-    deriv <- TRUE
-  }
 
   if (solver == "Sundials") {
     stop("Sundials support has been removed. If you were an active user of the Sundials implementation, please get in touch.")
   } 
   else if (solver == "deSolve") {
-    
-    if (deriv2) {
-      stop(
-        "Second-order sensitivities are not available with the 'deSolve' solver.\n",
-        "Consider using solver = 'boost'."
-      )
-    }
     
     if (is.null(gridpoints)) gridpoints <- 2
     func <- cOde::funC(f, forcings = forcings, events = events, outputs = outputs, fixed = fixed, modelname = modelname , solver = solver, nGridpoints = gridpoints, ...)
@@ -140,18 +122,14 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
     ]
     
     if (length(unsupported) > 0) {
-      warning(sprintf("The following arguments are not (yet) supported by the solver 'boost::rosenbrock4' and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
+      warning(sprintf("The following arguments are not (yet) supported by CppODE() and will be ignored: %s", paste(unsupported, collapse = ", ")), call. = FALSE)
     }
     func <- CppODE::CppODE(f, events = events, fixed = fixed, modelname = modelname, outdir = getwd(), deriv = FALSE, verbose = verbose, ...)
     extended <- NULL
-    extended2 <- NULL
-    if (!deriv2 & deriv) {
+    if (deriv) {
       extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
-    } else if (deriv2 & deriv) {
-      extended <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s"), outdir = getwd(), deriv = TRUE, verbose = verbose, ...)
-      extended2 <- CppODE::CppODE(f, events = events, fixed = fixed, forcings = forcings, modelname = paste0(modelname, "_s2"), outdir = getwd(), deriv = TRUE, deriv2 = TRUE, verbose = verbose, ...)
     }
-    out <- list(func = func, extended = extended, extended2 = extended2)
+    out <- list(func = func, extended = extended)
     class(out) <- c("boost", "odemodel")
   }
   return(out)
@@ -292,7 +270,6 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL, vo
 #' with optional attributes:
 #' \itemize{
 #'   \item `attr(x, "deriv")` — Jacobian matrix
-#'   \item `attr(x, "deriv2")` — Hessian tensor
 #' }
 #'
 #' @seealso [Pexpl()], [Pimpl()], [sumfn()]
@@ -303,9 +280,9 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
   mappings <- list()
   mappings[[1]] <- p2p
   names(mappings) <- condition
+  fixedIndiv <- attr(p2p, "fixedIndiv")
   
-  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
-                    conditions = condition, verbose = FALSE, env = NULL) {
+  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = condition, env = NULL) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, "pars")]
@@ -317,9 +294,9 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
     
     if (is.null(overlap) || length(overlap) > 0) {
       if (!is.null(env))
-        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, verbose = verbose, env = env)
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, env = env)
       else
-        result <- p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, verbose = verbose)
+        result <- p2p(pars = pars, fixed = fixed, deriv = deriv)
     } else {
       result <- NULL
     }
@@ -336,6 +313,7 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
   attr(outfn, "mappings")   <- mappings
   attr(outfn, "parameters") <- parameters
   attr(outfn, "conditions") <- condition
+  attr(outfn, "fixedIndiv") <- fixedIndiv
   class(outfn) <- c("parfn", "fn")
   
   return(outfn)
@@ -475,7 +453,7 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
   mappings[[1]] <- P2X
   names(mappings) <- condition
   
-  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = mycondition, env = parent.frame()) {
+  outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = mycondition, env = NULL) {
     
     arglist <- list(...)
     arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
@@ -483,23 +461,16 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
     pars <- arglist[[2]]
     
     # yields derivatives for all parameters in pars but not in fixed
-    pars <- c(as.parvec(pars[setdiff(names(pars), names(fixed))]),
-              fixed)
-    
+    pars <- c(as.parvec(pars[setdiff(names(pars), names(fixed))]), fixed)
     
     overlap <- test_conditions(conditions, condition)
     # NULL if at least one argument is NULL
     # character(0) if no overlap
     # character if overlap
     
-    
-    
     if (is.null(overlap)) conditions <- union(condition, conditions)
-    
-    
     if (is.null(overlap) | length(overlap) > 0)
-      result <- P2X(times = times, pars = pars, deriv = deriv, deriv2 = deriv2)
-    
+      result <- P2X(times = times, pars = pars, deriv = deriv, fixedIndiv = names(fixed))
     else
       result <- NULL
     
@@ -510,10 +481,6 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
     if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
     for (C in available[!is.na(available)]) outlist[[C]] <- result
     outlist <- as.prdlist(outlist)
-    
-    #length.out <- max(c(1, length(conditions)))
-    #outlist <- as.prdlist(lapply(1:length.out, function(i) result), names = conditions)
-    #attr(outlist, "pars") <- pars
     
     return(outlist)
     

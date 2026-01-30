@@ -595,7 +595,7 @@ as.parvec <- function(x, ...) {
 
 #' @export
 #' @rdname parvec
-as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...) {
+as.parvec.numeric <- function(x, names = NULL, deriv = NULL, ...) {
   
   # --- Basic setup ---
   p <- as.numeric(x)
@@ -608,21 +608,11 @@ as.parvec.numeric <- function(x, names = NULL, deriv = NULL, deriv2 = NULL, ...)
   } else if (is.matrix(deriv)) {
     full_deriv <- deriv
   } else { # deriv == NULL
-    full_deriv <- attr(x, "deriv", exact = TRUE)
-  }
-  
-  # --- Second derivatives ---
-  if (isFALSE(deriv2)) {
-    full_deriv2 <- NULL
-  } else if (is.array(deriv2)) {
-    full_deriv2 <- deriv2
-  } else { # deriv2 == NULL
-    full_deriv2 <- attr(x, "deriv2", exact = TRUE)
+    full_deriv <- attr(x, "deriv")
   }
   
   # --- Assemble object ---
   attr(p, "deriv")  <- full_deriv
-  attr(p, "deriv2") <- full_deriv2
   class(p) <- c("parvec", "numeric")
   p
 }
@@ -657,7 +647,6 @@ print.parvec <- function(x) {
   
   # --- Print derivative info ---
   deriv  <- attr(x, "deriv")
-  deriv2 <- attr(x, "deriv2")
   
   cat("\nAttributes:\n")
   if (!is.null(deriv)) {
@@ -667,33 +656,27 @@ print.parvec <- function(x) {
     cat("  deriv  : <none>\n")
   }
   
-  if (!is.null(deriv2)) {
-    d2 <- dim(deriv2)
-    cat(sprintf("  deriv2 : %d × %d × %d array\n", d2[1], d2[2], d2[3]))
-  } else {
-    cat("  deriv2 : <none>\n")
-  }
-  
   invisible(x)
 }
 
 
 #' Subset method for parvec objects
 #'
-#' Safely subsets a `parvec` object while keeping its Jacobian (`deriv`)
-#' and Hessian (`deriv2`) attributes consistent.
+#' Safely subsets a \code{parvec} object while keeping its Jacobian
+#' (\code{deriv}) consistent with the subset.
 #'
-#' This version is robust against missing derivative entries:
-#' if parameters being subsetted are not present in the Jacobian or Hessian,
-#' zero rows (and matching dimensions) are added automatically.
+#' If parameters included in the subset are not present in the Jacobian,
+#' their derivatives are assumed to be zero and corresponding zero rows
+#' are added automatically.
 #'
-#' @param x A `parvec` object.
+#' @param x A \code{parvec} object.
 #' @param ... Parameter indices or names to subset.
-#' @param drop Logical; if `TRUE`, drop zero Jacobian columns and
-#'   matching Hessian dimensions.
+#' @param drop Logical; if \code{TRUE}, drop Jacobian columns that are
+#'   identically zero after subsetting.
 #'
-#' @return A `parvec` object with updated numeric values and derivative
-#'   attributes.
+#' @return A \code{parvec} object with updated numeric values and
+#'   a consistent Jacobian attribute.
+#'
 #' @export
 "[.parvec" <- function(x, ..., drop = FALSE) {
   # --- Extract numeric parameter values ---
@@ -720,112 +703,56 @@ print.parvec <- function(x) {
     deriv <- deriv_sub[nms, , drop = FALSE]
   }
   
-  # --- Subset Hessian (second derivatives) ---
-  deriv2 <- attr(x, "deriv2")
-  if (!is.null(deriv2)) {
-    basis_names <- dimnames(deriv2)[[2]]
-    available1 <- intersect(nms, dimnames(deriv2)[[1]])
-    missing1 <- setdiff(nms, dimnames(deriv2)[[1]])
-    
-    # Subset existing first dimension
-    deriv2_sub <- deriv2[available1, , , drop = FALSE]
-    
-    # Add zero slices for missing parameters (first dimension)
-    if (length(missing1)) {
-      add_slices <- array(0, dim = c(length(missing1), dim(deriv2)[2], dim(deriv2)[3]),
-                          dimnames = list(missing1, dimnames(deriv2)[[2]], dimnames(deriv2)[[3]]))
-      deriv2_sub <- abind::abind(deriv2_sub, add_slices, along = 1)
-    }
-    
-    # Reorder first dimension to match the subset order
-    deriv2 <- deriv2_sub[nms, , , drop = FALSE]
-  }
-  
   # --- Drop zero columns and matching Hessian dimensions if requested ---
   if (drop && !is.null(deriv)) {
     keep.cols <- colSums(abs(deriv)) > 0
     deriv <- deriv[, keep.cols, drop = FALSE]
-    if (!is.null(deriv2)) {
-      deriv2 <- deriv2[, keep.cols, keep.cols, drop = FALSE]
-    }
   }
   
   # --- Rebuild the parvec object ---
-  as.parvec(out, deriv = deriv, deriv2 = deriv2)
+  as.parvec(out, deriv = deriv)
 }
 
 
 #' Concatenate parvec objects
 #'
-#' Combines multiple `parvec` objects into one, preserving first (`deriv`)
-#' and second (`deriv2`) derivatives when available.
+#' Combines multiple \code{parvec} objects into one by concatenating their
+#' numeric values. If first-derivative information (\code{deriv}) is present,
+#' the resulting Jacobian is constructed as a block-diagonal matrix.
 #'
-#' @param ... `parvec` objects to concatenate.
-#' @return A combined `parvec` object.
+#' If some inputs do not carry derivative information, their corresponding
+#' Jacobian blocks are assumed to be zero.
+#'
+#' @param ... \code{parvec} objects to concatenate.
+#'
+#' @return A combined \code{parvec} object with a consistent Jacobian attribute.
+#'
 #' @export
 c.parvec <- function(...) {
-  parlist <- list(...)
-  stopifnot(length(parlist) > 0)
+  p <- Filter(Negate(is.null), list(...))
+  stopifnot(length(p) > 0)
   
-  # Concatenate numeric values and names
-  nms  <- unlist(lapply(parlist, names), use.names = FALSE)
-  vals <- unlist(lapply(parlist, as.numeric), use.names = FALSE)
-  if (anyDuplicated(nms))
-    stop("Duplicated parameter names detected.")
+  nms  <- unlist(lapply(p, names), use.names = FALSE)
+  vals <- unlist(lapply(p, unclass), use.names = FALSE)
+  if (anyDuplicated(nms)) stop("Duplicated parameter names.")
   
-  # Check available derivative attributes
-  derivs  <- lapply(parlist, function(p) attr(p, "deriv"))
-  deriv2s <- lapply(parlist, function(p) attr(p, "deriv2"))
-  has_deriv  <- any(vapply(derivs,  function(d) !is.null(d),  TRUE))
-  has_deriv2 <- any(vapply(deriv2s, function(d) !is.null(d), TRUE))
+  d <- lapply(p, attr, "deriv")
+  i <- which(!vapply(d, is.null, TRUE))
+  if (!length(i)) return(as.parvec(vals, names = nms))
   
-  # Determine derivative basis only if consistent
-  basis <- NULL
-  if (has_deriv) {
-    basis <- colnames(derivs[[which(!vapply(derivs, is.null, TRUE))[1]]])
-  } else if (has_deriv2) {
-    basis <- dimnames(deriv2s[[which(!vapply(deriv2s, is.null, TRUE))[1]]])[[2]]
+  B <- colnames(d[[i[1]]]); nb <- length(B); nt <- length(vals)
+  J <- matrix(0, nt, nb, dimnames = list(nms, B))
+  
+  r <- 1L
+  for (k in seq_along(p)) {
+    nk <- length(p[[k]])
+    if (!is.null(d[[k]])) J[r:(r+nk-1), ] <- d[[k]]
+    r <- r + nk
   }
   
-  nb <- if (!is.null(basis)) length(basis) else 0
-  nt <- length(nms)
-  
-  # Preallocate only if consistent across all parvecs
-  deriv  <- if (has_deriv)  matrix(0, nt, nb, dimnames = list(nms, basis)) else NULL
-  deriv2 <- NULL
-  
-  if (has_deriv2) {
-    # Ensure all non-null deriv2 blocks have same basis dims
-    valid_dims <- unique(Filter(Negate(is.null),
-                                lapply(deriv2s, function(h) dim(h)[2:3])))
-    if (length(valid_dims) == 1L) {
-      deriv2 <- array(0, dim = c(nt, nb, nb),
-                      dimnames = list(nms, basis, basis))
-    } else {
-      warning("Inconsistent deriv2 dimensions across parvecs – dropping second derivatives.")
-      has_deriv2 <- FALSE
-    }
-  }
-  
-  # Fill derivative blocks
-  row_start <- 1
-  for (i in seq_along(parlist)) {
-    np <- length(parlist[[i]])
-    
-    d1 <- derivs[[i]]
-    if (!is.null(deriv) && !is.null(d1))
-      deriv[row_start:(row_start + np - 1), ] <- d1
-    
-    d2 <- deriv2s[[i]]
-    if (!is.null(deriv2) && !is.null(d2) &&
-        all(dim(d2)[2:3] == dim(deriv2)[2:3]))
-      deriv2[row_start:(row_start + np - 1), , ] <- d2
-    
-    row_start <- row_start + np
-  }
-  
-  as.parvec(vals, names = nms, deriv = deriv, deriv2 = deriv2)
+  as.parvec(vals, names = nms, deriv = J)
 }
+
 
 
 
@@ -850,7 +777,6 @@ print.parfn <- function(x, ...) {
   cat("\n")
   cat("... conditions:", paste0(conditions, collapse = ", "), "\n")
   cat("... parameters:", paste0(parameters, collapse = ", "), "\n")
-  
 }
 
 #' @export

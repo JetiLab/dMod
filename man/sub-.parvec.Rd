@@ -11,19 +11,19 @@
 
 \item{...}{Parameter indices or names to subset.}
 
-\item{drop}{Logical; if \code{TRUE}, drop zero Jacobian columns and
-matching Hessian dimensions.}
+\item{drop}{Logical; if \code{TRUE}, drop Jacobian columns that are
+identically zero after subsetting.}
 }
 \value{
-A \code{parvec} object with updated numeric values and derivative
-attributes.
+A \code{parvec} object with updated numeric values and
+a consistent Jacobian attribute.
 }
 \description{
-Safely subsets a \code{parvec} object while keeping its Jacobian (\code{deriv})
-and Hessian (\code{deriv2}) attributes consistent.
+Safely subsets a \code{parvec} object while keeping its Jacobian
+(\code{deriv}) consistent with the subset.
 }
 \details{
-This version is robust against missing derivative entries:
-if parameters being subsetted are not present in the Jacobian or Hessian,
-zero rows (and matching dimensions) are added automatically.
+If parameters included in the subset are not present in the Jacobian,
+their derivatives are assumed to be zero and corresponding zero rows
+are added automatically.
 }
