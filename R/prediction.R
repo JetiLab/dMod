@@ -85,11 +85,12 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
     sensGrid = sensGrid
   )
   
-  P2X <- function(times, pars, deriv=TRUE, fixedIndiv = NULL) {
+  P2X <- function(times, pars, fixed = NULL, deriv=TRUE) {
     
-    
-    yini <- unclass(pars)[variables]
-    mypars <- unclass(pars)[parameters]
+    fixedNames <- names(fixed)
+    params <- c(unclass(pars), unclass(fixed))
+    yini <- params[variables]
+    mypars <- params[parameters]
     
     forcings <- controls$forcings
     events <- controls$events
@@ -105,10 +106,10 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
     # Sort event time points
     if (!is.null(events)) events <- events[order(events$time),]
     
-    if (!is.null(fixedIndiv))
-      senspars <- setdiff(senspars, fixedIndiv)
-      sensGrid <- sensGrid[!sensGrid[[2]] %in% fixedIndiv]
-    
+    if (!is.null(fixedNames))
+      sensGrid <- sensGrid[!sensGrid[[2]] %in% fixedNames]
+      
+    senspars <- unique(sensGrid[[2]])
     
     myderivs <- NULL
     if (!deriv) {
@@ -130,16 +131,16 @@ Xs.deSolve <- function(odemodel, forcings=NULL, events=NULL, names = NULL, condi
       
       # Apply parameter transformation to the derivatives
       sensNames <- paste(sensGrid[[1]], sensGrid[[2]], sep=".")  
-      sensLong <- matrix(outSens[,sensNames], nrow = nrow(outSens)*length(sensGrid[[1]]))
+      sensLong <- matrix(outSens[,sensNames], ncol = length(senspars))
       dP <- attr(pars, "deriv")
       if (!is.null(dP)) {
-        myderiv <- array(
+        myderivs <- array(
           data = sensLong %*% dP[senspars,],
           dim = c(nrow(outSens), length(svariables), ncol(dP)),
           dimnames = list(NULL, svariables, colnames(dP))
         )
       } else {
-        myderiv <- array(
+        myderivs <- array(
           data = sensLong,
           dim = c(nrow(outSens), length(svariables), length(senspars)),
           dimnames = list(NULL, svariables, senspars)

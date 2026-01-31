@@ -171,8 +171,12 @@ Pexpl <- function(trafo, parameters=NULL, attach.input = FALSE, condition = NULL
   # ---------------------------------------------------------------------------
   p2p <- function(pars, fixed = NULL, deriv = TRUE) {
     
-    pars <- c(pars, fixed)
-    
+    pars <- c(
+      as.parvec(pars[setdiff(names(pars), c(names(fixed), fixedIndiv))]),
+      if (length(fixedIndiv)) as.parvec(pars[fixedIndiv], deriv = FALSE),
+      if (!is.null(fixed))   as.parvec(fixed, deriv = FALSE)
+    )
+    fixedNames <- unique(c(names(fixed), fixedIndiv))
     # Evaluate inner parameters
     pinnerVal <- fun(NULL, pars, attach.input = attach.input)[1,]
     
@@ -189,8 +193,8 @@ Pexpl <- function(trafo, parameters=NULL, attach.input = FALSE, condition = NULL
     # ----------------- Apply chain rules -----------------
     myderiv <- NULL
     if (deriv && !is.null(jac)) {
-      Jac <- jac(NULL, pars, names(fixed))[1,,]
-      Jac <- Jac[setdiff(rownames(Jac), fixedIndiv), , drop = FALSE]
+      Jac <- jac(NULL, pars, fixedNames)[1,,]
+      Jac <- Jac[setdiff(rownames(Jac), fixedNames), , drop = FALSE]
       dP  <- attr(pars, "deriv")
       myderiv <- if (is.null(dP)) Jac else Jac %*% dP[colnames(Jac), , drop = FALSE]
     }
@@ -207,6 +211,7 @@ Pexpl <- function(trafo, parameters=NULL, attach.input = FALSE, condition = NULL
                             deriv  = if (deriv)  NULL else FALSE))
     }
     
+    attr(pinner, "fixedNames") <- fixedNames
     pinner
   }
   
@@ -216,7 +221,6 @@ Pexpl <- function(trafo, parameters=NULL, attach.input = FALSE, condition = NULL
   attr(p2p, "equations")  <- as.eqnvec(trafo)
   attr(p2p, "parameters") <- parameters
   attr(p2p, "modelname")  <- modelname
-  attr(p2p, "fixedIndiv") <- fixedIndiv
   parfn(p2p, parameters, condition)
 }
 

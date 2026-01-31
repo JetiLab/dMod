@@ -461,7 +461,8 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
     pars <- arglist[[2]]
     
     # yields derivatives for all parameters in pars but not in fixed
-    pars <- c(as.parvec(pars[setdiff(names(pars), names(fixed))]), fixed)
+    pars <- as.parvec(pars[setdiff(names(pars), names(fixed))])
+    fixed <- as.parvec(fixed, deriv = FALSE)
     
     overlap <- test_conditions(conditions, condition)
     # NULL if at least one argument is NULL
@@ -470,7 +471,7 @@ prdfn <- function(P2X, parameters = NULL, condition = NULL) {
     
     if (is.null(overlap)) conditions <- union(condition, conditions)
     if (is.null(overlap) | length(overlap) > 0)
-      result <- P2X(times = times, pars = pars, deriv = deriv, fixedIndiv = names(fixed))
+      result <- P2X(times = times, pars = pars, fixed = fixed, deriv = deriv)
     else
       result <- NULL
     
@@ -1282,15 +1283,24 @@ test_conditions <- function(c1, c2) {
     conditions.p2 <- attr(p2, "conditions")
     conditions.out <- out_conditions(conditions.p1, conditions.p2)
 
-    outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = NULL, env = NULL) {
+    outfn <- function(..., fixed = NULL, deriv = TRUE, conditions = NULL, env = NULL) {
 
       arglist <- list(...)
       arglist <- arglist[match.fnargs(arglist, c("times", "pars"))]
       times <- arglist[[1]]
       pars <- arglist[[2]]
 
-      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, conditions = conditions)
-      step2 <- do.call(c, lapply(1:length(step1), function(i) p1(times = times, pars = step1[[i]], deriv = deriv, deriv2 = deriv2, conditions = names(step1)[i])))
+      step1 <- p2(pars = pars, fixed = fixed, deriv = deriv, conditions = conditions)
+      step2 <- do.call(c, lapply(1:length(step1), function(i) {
+        
+        fixedNames <- unique(c(names(fixed), attr(step1[[i]], "fixedNames")))
+        pars <- as.parvec((step1[[i]])[setdiff(names(step1[[i]]), fixedNames)])
+        fixed <- c(as.parvec((step1[[i]])[intersect(names(step1[[i]]), fixedNames)], deriv = FALSE), 
+                   if (!is.null(fixed)) as.parvec(fixed, deriv = FALSE))
+        
+        p1(times = times, pars = pars, fixed = fixed, deriv = deriv, conditions = names(step1)[i])
+        
+        }))
 
       out <- as.prdlist(step2)
 
