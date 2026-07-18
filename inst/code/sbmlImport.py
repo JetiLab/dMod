@@ -36,7 +36,7 @@ Limitations:
   of the form `time >=/== T` or `geq(time, T)` resolve to a numeric/symbolic
   `time`; other triggers fall back to a `root` expression.
 - FunctionDefinitions are inlined via libsbml's
-  SBMLFunctionDefinitionConverter before the formulas are read out — this
+  SBMLFunctionDefinitionConverter before the formulas are read out -- this
   unwraps `Function_for_v_15(args...)` style calls in benchmark models like
   Zheng_PNAS2012 into the underlying expressions.
 """
@@ -51,7 +51,7 @@ def _formula(ast):
     """Convert a MathML AST to dMod-compatible formula text.
 
     Uses the SBML L3 formatter so MathML <power/> renders as `x^y` instead of
-    `pow(x, y)` — R's `stats::D()` (used by dMod's symbolic Jacobian) has no
+    `pow(x, y)` -- R's `stats::D()` (used by dMod's symbolic Jacobian) has no
     derivative rule for `pow`. L3 also emits the time symbol as `time`, which
     matches dMod's convention.
     """
@@ -174,7 +174,7 @@ def parse_sbml(sbml_file):
     # Boehm's BaF3_Epo). The R caller substitutes them into rates / inits /
     # observables; the assigned symbol then drops out of the parameter set.
     # <rateRule variable="X"> defines dX/dt = rhs and is mutually exclusive
-    # with X being produced/consumed by reactions per the SBML spec — the R
+    # with X being produced/consumed by reactions per the SBML spec -- the R
     # caller adds it as a virtual reaction column on top of S/v.
     assignment_rules = {}
     rate_rules = {}
@@ -195,7 +195,7 @@ def parse_sbml(sbml_file):
     # (var, time, value, root, method); we emit one row per assignment.
     # `time` is extracted from triggers shaped like `time >= T`,
     # `time == T`, `geq(time, T)` (and friends). T may be numeric or a
-    # symbolic parameter — both are forwarded as-is and resolved on the R
+    # symbolic parameter -- both are forwarded as-is and resolved on the R
     # side. Other trigger shapes leave `triggerTime = None` and the R caller
     # falls back to a root expression.
     _time_pat_infix = re.compile(
@@ -214,7 +214,7 @@ def parse_sbml(sbml_file):
             m1 = _time_pat_infix.match(ft) or _time_pat_prefix.match(ft)
             if m1 is not None:
                 rhs = m1.group(2).strip()
-                # Numeric or symbolic — both valid in dMod's eventlist.
+                # Numeric or symbolic -- both valid in dMod's eventlist.
                 try:
                     trigger_time = float(rhs)
                 except ValueError:

@@ -308,6 +308,17 @@ updateOmegaChol <- function(MHatList, omega) {
 
 
 
+#' Parameter names of an object
+#'
+#' Generic for extracting the parameter names carried by an object. See
+#' [parnames.omegaSpec] for the random-effects spec method.
+#'
+#' @param x An object.
+#' @param ... Passed to methods.
+#' @return Character vector of parameter names.
+#' @export
+parnames <- function(x, ...) UseMethod("parnames")
+
 #' All random-effect parameter names of an omega
 #'
 #' @description
@@ -319,15 +330,36 @@ updateOmegaChol <- function(MHatList, omega) {
 #' @param what One of `"all"` (default, both eta and Cholesky parameters),
 #'   `"eta"` (subject-level random effects only), or `"chol"` (Cholesky
 #'   parameters only).
+#' @param ... Ignored.
 #' @return Character vector of parameter names.
 #' @export
-parnames.omegaSpec <- function(x, what = c("all", "eta", "chol")) {
+parnames.omegaSpec <- function(x, what = c("all", "eta", "chol"), ...) {
   what <- match.arg(what)
   eta_names <- if (is.null(x$subjectEtas)) character(0) else as.vector(x$subjectEtas)
   switch(what,
          all  = c(x$cholPars, eta_names),
          eta  = eta_names,
          chol = x$cholPars)
+}
+
+
+# Session cache for the subject-independent Smolyak grid: the z-nodes and
+# weights depend only on (K, level), so build once and reuse across the
+# per-subject E-step. Also precomputes the log-weight pieces reused per subject.
+.sparseGridCache <- new.env(parent = emptyenv())
+
+.getSparseGrid <- function(K, level) {
+  key <- paste0(K, "_", level)
+  hit <- .sparseGridCache[[key]]
+  if (!is.null(hit)) return(hit)
+  raw <- sparseGridGH(as.integer(K), as.integer(level))
+  grid <- list(zNodes  = raw$nodes,
+               logAbsW = log(abs(raw$weights)),
+               signs   = sign(raw$weights),
+               z2Sum   = rowSums(raw$nodes^2),
+               B       = nrow(raw$nodes))
+  .sparseGridCache[[key]] <- grid
+  grid
 }
 
 
@@ -351,24 +383,29 @@ parnames.omegaSpec <- function(x, what = c("all", "eta", "chol")) {
 #'   at `etaHat`.
 #' @param level Integer >= K, Smolyak depth. K+1 to K+3 is the useful range
 #'   for typical NLME problems; higher levels exponentially raise node count.
+#' @param pruneTol Non-negative scalar (default `Inf`, i.e. no pruning). When
+#'   finite, nodes whose augmented log-weight sits more than `pruneTol` below
+#'   the per-subject maximum are dropped, cutting the per-node ODE work at a
+#'   bounded (`exp(-pruneTol)`-order) relative cost in the marginal likelihood.
+#'   Values of 25-40 remove negligible-weight nodes with no material accuracy
+#'   loss; validate against the un-pruned value for a new model.
 #'
 #' @return A list with components `etaNodes` (B x K matrix, batch-first),
 #'   `logAbsWeights` (length-B numeric), `weightSigns` (length-B numeric in
 #'   `{-1, +1}`), and the echoed `K` and `level`.
 #'
-#' @seealso [sparseGridGH()].
+#' @seealso [sparseGridGH()]
 #' @export
-makeSubjectNodes <- function(etaHat, Hi, level) {
+makeSubjectNodes <- function(etaHat, Hi, level, pruneTol = Inf) {
   K <- length(etaHat)
   if (!is.matrix(Hi) || nrow(Hi) != K || ncol(Hi) != K)
     stop("`Hi` must be a K x K matrix matching length(etaHat).")
   if (!is.numeric(level) || length(level) != 1L || level < 1L)
     stop("`level` must be a positive integer scalar.")
 
-  raw     <- sparseGridGH(K, as.integer(level))
-  z_nodes <- raw$nodes
-  w_raw   <- raw$weights
-  B       <- nrow(z_nodes)
+  grid    <- .getSparseGrid(K, as.integer(level))
+  z_nodes <- grid$zNodes
+  B       <- grid$B
 
   R         <- chol(Hi)
   log_det_L <- sum(log(abs(diag(R))))
@@ -378,9 +415,23 @@ makeSubjectNodes <- function(etaHat, Hi, level) {
                matrix(etaHat, B, K, byrow = TRUE)
   if (!is.null(names(etaHat))) colnames(etaNodes) <- names(etaHat)
 
-  z2_sum   <- rowSums(z_nodes^2)
-  log_abs  <- (K / 2) * log(2) - log_det_L + log(abs(w_raw)) + z2_sum
-  signs    <- sign(w_raw)
+  log_abs <- (K / 2) * log(2) - log_det_L + grid$logAbsW + grid$z2Sum
+  signs   <- grid$signs
+
+  # Optional weight-magnitude pruning (default off, pruneTol = Inf). A node's
+  # contribution to the marginal integral is bounded by exp(logAbsWeights_b)
+  # times the (mode-dominated) integrand peak, so nodes whose log-weight sits
+  # `pruneTol` below the per-subject maximum contribute at most exp(-pruneTol)
+  # of the peak and can be dropped with bounded relative error. This directly
+  # shrinks the per-node ODE work in ecmEvaluateSubject.
+  if (is.finite(pruneTol)) {
+    keep <- log_abs >= (max(log_abs) - pruneTol)
+    if (!all(keep)) {
+      etaNodes <- etaNodes[keep, , drop = FALSE]
+      log_abs  <- log_abs[keep]
+      signs    <- signs[keep]
+    }
+  }
 
   list(etaNodes      = etaNodes,
        logAbsWeights = log_abs,

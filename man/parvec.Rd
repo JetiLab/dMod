@@ -29,7 +29,7 @@ as.parvec(x, ...)
 An object of class \code{"parvec"}, i.e. a named numeric vector with
 attributes:
 \itemize{
-\item \code{attr(x, "deriv")} — Jacobian matrix
+\item \code{attr(x, "deriv")} -- Jacobian matrix
 }
 
 A numeric vector of class \code{c("parvec", "numeric")}.

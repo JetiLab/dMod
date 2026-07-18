@@ -16,7 +16,9 @@
 #'   [detectFreeCores]; capped at 1 on Windows.
 #' @param deriv,deriv2 Attach first/second-order sensitivities. `deriv2`
 #'   requires `deriv = TRUE`.
-#' @param ... Forwarded to the chosen backend.
+#' @param ... Forwarded to the chosen backend. In particular `outdir`
+#'   (directory for the generated sources and shared object, default the
+#'   working directory).
 #'
 #' @return A [parfn].
 #' @seealso [Pexpl], [Pimpl], [Pequil], [parfn]
@@ -109,6 +111,8 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 #' @param deriv,deriv2 Attach `attr(., "deriv")` `[p, theta]` and/or
 #'   `attr(., "deriv2")` `[p, theta, theta]`. `deriv2` needs `deriv = TRUE`.
 #' @param derivMode `"dual"` (AD, needs `compile = TRUE`) or `"symbolic"`.
+#' @param outdir Directory for the generated source and shared object,
+#'   default the working directory.
 #'
 #' @return A [parfn].
 #' @seealso [Pimpl], [Pequil], [P].
@@ -116,7 +120,8 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 #' @export
 Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NULL,
                   compile = FALSE, modelname = NULL, verbose = FALSE,
-                  deriv = TRUE, deriv2 = FALSE, derivMode = c("dual", "symbolic")) {
+                  deriv = TRUE, deriv2 = FALSE, derivMode = c("dual", "symbolic"),
+                  outdir = getwd()) {
 
   derivMode <- match.arg(derivMode)
   emit_d1   <- isTRUE(deriv)
@@ -138,7 +143,7 @@ Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NU
 
   PEval <- suppressWarnings(CppODE::funCpp(
     unclass(trafo), variables = NULL, parameters = parameters, fixed = NULL,
-    compile = compile, modelname = modelname, outdir = getwd(),
+    compile = compile, modelname = modelname, outdir = outdir,
     verbose = verbose, convenient = FALSE, derivMode = derivMode,
     deriv = emit_d1, deriv2 = emit_d2))
 
@@ -449,6 +454,7 @@ Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NU
   }
 
   .sink_cluster <- function(M, eps = 1e-8, Mbig = 1e4) {
+    .require_ns("lpSolve", "Pequil steady-state sink-cluster detection")
     nF <- nrow(M); nS <- ncol(M)
     if (nF == 0L || nS == 0L) return(integer(0))
     c_obj <- colSums(M)
@@ -804,6 +810,8 @@ resetWarmStarts <- function(fn, verbose = TRUE) {
 #'   are scaled per equation by their turnover `sum_k |df_i/dx_k| |x_k|`, so
 #'   `ftol` is a relative criterion that converges multi-scale systems
 #'   uniformly.
+#' @param outdir Directory for the generated source and shared object,
+#'   default the working directory.
 #'
 #' @return A [parfn].
 #' @seealso [Pexpl], [Pequil], [P].
@@ -813,7 +821,8 @@ resetWarmStarts <- function(fn, verbose = TRUE) {
 Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
                   keep.root = TRUE, expressInTotals = TRUE, compile = FALSE,
                   modelname = NULL, verbose = FALSE, deriv = TRUE, deriv2 = FALSE,
-                  controlsMS = list(), controlsNleqslv = list()) {
+                  controlsMS = list(), controlsNleqslv = list(),
+                  outdir = getwd()) {
 
   emit_d1 <- isTRUE(deriv)
   emit_d2 <- isTRUE(deriv2)
@@ -845,7 +854,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 
   PEval <- suppressWarnings(CppODE::funCpp(
     all_exprs, variables = dependent, parameters = parms_all, fixed = NULL,
-    compile = compile, modelname = modelname, outdir = getwd(),
+    compile = compile, modelname = modelname, outdir = outdir,
     verbose = verbose, convenient = FALSE,
     deriv = TRUE, deriv2 = emit_d2, derivMode = "symbolic"))
 
@@ -1174,11 +1183,12 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 #' @param attach.input,keep.root,controlsODE,compile,modelname,condition,verbose,start.time,end.time
 #'   As in [Pequil].
 #' @param dotArgs Extra arguments forwarded to [CppODE::CppODE].
+#' @param outdir Directory for the generated source and shared object.
 #' @return A [parfn].
 #' @keywords internal
 .Pequil_totals <- function(norm, ms, emit_d1, emit_d2, attach.input, keep.root,
                            controlsODE, compile, modelname, condition, verbose,
-                           start.time, end.time, dotArgs) {
+                           start.time, end.time, dotArgs, outdir = getwd()) {
   f           <- norm$trafo
   states      <- norm$states
   zero_states <- norm$zero_states
@@ -1231,7 +1241,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
 
   base <- c(list(rhs = unclass(f[dependent]), rootfunc = "equilibrate", compile = compile,
-                 outdir = getwd(), useDenseOutput = FALSE, verbose = verbose), dotArgs)
+                 outdir = outdir, useDenseOutput = FALSE, verbose = verbose), dotArgs)
   fixed_states <- setdiff(dependent, pivots)
   model    <- do.call(CppODE::CppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
                                                    modelname = modelname)))
@@ -1461,6 +1471,8 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 #'   covers the non-conserved states only; moiety species are restarted on
 #'   the conservation manifold fixed by the totals.
 #' @param compile,modelname,verbose Forwarded to [CppODE::CppODE].
+#' @param outdir Directory for the generated source and shared object,
+#'   default the working directory.
 #' @param deriv,deriv2 Attach first/second-order sensitivities; `deriv2`
 #'   requires the model built with `deriv2 = TRUE`.
 #' @param ... Forwarded to [CppODE::CppODE].
@@ -1475,7 +1487,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
                    keep.root = TRUE, expressInTotals = FALSE,
                    controlsODE = list(), controlsMS = list(),
                    compile = FALSE, modelname = NULL, verbose = FALSE,
-                   deriv = TRUE, deriv2 = FALSE, ...) {
+                   deriv = TRUE, deriv2 = FALSE, outdir = getwd(), ...) {
 
   ms <- modifyList(list(nStarts = 10L, positive = TRUE,
                         lower = 1e-5, upper = 1e5), controlsMS)
@@ -1492,7 +1504,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   if (!is.null(norm$pivots) && length(norm$pivots))
     return(.Pequil_totals(norm, ms, emit_d1, emit_d2, attach.input, keep.root,
                           controlsODE, compile, modelname, condition, verbose,
-                          start.time, end.time, list(...)))
+                          start.time, end.time, list(...), outdir = outdir))
 
   f           <- norm$trafo
   states      <- norm$states
@@ -1508,7 +1520,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 
   dotArgs <- list(...); dotArgs[["deriv2"]] <- NULL
   base <- c(list(rhs = unclass(f_red), rootfunc = "equilibrate", compile = compile,
-                 outdir = getwd(), useDenseOutput = FALSE, verbose = verbose), dotArgs)
+                 outdir = outdir, useDenseOutput = FALSE, verbose = verbose), dotArgs)
   model    <- do.call(CppODE::CppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
                                                    modelname = modelname)))
   model_s  <- if (emit_d1)

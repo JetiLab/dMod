@@ -4,32 +4,17 @@
 \alias{emObjfn}
 \title{Build a quadrature-based NLME marginal-likelihood objective function}
 \usage{
-emObjfn(
-  obj,
-  omega,
-  prdfn = NULL,
-  data = NULL,
-  errfn = NULL,
-  method = "quadrature",
-  control = list()
-)
+emObjfn(obj, control = list())
 }
 \arguments{
-\item{obj}{An \code{objfn}, typically
-\code{normL2(data, g*x*p, errmodel = err) + constraintL2(mu = 0, Omega = om)}.}
+\item{obj}{An \code{objfn} of the form
+\code{normL2(data, g*x*p, errmodel = err) + constraintL2(mu = 0, Omega = om)}.
+The prediction function, data, error model, and omega spec are recovered
+from it automatically.}
 
-\item{omega}{An \link{omega} spec with subject expansion.}
-
-\item{prdfn}{A \code{prdfn} (\code{g*x*p}). Required.}
-
-\item{data}{A \link{datalist}. Required.}
-
-\item{errfn}{Optional obsfn defining a parameter-dependent error model.}
-
-\item{method}{Character. Only \code{"quadrature"} is supported.}
-
-\item{control}{Named list with \code{level} (Smolyak depth, default 4) and
-\code{cores} (default 1).}
+\item{control}{Named list with \code{level} (Smolyak depth, default 4),
+\code{cores} (default 1), and \code{pruneTol} (node weight-pruning threshold,
+default \code{Inf} = off).}
 }
 \value{
 A callable of class \code{c("emObjfn", "objfn", "fn")}. Calling it on
@@ -47,6 +32,13 @@ if you need to evaluate the objective by hand.
 \details{
 For the Laplace approximation of the marginal likelihood, use \code{\link[=nlmeFit]{nlmeFit()}}
 with \code{method = "focei"}.
+}
+\examples{
+\dontrun{
+em <- emObjfn(obj, control = list(level = 5L))
+attr(em, "rebuildQuadrature")(init)  # E-step: build the grid at `init`
+em(init)                             # marginal objlist (+ emDiag attribute)
+}
 }
 \seealso{
 \link{nlmeFit}, \link{omega}

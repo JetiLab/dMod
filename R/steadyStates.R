@@ -69,7 +69,6 @@
 #'
 #' @export
 #' @importFrom utils write.table
-#' @importFrom reticulate import_from_path py_require
 #' @example inst/examples/steadystates.R
 steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                          givenCQs = NULL, neglect = NULL, sparsifyLevel = NULL,
@@ -78,6 +77,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                          positive = TRUE, branches = FALSE,
                          version = "1.2") {
 
+  .require_ns("reticulate", "steadyStates()")
   # Validate version and verification mode
   version <- match.arg(version, choices = c("1.0", "1.1", "1.2"))
   testSteady <- match.arg(testSteady)
@@ -121,7 +121,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   #   v1.0: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat)
   #   v1.1: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady)
   #   v1.2: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady, walltime, simplify, solveQuadratic)
-  #        — v1.2 additionally runs structural sink-cluster detection a priori,
+  #        -- v1.2 additionally runs structural sink-cluster detection a priori,
   #          and (when `solveQuadratic=TRUE`) attempts a closed-form quadratic
   #          state-side solve before resorting to flux-parameter pivots.
   if (version == "1.0") {
@@ -144,7 +144,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
 
   } else {
     # v1.2
-    # simplify can be TRUE / FALSE / "full" — pass through untouched so the
+    # simplify can be TRUE / FALSE / "full" -- pass through untouched so the
     # Python side sees either a Python bool or the literal string "full".
     if (is.character(simplify)) {
       simplify <- match.arg(tolower(simplify), choices = "full")

@@ -2,7 +2,6 @@
 #' @importFrom Rcpp sourceCpp
 #' @importFrom cOde getSymbols replaceSymbols prodSymb sensitivitiesSymb
 #' @importFrom cOde setForcings odeC
-#' @importFrom purrr flatten
 #' @importFrom tidyselect all_of
 #' @importFrom stats D approx rnorm runif sd
 #' @importFrom utils capture.output glob2rx head modifyList

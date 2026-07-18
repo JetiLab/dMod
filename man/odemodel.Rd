@@ -14,6 +14,7 @@ odemodel(
   modelname = "odemodel",
   solver = c("CppODE", "Sundials", "deSolve"),
   verbose = FALSE,
+  outdir = getwd(),
   ...
 )
 }
@@ -31,7 +32,7 @@ Defaults to \code{TRUE}.}
 \item{forcings}{Character vector with the names of external forcings.}
 
 \item{events}{An \link{eventlist} (or \code{data.frame} coercible via \link{as.eventlist}).
-Must be defined here — not on \code{\link[=Xs]{Xs()}} — so that the sensitivity equations
+Must be defined here -- not on \code{\link[=Xs]{Xs()}} -- so that the sensitivity equations
 are extended consistently.}
 
 \item{fixed}{Character vector with the names of parameters (initial values and dynamic)
@@ -43,6 +44,11 @@ for which no sensitivities are required (this speeds up integration).}
 One of \code{"CppODE"}, \code{"Sundials"} or \code{"deSolve"}.}
 
 \item{verbose}{Logical. If \code{TRUE}, print compiler output to the R console.}
+
+\item{outdir}{Character. Directory for the generated C/C++ sources and the
+compiled shared object. Defaults to the working directory. Only honoured
+for \code{solver = "CppODE"} / \code{"Sundials"}; the \code{deSolve} backend always
+writes to the working directory, so a non-default \code{outdir} errors there.}
 
 \item{...}{Additional arguments passed to \code{\link[CppODE:CppODE]{CppODE::CppODE()}} or \code{\link[cOde:funC]{cOde::funC()}}.}
 }

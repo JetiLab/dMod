@@ -17,7 +17,8 @@ Pimpl(
   deriv = TRUE,
   deriv2 = FALSE,
   controlsMS = list(),
-  controlsNleqslv = list()
+  controlsNleqslv = list(),
+  outdir = getwd()
 )
 }
 \arguments{
@@ -58,6 +59,9 @@ waterfall plot of multistart termination codes).}
 are scaled per equation by their turnover \verb{sum_k |df_i/dx_k| |x_k|}, so
 \code{ftol} is a relative criterion that converges multi-scale systems
 uniformly.}
+
+\item{outdir}{Directory for the generated source and shared object,
+default the working directory.}
 }
 \value{
 A \link{parfn}.

@@ -15,7 +15,7 @@ list of eqnlist, parameters and inits
 \description{
 Reads an SBML Level 3 file via a Python helper (\code{inst/code/sbmlImport.py})
 that uses \code{python-libsbml}. The Python environment is provisioned
-automatically by \code{reticulate} on first use — no manual venv setup is
+automatically by \code{reticulate} on first use -- no manual venv setup is
 required. Users who want to point dMod at an existing interpreter
 (e.g. a hand-managed venv or conda env) can set the
 \code{DMOD_LIBSBML_PYTHON} environment variable to its absolute path; that

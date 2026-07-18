@@ -1,5 +1,5 @@
 ## Same breakdown for the Boehm benchmark model (PEtab),
-## a STAT5 phosphorylation model — 8 dynamic states, ~17 fit pars,
+## a STAT5 phosphorylation model -- 8 dynamic states, ~17 fit pars,
 ## 3 observables, 16 timepoints. Bigger than BA so we can see how
 ## the R-glue share changes as ODE/sens work grows.
 

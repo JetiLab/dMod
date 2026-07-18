@@ -56,8 +56,7 @@ test_that("bayesNLMEMarginal builds a likObj whose value at FOCEI MAP matches th
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
   fit <- suppressMessages(nlmeFit(
-    fx$obj, fx$om, init,
-    prdfn = fx$prd, data = fx$data,
+    fx$obj, init,
     method = "focei",
     control = list(focei = list(
       trustControl = list(rinit = 1, rmax = 10, iterlim = 50,
@@ -112,8 +111,7 @@ test_that("mcmc(bayesNLMEMarginal(...), sequenceType = 'sequential') smoke test"
   fx <- .makeBayesNLMEFixture("bm_smc")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
   fit <- suppressMessages(nlmeFit(
-    fx$obj, fx$om, init,
-    prdfn = fx$prd, data = fx$data, method = "focei"))
+    fx$obj, init, method = "focei"))
 
   priorTheta    <- constraintL2(c(mu_pop = 2.0), sigma = 5.0)
   priorOmegaObj <- priorOmega(fx$om, kind = "LKJHalfNormal", scaleSD = 1.0)
@@ -156,8 +154,7 @@ test_that("mcmc(bayesNLMEJoint(...)) runs and returns expected shape", {
   fx <- .makeBayesNLMEFixture("bj")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
   fit <- suppressMessages(nlmeFit(
-    fx$obj, fx$om, init,
-    prdfn = fx$prd, data = fx$data, method = "focei"))
+    fx$obj, init, method = "focei"))
 
   priorTheta    <- constraintL2(c(mu_pop = 2.0), sigma = 5.0)
   priorOmegaObj <- priorOmega(fx$om, kind = "LKJHalfNormal", scaleSD = 1.0)

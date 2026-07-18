@@ -206,7 +206,7 @@ observables <- eqnvec(pMEK_obs = "scale_pMEK * pMEK",
                       pERK_obs = "scale_pERK * pERK")
 
 out <- symmetryDetection(reactions, observables, method = "observability",
-                         reduceCQ = FALSE, reconstruct = TRUE)   # auto-printed
+                         reduceCQ = TRUE, reconstruct = TRUE)   # auto-printed
 # rank 11 / 15: two readout-gain scalings (each scale trades against its kinase
 # total and the downstream rate), one receptor-pool scaling, and one non-monomial
 # direction in the EGF/EGFR binding constants, all returned as exact rational
@@ -417,7 +417,7 @@ out <- symmetryDetection(
   events = events, trafo = cond.trafo,
   forcings = c("bool_ActD","bool_CHX","bool_MG132","TGFb"),
   equilibrate = TRUE, reduceCQ = TRUE, reconstruct = TRUE,
-  cores = 20)
+  cores = 6)
 
 # rank 65 / 74: nine non-identifiable directions, all scalings recovered exactly from
 # the integer kernel. They are the two receptor mRNA/protein synthesis scalings (each

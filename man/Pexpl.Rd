@@ -14,7 +14,8 @@ Pexpl(
   verbose = FALSE,
   deriv = TRUE,
   deriv2 = FALSE,
-  derivMode = c("dual", "symbolic")
+  derivMode = c("dual", "symbolic"),
+  outdir = getwd()
 )
 }
 \arguments{
@@ -33,6 +34,9 @@ values are expressions in the outer parameters.}
 \code{attr(., "deriv2")} \verb{[p, theta, theta]}. \code{deriv2} needs \code{deriv = TRUE}.}
 
 \item{derivMode}{\code{"dual"} (AD, needs \code{compile = TRUE}) or \code{"symbolic"}.}
+
+\item{outdir}{Directory for the generated source and shared object,
+default the working directory.}
 }
 \value{
 A \link{parfn}.

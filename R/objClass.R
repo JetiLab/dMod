@@ -236,7 +236,7 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL,
 
   # Lazy meta cache for the C++ kernel path. Built on first call; rebuilt
   # if the deriv column set changes (e.g. when `fixed` toggles between
-  # calls — uncommon, but cheap to detect via length+name compare).
+  # calls - uncommon, but cheap to detect via length+name compare).
   .meta_cache <- new.env(parent = emptyenv())
   .meta_cache$meta_list        <- NULL
   .meta_cache$par_names_global <- NULL
@@ -303,6 +303,13 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL,
   err_pars <- if (!is.null(errmodel)) attr(errmodel, "parameters") else character(0)
   attr(myfn, "parameters") <- union(attr(x, "parameters"), err_pars)
   attr(myfn, "modelname") <- modelname(x, errmodel)
+  # NLME reconstruction handles: let nlmeFit()/emObjfn() recover the model
+  # pieces from a composed objective instead of re-demanding them as arguments
+  # (see .nlmeReconstruct() in nlme.R). Setting an attribute to NULL is a no-op,
+  # so "errfn" is simply absent when there is no error model.
+  attr(myfn, "prdfn") <- x
+  attr(myfn, "data")  <- data
+  attr(myfn, "errfn") <- errmodel
   myfn
 }
 
@@ -656,6 +663,9 @@ constraintL2_mvn <- function(mu, Omega, attr.name = "prior", condition = NULL) {
   class(myfn) <- c("objfn", "fn")
   attr(myfn, "conditions") <- condition
   attr(myfn, "parameters") <- parnames
+  # NLME reconstruction handle: expose the omegaSpec so a composed objective
+  # (normL2 + constraintL2(Omega=)) self-describes (see .nlmeReconstruct()).
+  attr(myfn, "omegaSpec") <- Omega
   myfn
 }
 

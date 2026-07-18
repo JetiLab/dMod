@@ -16,7 +16,8 @@ Y(
   verbose = FALSE,
   deriv = TRUE,
   deriv2 = FALSE,
-  derivMode = c("dual", "symbolic")
+  derivMode = c("dual", "symbolic"),
+  outdir = getwd()
 )
 }
 \arguments{
@@ -60,6 +61,9 @@ Requires \code{deriv = TRUE}. Default \code{FALSE}.}
 forward-mode AD; faster for many parameters; requires compiled native
 code) or \code{"symbolic"} (SymPy Jacobian + chain rule against upstream
 \code{dX}/\code{dP}; pure R).}
+
+\item{outdir}{Character. Directory for the generated C++ source and the
+compiled shared object. Defaults to the working directory.}
 }
 \value{
 An object of class \link{obsfn}, i.e. a function  \code{g(..., fixed = NULL, deriv = TRUE, condition = NULL, env = NULL)}

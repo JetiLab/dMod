@@ -3,7 +3,7 @@
 ## 1. Build the dMod-native model (reactions, observables, steady-state
 ##    trafo, log10 outer parameters, branched closed/open conditions).
 ## 2. Fit it on `badata`.
-## 3. Export the fitted problem to PEtab v2 — `exportPEtab` symbolically
+## 3. Export the fitted problem to PEtab v2 -- `exportPEtab` symbolically
 ##    decomposes the trafo `p` into parameters / conditions / SBML
 ##    initialAssignments. The `10^(...)` wraps stay intact in
 ##    conditions.tsv:targetValue / SBML initialAssignment, so PEtab
@@ -58,7 +58,7 @@ data <- as.datalist(badata)
 ## badata carries per-row sigmas in the `sigma` column. exportPEtab
 ## auto-encodes them via PEtab's `noiseParameter1_<obsId>` placeholder,
 ## writing per-row sigma values into `noiseParameters` of measurements.tsv
-## — the round-trip preserves the data-side noise model exactly.
+## -- the round-trip preserves the data-side noise model exactly.
 
 outerpars <- getParameters(p)
 pouter    <- structure(rep(-1, length(outerpars)), names = outerpars)
@@ -127,7 +127,7 @@ stopifnot(abs(val_petab - val_native) < 1e-3)
 ## composite g * x * p; pass the estimated bestfit plus any fixed outer
 ## parameters of `p` (here `s = 1`, an identity outer that the native
 ## trafo collapsed via `insert("S~0")`). `petab_meta$fixed` holds exactly
-## those — inner symbols pulled from SBML defaults are stashed in
+## those -- inner symbols pulled from SBML defaults are stashed in
 ## `petab_meta$sbml_only_pars` and not needed at the prd boundary.
 fixed_petab <- attr(petab, "petab_meta")$fixed
 times       <- seq(0, 45, length.out = 200)

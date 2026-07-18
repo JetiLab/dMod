@@ -68,7 +68,7 @@ print.odemodel <- function(x, ...) {
 #'   `FALSE`.
 #' @param forcings Character vector with the names of external forcings.
 #' @param events An [eventlist] (or `data.frame` coercible via [as.eventlist]).
-#'   Must be defined here — not on [Xs()] — so that the sensitivity equations
+#'   Must be defined here -- not on [Xs()] -- so that the sensitivity equations
 #'   are extended consistently.
 #' @param fixed Character vector with the names of parameters (initial values and dynamic)
 #'   for which no sensitivities are required (this speeds up integration).
@@ -76,8 +76,12 @@ print.odemodel <- function(x, ...) {
 #' @param solver Character string specifying the solver backend.
 #'   One of `"CppODE"`, `"Sundials"` or `"deSolve"`.
 #' @param verbose Logical. If `TRUE`, print compiler output to the R console.
+#' @param outdir Character. Directory for the generated C/C++ sources and the
+#'   compiled shared object. Defaults to the working directory. Only honoured
+#'   for `solver = "CppODE"` / `"Sundials"`; the `deSolve` backend always
+#'   writes to the working directory, so a non-default `outdir` errors there.
 #' @param ... Additional arguments passed to [CppODE::CppODE()] or [cOde::funC()].
-#' 
+#'
 #' @return list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object).
 #'   Carries a \code{"compileInfo"} attribute listing source files and per-file
 #'   compile/link flags collected from \code{func} and \code{extended}. This is
@@ -91,7 +95,7 @@ print.odemodel <- function(x, ...) {
 #' @export
 odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NULL,
                      fixed = NULL, modelname = "odemodel", solver = c("CppODE", "Sundials", "deSolve"),
-                     verbose = FALSE, ...) {
+                     verbose = FALSE, outdir = getwd(), ...) {
 
   f <- as.eqnvec(f)
   solver <- match.arg(solver)
@@ -108,6 +112,15 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
     stop("Second-order sensitivities require solver = 'CppODE'.")
   if (deriv2 && solver == "Sundials")
     stop("Second-order sensitivities are not available with CVODE; use solver = 'CppODE'.")
+
+  # cOde::funC has no outdir and always writes to the working directory, so a
+  # non-default outdir would be silently ignored under the deSolve backend.
+  if (solver == "deSolve" &&
+      !identical(normalizePath(outdir,   mustWork = FALSE),
+                 normalizePath(getwd(), mustWork = FALSE)))
+    stop("`outdir` is only supported for solver = 'CppODE'/'Sundials'; ",
+         "the deSolve backend always writes to the working directory. ",
+         "setwd() to the target directory instead.", call. = FALSE)
 
   pick <- function(fn, args) {
     fm <- names(formals(fn))
@@ -187,20 +200,20 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
       func <- do.call(CppODE::CppODE,
                       c(list(f, events = events, fixed = fixed, forcings = forcings,
                              modelname = modelname,
-                             outdir = getwd(), deriv = FALSE, verbose = verbose),
+                             outdir = outdir, deriv = FALSE, verbose = verbose),
                         dots_func))
       extended <- NULL
       extended2 <- NULL
       if (deriv) {
         extended <- do.call(CppODE::CppODE,
                             c(list(f, events = events, fixed = fixed, forcings = forcings,
-                                   modelname = paste0(modelname, "_s"), outdir = getwd(),
+                                   modelname = paste0(modelname, "_s"), outdir = outdir,
                                    deriv = TRUE, deriv2 = FALSE, verbose = verbose),
                               dots_ext))
         if (deriv2) {
           extended2 <- do.call(CppODE::CppODE,
                                c(list(f, events = events, fixed = fixed, forcings = forcings,
-                                      modelname = paste0(modelname, "_s2"), outdir = getwd(),
+                                      modelname = paste0(modelname, "_s2"), outdir = outdir,
                                       deriv = TRUE, deriv2 = TRUE, verbose = verbose),
                                  dots_ext))
         }
@@ -213,13 +226,13 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
       func <- do.call(CppODE::CVODE,
                       c(list(f, events = events, fixed = fixed, forcings = forcings,
                              modelname = modelname,
-                             outdir = getwd(), deriv = FALSE, verbose = verbose),
+                             outdir = outdir, deriv = FALSE, verbose = verbose),
                         dots_func))
       extended <- NULL
       if (deriv) {
         extended <- do.call(CppODE::CVODE,
                             c(list(f, events = events, fixed = fixed, forcings = forcings,
-                                   modelname = paste0(modelname, "_s"), outdir = getwd(),
+                                   modelname = paste0(modelname, "_s"), outdir = outdir,
                                    deriv = TRUE, verbose = verbose),
                               dots_ext))
       }

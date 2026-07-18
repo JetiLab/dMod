@@ -4,7 +4,7 @@
 \alias{parnames.omegaSpec}
 \title{All random-effect parameter names of an omega}
 \usage{
-parnames.omegaSpec(x, what = c("all", "eta", "chol"))
+\method{parnames}{omegaSpec}(x, what = c("all", "eta", "chol"), ...)
 }
 \arguments{
 \item{x}{An \code{omegaSpec} object.}
@@ -12,6 +12,8 @@ parnames.omegaSpec(x, what = c("all", "eta", "chol"))
 \item{what}{One of \code{"all"} (default, both eta and Cholesky parameters),
 \code{"eta"} (subject-level random effects only), or \code{"chol"} (Cholesky
 parameters only).}
+
+\item{...}{Ignored.}
 }
 \value{
 Character vector of parameter names.

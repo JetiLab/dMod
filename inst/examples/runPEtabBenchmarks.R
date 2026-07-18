@@ -2,7 +2,7 @@
 ## ---------------------------------------------------------------------------
 ## Run dMod's PEtab importer against the four bundled benchmark models in
 ## BenchmarkModels/ and report the negative log-likelihood at each problem's
-## published-optimum nominalValue. Self-contained — runs interactively
+## published-optimum nominalValue. Self-contained -- runs interactively
 ## (`source(...)`) or from the shell:
 ##
 ##   Rscript inst/examples/runPEtabBenchmarks.R                # all four
@@ -59,7 +59,7 @@ suppressPackageStartupMessages(library(dMod))
 ## Reference values are -log L at the *published* parameter optimum
 ## (parameters.tsv `nominalValue` column). Source: Hass et al., Bioinformatics
 ## 35(17):3073-3082 (2019), "Benchmark problems for dynamic modeling of
-## intracellular processes", Suppl. Tab. S2 — and verified against dMod once
+## intracellular processes", Suppl. Tab. S2 -- and verified against dMod once
 ## the importer matched the published value. Set ref_nll = NA for models
 ## where we have no validated reference yet; the script will then just print
 ## the value rather than checking it.
@@ -151,7 +151,7 @@ suppressPackageStartupMessages(library(dMod))
                 if (diff < spec$tol) "PASS" else "FAIL"))
     if (diff >= spec$tol) status <- "ref_mismatch"
   } else {
-    cat("  ref     = (none recorded — pin this value if you trust it)\n")
+    cat("  ref     = (none recorded -- pin this value if you trust it)\n")
   }
 
   list(model = model_id, status = status,
@@ -205,9 +205,9 @@ suppressPackageStartupMessages(library(dMod))
     cat(sprintf(fmt,
                 r$model,
                 r$status,
-                if (is.null(r$nll)) "—" else sprintf("%.4f", r$nll),
-                if (is.null(r$ref) || is.na(r$ref)) "—" else sprintf("%.4f", r$ref),
-                if (is.null(r$t_total)) "—" else sprintf("%.1fs", r$t_total)))
+                if (is.null(r$nll)) "--" else sprintf("%.4f", r$nll),
+                if (is.null(r$ref) || is.na(r$ref)) "--" else sprintf("%.4f", r$ref),
+                if (is.null(r$t_total)) "--" else sprintf("%.1fs", r$t_total)))
     if (!is.null(r$error))
       cat(sprintf("      ↳ %s\n", substr(r$error, 1, 200)))
   }

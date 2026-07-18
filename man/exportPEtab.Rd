@@ -85,7 +85,7 @@ corresponding PEtab tables.
 }
 \section{Limitations}{
 
-Pre-equilibration cannot be expressed through the trafo \code{p} alone — use
+Pre-equilibration cannot be expressed through the trafo \code{p} alone -- use
 \code{\link[=exportPEtabObject]{exportPEtabObject()}} for those problems. Fixed parameters are always
 written with \code{parameterScale = "lin"}.
 }

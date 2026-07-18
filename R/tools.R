@@ -286,10 +286,10 @@ blockdiagSymb <- function(M, N) {
 #'
 #' @return A \code{data.frame} in long format with the following columns:
 #' \itemize{
-#'   \item \code{"time"} — values from \code{out[, 1]}.
-#'   \item \code{"name"} — column names from \code{out[, -1]}.
-#'   \item \code{"value"} — corresponding numeric values.
-#'   \item \code{"condition"} — if \code{out} was a list, contains the list names.
+#'   \item \code{"time"} -- values from \code{out[, 1]}.
+#'   \item \code{"name"} -- column names from \code{out[, -1]}.
+#'   \item \code{"value"} -- corresponding numeric values.
+#'   \item \code{"condition"} -- if \code{out} was a list, contains the list names.
 #' }
 #'
 #' @export
@@ -667,7 +667,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
     for (r in roots_full) dyn.load(paste0(r, so))
   } else {
     ## Combined output: per-file compile to .o (parallel on Unix when cores>1,
-    ## serial otherwise — including on Windows), then a single R CMD SHLIB
+    ## serial otherwise -- including on Windows), then a single R CMD SHLIB
     ## link over the original sources. Because every .o is freshly written
     ## above, make sees them as up-to-date and only runs the link recipe;
     ## passing the source list lets SHLIB pick the C++ linker when any

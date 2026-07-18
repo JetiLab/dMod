@@ -20,6 +20,7 @@
 
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <cmath>
 #include <algorithm>
 
@@ -166,7 +167,21 @@ List sparseGridGH(int K, int level, int derivMode = 0) {
     }
     return key;
   };
-  std::map<std::vector<long long>, std::pair<std::vector<double>, double>> grid;
+  // O(1) dedup of coincident nodes across the tensor-product terms. FNV-1a
+  // hash of the rounded-z key; output is re-sorted below so the node/weight
+  // layout is bit-identical to the previous std::map (ordered) materialization.
+  struct VecLLHash {
+    std::size_t operator()(const std::vector<long long>& v) const {
+      std::size_t h = 1469598103934665603ULL;
+      for (long long x : v) {
+        h ^= static_cast<std::size_t>(x);
+        h *= 1099511628211ULL;
+      }
+      return h;
+    }
+  };
+  std::unordered_map<std::vector<long long>,
+                     std::pair<std::vector<double>, double>, VecLLHash> grid;
 
   /* Valid multi-index sum range: max(K, L-K+1) <= |i| <= L, since each
      i_j >= 1 forces |i| >= K. If level < K the grid is empty. */
@@ -217,18 +232,23 @@ List sparseGridGH(int K, int level, int derivMode = 0) {
     }
   }
 
-  /* Materialize: drop zero-weight cancellation residuals (rare but possible
-     at small floating-point noise levels). */
-  int B = 0;
-  for (auto& kv : grid) if (kv.second.second != 0.0) ++B;
+  /* Materialize in sorted key order (reproduces the old std::map ordering, so
+     the node/weight layout -- and every downstream floating-point sum built on
+     it -- stays bit-identical). Drop zero-weight cancellation residuals. */
+  typedef std::pair<const std::vector<long long>,
+                    std::pair<std::vector<double>, double> > Entry;
+  std::vector<const Entry*> entries;
+  entries.reserve(grid.size());
+  for (const Entry& kv : grid)
+    if (kv.second.second != 0.0) entries.push_back(&kv);
+  std::sort(entries.begin(), entries.end(),
+            [](const Entry* a, const Entry* b) { return a->first < b->first; });
+  int B = static_cast<int>(entries.size());
   NumericMatrix nodes(B, K);
   NumericVector weights(B);
-  int b = 0;
-  for (auto& kv : grid) {
-    if (kv.second.second == 0.0) continue;
-    for (int d = 0; d < K; ++d) nodes(b, d) = kv.second.first[d];
-    weights[b] = kv.second.second;
-    ++b;
+  for (int b = 0; b < B; ++b) {
+    for (int d = 0; d < K; ++d) nodes(b, d) = entries[b]->second.first[d];
+    weights[b] = entries[b]->second.second;
   }
 
   return List::create(_["nodes"]   = nodes,

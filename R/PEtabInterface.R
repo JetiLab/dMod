@@ -56,9 +56,9 @@
 #'   problems per file; the reader supports a single problem entry but any
 #'   number of v2 model_files inside it.
 #' @export
-#' @importFrom yaml read_yaml
 read_petab_yaml <- function(yamlPath) {
 
+  .require_ns("yaml", "PEtab import")
   yamlPath <- normalizePath(yamlPath, mustWork = TRUE)
   baseDir  <- dirname(yamlPath)
   m <- yaml::read_yaml(yamlPath)
@@ -2135,7 +2135,7 @@ print.PEtabProblem <- function(x, ...) {
 #' corresponding PEtab tables.
 #'
 #' @section Limitations:
-#' Pre-equilibration cannot be expressed through the trafo `p` alone — use
+#' Pre-equilibration cannot be expressed through the trafo `p` alone -- use
 #' [exportPEtabObject()] for those problems. Fixed parameters are always
 #' written with `parameterScale = "lin"`.
 #'
@@ -2515,11 +2515,11 @@ exportPEtab <- function(data, reactions, observables, p, pouter,
 #' @return Path to the written YAML manifest, invisibly.
 #' @seealso [exportPEtab()] for a dMod-native entry point.
 #' @export
-#' @importFrom yaml write_yaml
 exportPEtabObject <- function(petab, dir, modelID = NULL,
                               formatVersion = "2.0.0",
                               overwrite = FALSE) {
 
+  .require_ns("yaml", "PEtab export")
   stopifnot(inherits(petab, "PEtabProblem") || is.list(petab))
   major <- .petab_major_version(formatVersion)
   if (!major %in% c(1L, 2L))

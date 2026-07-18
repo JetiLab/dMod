@@ -8,7 +8,7 @@
 #' The ODE forcings. Forcing support for the CppODE / Sundials backends depends
 #' on the chosen solver method; see [CppODE::CppODE()].
 #' @param events An [eventlist] (or `data.frame` coercible via [as.eventlist]).
-#' Applied to the forward simulation only — sensitivities are not corrected.
+#' Applied to the forward simulation only -- sensitivities are not corrected.
 #' Define events on [odemodel()] unless the prediction is used purely for
 #' forward simulation.
 #' @param names character vector with the states to be returned. If NULL, all states are returned.
@@ -583,7 +583,7 @@ Xd <- function(data, condition = NULL) {
     myderivs <- NULL
     if (deriv) {
 
-      # Fill in sensitivities — column layout is state-fastest, matching the
+      # Fill in sensitivities -- column layout is state-fastest, matching the
       # expand.grid(states, parameters) ordering used to build sensNames.
       outSens <- matrix(0, nrow = length(times), ncol = length(sensNames),
                         dimnames = list(NULL, sensNames))
@@ -655,6 +655,8 @@ Xd <- function(data, condition = NULL) {
 #' @param deriv2 Logical. If `TRUE`, attach a second-order derivative
 #'   `attr(., "deriv2")` array of shape `[time, observable, theta, theta]`.
 #'   Requires `deriv = TRUE`. Default `FALSE`.
+#' @param outdir Character. Directory for the generated C++ source and the
+#'   compiled shared object. Defaults to the working directory.
 #'
 #' @return
 #' An object of class [obsfn], i.e. a function  `g(..., fixed = NULL, deriv = TRUE, condition = NULL, env = NULL)`
@@ -669,7 +671,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL,
               condition = NULL, attach.input = TRUE,
               compile = FALSE, modelname = NULL, verbose = FALSE,
               deriv = TRUE, deriv2 = FALSE,
-              derivMode = c("dual", "symbolic")) {
+              derivMode = c("dual", "symbolic"), outdir = getwd()) {
 
   derivMode <- match.arg(derivMode)
   emit_d1 <- isTRUE(deriv)
@@ -724,7 +726,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL,
       parameters = obsParams,
       compile    = compile,
       modelname  = modelname,
-      outdir     = getwd(),
+      outdir     = outdir,
       verbose    = verbose,
       convenient = FALSE,
       derivMode  = derivMode,
@@ -939,7 +941,7 @@ Xt <- function(condition = NULL) {
 
     out <- matrix(times, ncol = 1, dimnames = list(NULL, "time"))
 
-    # time has no parameter dependence — both sens1 and sens2 are zero arrays
+    # time has no parameter dependence -- both sens1 and sens2 are zero arrays
     # in batch-first [time, observable, ...] layout matching Xs.
     sens  <- array(0, dim = c(n_times, 1, n_pars),
                    dimnames = list(NULL, "time", par_names))

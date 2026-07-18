@@ -10,7 +10,7 @@
 ## Three deliberate choices in this example:
 ##
 ##   1. `deriv2 = FALSE` everywhere in the model build. The flat-target +
-##      Langevin SMC path uses only first-order sensitivities — the
+##      Langevin SMC path uses only first-order sensitivities -- the
 ##      Gauss-Newton Hessian `J^T W J` (with J = dpred/dpar from the
 ##      first-order sensitivity ODEs) is both the trust() Hessian and the
 ##      Langevin metric. The `_s2` codegen pipeline is skipped entirely.
@@ -19,7 +19,7 @@
 ##   2. Weakly-informative Gaussian prior `constraintL2(0, sigma = 1)`
 ##      attached to the objective. The closed-condition simple trafo has
 ##      a known structural non-identifiability between (S, TCA_CELL,
-##      TCA_CANA) — BA_transport.R flags it at line 144 as "the triple
+##      TCA_CANA) -- BA_transport.R flags it at line 144 as "the triple
 ##      compensate by structure". A truly improper flat prior would give
 ##      an improper posterior on that ridge (the chain drifts to infinity
 ##      along the flat direction); the weakly-informative prior keeps the
@@ -31,7 +31,7 @@
 ##      This is the dMod-idiomatic Bayes prior. constraintL2 plays the
 ##      double role of (a) regularising mstrust during the MAP search and
 ##      (b) being the priorObj for mcmc(). Identical reference point,
-##      identical sigma — no double counting because we add only ONE prior
+##      identical sigma -- no double counting because we add only ONE prior
 ##      contribution to the joint objective.
 ##
 ##   3. SMC with a MAP-Laplace cloud, fixed-MAP Langevin preconditioner,
@@ -43,7 +43,7 @@
 ##      on this posterior (the sharp identifiable directions + the soft
 ##      ridge break the local-curvature assumption; acceptance collapses).
 ##      Use SMC unless you have an identifiable reparameterisation in
-##      hand — see the optional block at the bottom for that route.
+##      hand -- see the optional block at the bottom for that route.
 ##
 ## Wallclock guidance: compile + mstrust + SMC ~1-2 min.
 ##
@@ -278,7 +278,7 @@ print(p_pairs)
 ## improper (infinite mass on the compensation ridge). The sigma = 1 prior
 ## above is a workaround. The principled fix is to *reduce the model* so the
 ## non-identifiability disappears. The diagnostics live entirely in the
-## posterior — no profile likelihood, no separate frequentist analysis.
+## posterior -- no profile likelihood, no separate frequentist analysis.
 ##
 ## Step 1: posterior shrinkage to find weakly-informed parameters.
 ##
@@ -314,7 +314,7 @@ print(p_pairs)
 ##                 eig_post$values[direction_idx], min(eig_post$values)))
 ##
 ##   For BA_transport this eigenvector points roughly along
-##   (+TCA_CELL, +TCA_CANA, -S, ...) — the (S, TCA_CELL, TCA_CANA)
+##   (+TCA_CELL, +TCA_CANA, -S, ...) -- the (S, TCA_CELL, TCA_CANA)
 ##   compensation flagged at BA_transport.R line 144. The eigenvalue ratio
 ##   max/min quantifies how anisotropic the posterior is; values > 1e3
 ##   indicate a strong ridge worth reducing.
@@ -322,7 +322,7 @@ print(p_pairs)
 ## Step 3: 2D pair-plot confirmation.
 ##
 ##   plotPairs(chain_smc) draws the corner plot. Strongly correlated
-##   pairs show up as narrow diagonal lines in the 2D marginals — those
+##   pairs show up as narrow diagonal lines in the 2D marginals -- those
 ##   are the ridge components. For BA_transport you will see tight
 ##   correlation between (S, TCA_CELL), (S, TCA_CANA), and (TCA_CELL,
 ##   TCA_CANA), confirming the same ridge identified by the eigenvector.
@@ -363,7 +363,7 @@ print(p_pairs)
 ##     * plotPairs shows no narrow diagonal lines
 ##
 ##   If yes, model reduction succeeded. If no, repeat steps 1-4 on the
-##   reduced parameterisation — there may be a second (smaller) ridge.
+##   reduced parameterisation -- there may be a second (smaller) ridge.
 ##
 ## Step 6: comparing reduced vs full model via Bayes factor.
 ##

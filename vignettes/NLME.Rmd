@@ -1,5 +1,5 @@
 ---
-title: "Marginal likelihood estimation for NLME models in dMod: EM, FOCEI, and adaptive sparse-grid Gauss-Hermite quadrature"
+title: "Marginal likelihood estimation for NLME models in dMod: EM, FOCEI, adaptive sparse-grid Gauss-Hermite quadrature, and SAEM"
 author: "Simon Beyer"
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
@@ -43,9 +43,9 @@ integral: the marginal likelihood.
 This vignette has three parts. The first introduces the NLME model in
 the ODE modelling context that dMod is built for, and writes down the
 marginal likelihood. The second develops the Expectation-Maximisation
-(EM) algorithm rigorously, since both estimators in dMod are
-particular instances of it. The third covers the two estimators
-themselves:
+(EM) algorithm rigorously, since every estimator in dMod is a
+particular instance of it. The third covers the estimators themselves,
+which differ only in how they handle the intractable E-step:
 
 * **FOCEI** (first-order conditional estimation with interaction), in
   which the E-step is replaced by a Laplace (one-point) approximation
@@ -54,6 +54,10 @@ themselves:
   E-step is replaced by a multi-point Smolyak rule adapted to the
   per-subject posterior, embedded in an ECM (expectation conditional
   maximisation) outer loop.
+* **SAEM** (stochastic approximation EM), in which the E-step is
+  replaced by an MCMC draw and the Monte-Carlo error is averaged out
+  across iterations by a Robbins-Monro recursion rather than within
+  them.
 
 The code references in this vignette point at specific entries in the
 package source so that the implementation can be audited against the
@@ -243,19 +247,20 @@ Two things make this difficult:
    solver.
 
 Every NLME estimator is a recipe for replacing the intractable E-step
-expectation with something computable. Two natural categories of
-deterministic methods:
+expectation with something computable. Three natural categories, each
+developed in its own chapter below:
 
-* **Low-order:** approximate $q_i$ by a Gaussian centred at its mode
-  and replace the expectation by a one-point rule at that mode. This
-  is FOCEI.
-* **High-order:** approximate the expectation by a multi-point
-  quadrature rule adapted to the local Gaussian approximation of
-  $q_i$. This is the sparse-grid Gauss-Hermite path.
-
-Stochastic alternatives (SAEM, etc.) replace the expectation by a
-Monte Carlo average drawn from $q_i$ via MCMC. dMod does not
-currently implement a stochastic path.
+* **Deterministic, low-order:** approximate $q_i$ by a Gaussian
+  centred at its mode and replace the expectation by a one-point rule
+  at that mode. This is FOCEI (`method = "focei"`); the same rule
+  driving a plain EM outer loop is `method = "laplaceEM"`.
+* **Deterministic, high-order:** approximate the expectation by a
+  multi-point quadrature rule adapted to the local Gaussian
+  approximation of $q_i$. This is the sparse-grid Gauss-Hermite path
+  (`method = "quadrature"`).
+* **Stochastic:** replace the expectation by a Monte Carlo average
+  drawn from $q_i$ via MCMC, averaged across iterations rather than
+  within them. This is SAEM (`method = "saem"`).
 
 # FOCEI
 
@@ -517,6 +522,17 @@ for all of them.
 
 ### The Smolyak combination
 
+The sparse-grid construction below is not new: Smolyak (1963) introduced
+the combination rule, Heiss and Winschel (2008) developed sparse-grid
+Gauss-Hermite quadrature specifically for approximating the likelihood of
+random-coefficient models, and Clausen, R{\o}nn and Skovgaard (2009) applied
+adaptive sparse-grid Gaussian quadrature to nonlinear mixed-effects
+(pharmacokinetic) models. What dMod contributes is not the quadrature rule
+but its integration into a pipeline that propagates *exact* analytic
+gradients and Hessians of the marginal likelihood through the ODE
+sensitivity chain (Section 6.5), so the sparse-grid E-step is differentiated
+rather than finite-differenced.
+
 Smolyak (1963) recombines tensor products of *different* 1D levels so
 that polynomial exactness in *total* degree is preserved while most
 of the redundant nodes drop out. The level-$L$ sparse rule
@@ -751,7 +767,7 @@ $$
 S \;=\; \frac{1}{N} \sum_{i=1}^N \hat M_i.
 $$
 
-`R/omegaClass.R::updateOmegaChol` consumes $S$ and re-parameterises
+`R/nlmeClass.R::updateOmegaChol` consumes $S$ and re-parameterises
 into the Cholesky entries that `omega` exposes. Three structural
 cases:
 
@@ -789,10 +805,9 @@ with components
   sign otherwise.
 * `n_eff`: effective sample size per subject. Falls when the softmax
   concentrates; the ECM loop's `nEffMin` diagnostic surfaces this.
-* `nFloored`: per-subject count of eigenvalues clipped at the
-  Hessian floor. Persistent nonzero values indicate near-singular
-  per-subject Fisher information, usually a missing identifiability
-  constraint upstream.
+* `nFloored`: retained for layout compatibility and reported as zero.
+  The compiled mode-finder floors the Hessian eigenvalues internally
+  but does not return the count.
 * `level`, `innerConverged`, `innerIter`: bookkeeping.
 
 `plotTrace(fit)` shows the per-stage ECM convergence (OFV vs. ECM
@@ -801,11 +816,180 @@ per-subject $\hat\eta_i$ histograms with the QQ line against the
 fitted $\mathcal{N}(0, \Omega_{kk})$ and is informative for spotting
 mis-specified variance structures.
 
+# Stochastic Approximation EM (SAEM)
+
+## Why a stochastic E-step
+
+FOCEI and the sparse grid are both *deterministic* approximations of
+the same E-step expectation, and both inherit a structural weakness
+from that choice. FOCEI assumes $q_i$ is Gaussian and is biased
+whenever it is not. The sparse grid drops that assumption, but only by
+placing nodes: the rule stays anchored on the local Gaussian, so a
+posterior whose mass sits away from $\hat\eta_i$ is resolved only by
+raising the level, and the node count $B$ grows with the level at a
+rate that steepens with $K$. Every node costs one ODE solve. Past
+$K \approx 4$ that is the binding constraint.
+
+Monte Carlo has the complementary profile. Drawing
+$\eta_i \sim q_i$ needs no Gaussian assumption, is not anchored at the
+mode, and costs the same per draw whether $K$ is 2 or 20. The price is
+that the E-step is now an estimate carrying variance, and the clean
+Jensen argument of Section 4 no longer applies per iteration.
+
+The naive fix is MCEM: replace
+$Q_i(\psi \mid \psi^{(t)})$ by an average over $M$ draws. It works,
+but badly. The Monte-Carlo error must vanish for the iteration to
+converge, so $M$ has to grow without bound, and every draw is
+discarded at the end of the iteration that produced it. SAEM (Delyon,
+Lavielle and Moulines, 1999) is the observation that this is
+wasteful: the averaging does not have to happen *within* an iteration,
+it can happen *across* iterations. Take very few draws per iteration,
+even a single one, and let a Robbins-Monro recursion accumulate them.
+The Monte-Carlo error is then averaged out along the trajectory rather
+than at each point of it.
+
+## Sufficient statistics: why the recursion is legitimate
+
+SAEM is not "EM with noise added". It rests on an exponential-family
+structure that the NLME random-effects block happens to have exactly.
+
+Suppose the complete-data likelihood is in the curved exponential
+family,
+
+$$
+\log p(y, \eta \mid \psi) \;=\; -\phi(\psi) \;+\; \langle S(y, \eta),\, \nu(\psi) \rangle,
+$$
+
+for a sufficient statistic $S$. Then the E-step never needs the whole
+function $\eta \mapsto \log p(y, \eta \mid \psi)$; it needs one
+vector, $\mathbb{E}_{q}[S(y, \eta)]$, and the M-step is a fixed map
+$s \mapsto \hat\psi(s)$ applied to it. An expectation of a *fixed*
+statistic is precisely the kind of object Robbins-Monro stochastic
+approximation was built to estimate. That is the whole idea: replace
+$\mathbb{E}_q[S]$ by the recursion
+
+$$
+s_k \;=\; s_{k-1} \;+\; \gamma_k \left( S(y, \eta^{(k)}) - s_{k-1} \right),
+\qquad \eta^{(k)} \sim q(\cdot \mid \psi^{(k-1)}),
+$$
+
+and set $\psi^{(k)} = \hat\psi(s_k)$. Under the Robbins-Monro
+conditions below, $s_k$ converges almost surely and the iterates
+converge to a stationary point of the marginal likelihood $\ell$.
+
+In our model the random-effects block fits this template exactly.
+With $\eta_i \mid \Omega \sim \mathcal{N}(0, \Omega)$,
+
+$$
+\log p(\eta \mid \Omega) \;=\; -\tfrac{N}{2}\log|\Omega|
+\;-\; \tfrac{1}{2} \left\langle \sum_i \eta_i \eta_i^\top,\; \Omega^{-1} \right\rangle
+\;+\; \text{const},
+$$
+
+which is exponential-family in $\Omega$ with sufficient statistic
+$\sum_i \eta_i \eta_i^\top$, and the M-step map $\hat\psi(s)$ is the
+*same closed form* the deterministic path already uses:
+$S = \tfrac{1}{N}\sum_i \eta_i \eta_i^\top$ fed to
+`updateOmegaChol`. So the $\Omega$ update under SAEM is textbook SAEM,
+and it is the same CM-2 as in the quadrature path with one
+substitution: the posterior second moment $\hat M_i$, which the grid
+computes by softmax-weighted quadrature, is replaced by the raw outer
+product $\eta_i \eta_i^\top$ of a *draw*.
+
+The structural block $\theta$ does not fit the template: it enters
+through the ODE solution, so $\log p(y_i \mid \eta_i, \theta)$ admits
+no sufficient statistic of fixed dimension. dMod therefore applies the
+standard fallback: run CM-1 as an ordinary `trust()` on the
+complete-data objective at the drawn etas, and damp the resulting
+*iterate* with the same $\gamma_k$,
+
+$$
+\theta^{(k)} \;=\; \theta^{(k-1)} \;+\; \gamma_k \left( \hat\theta_k - \theta^{(k-1)} \right),
+$$
+
+which is stochastic approximation applied to the parameter rather than
+to a statistic. It retains the noise-averaging behaviour without the
+exponential-family guarantee.
+
+## The three steps
+
+Each SAEM iteration $k$ performs:
+
+* **S-step (simulation).** For each subject draw
+  $\eta_i^{(k)} \sim q_i(\eta \mid y_i, \psi^{(k-1)})$. The target is
+  exactly the $\Phi_i$ of the FOCEI section, evaluated by the same
+  compiled per-subject kernel. dMod does not draw *exactly* from
+  $q_i$ (nobody can): it runs a short random-walk-Metropolis chain of
+  length `nMcmc`, warm-started at the subject's previous draw, and
+  keeps the last state. This is Markov-chain SAEM (Kuhn and Lavielle,
+  2004): the theory permits replacing the exact draw by one step of a
+  transition kernel that admits $q_i$ as its invariant law, which is
+  what makes a chain of length 10 rather than a converged chain
+  sufficient. The proposal scale is adapted per subject on the log
+  scale toward a 0.4 acceptance rate.
+* **A-step (approximation).** Update the sufficient statistic,
+  $S \leftarrow S + \gamma_k(\tfrac{1}{N}\sum_i \eta_i^{(k)} \eta_i^{(k)\top} - S)$.
+* **M-step.** CM-2 is the closed-form $\Omega \leftarrow \hat\psi(S)$
+  via `updateOmegaChol`; CM-1 is the damped structural `trust()` above.
+
+## The two phases
+
+The step size $\gamma_k$ is not a tuning detail, it is where the
+algorithm's two jobs are separated:
+
+$$
+\gamma_k \;=\;
+\begin{cases}
+1 & k \leq \texttt{nBurnin} \quad \text{(exploration)} \\[2pt]
+\dfrac{1}{k - \texttt{nBurnin}} & k > \texttt{nBurnin} \quad \text{(convergence)}
+\end{cases}
+$$
+
+During exploration $\gamma_k = 1$ means *no memory*: $s_k$ is simply
+the current draw's statistic and the iterates move at full step. This
+phase does not converge and is not meant to; it fluctuates around the
+region of interest and its job is to get there fast from a poor
+starting value.
+
+During convergence $\gamma_k = 1/(k - \texttt{nBurnin})$ satisfies the
+Robbins-Monro conditions $\sum_k \gamma_k = \infty$ and
+$\sum_k \gamma_k^2 < \infty$. The first keeps the recursion able to
+travel an unbounded distance, so it cannot stall short of the
+solution; the second makes the accumulated Monte-Carlo noise
+square-summable, so the fluctuation is damped out and the iterates
+converge almost surely. Using $\gamma_k = 1/k$ from iteration one
+satisfies the same conditions but wastes the budget: the step size
+decays while the iterate is still near the arbitrary starting point,
+and the recursion crawls.
+
+## What it costs
+
+SAEM removes the Laplace bias and the node explosion, and pays for it
+in three places worth stating plainly:
+
+* **No monotone improvement.** The Section 4 guarantee needs the exact
+  E-step. SAEM's convergence is asymptotic and almost-sure, not
+  per-iteration; a trace that goes briefly the wrong way is not a bug.
+* **No OFV from the algorithm.** SAEM never forms the marginal
+  likelihood; it only ever touches the complete-data objective. dMod
+  therefore evaluates the marginal *once* at the converged point using
+  the quadrature machinery at level $K{+}2$, so `fit$value` remains
+  directly comparable to the FOCEI and quadrature OFVs.
+* **Standard errors come from that final evaluation**, i.e. from the
+  quadrature observed information, not from a stochastic-information
+  (Louis / Fisher-identity) accumulation along the SAEM path.
+
+The regime where SAEM wins is the one that breaks the other two: high
+$K$, strongly nonlinear models, and posteriors that are skewed,
+heavy-tailed, or multimodal.
+
 # End-user API
 
 This chapter collects the relevant function calls. The full
 walkthrough on the Theophylline dataset (12 subjects, 1-compartment
-oral PK) is `inst/examples/theophylline.R`.
+oral PK) is `inst/examples/theophylline.R`;
+`inst/examples/compareNlmixr2.R` validates the FOCEI estimates against
+`nlmixr2`'s FOCEI and SAEM on the same data.
 
 ## Building the objective
 
@@ -827,31 +1011,39 @@ obj <- normL2(dlist, g * x * p, errmodel = err) +
 ```
 
 The `init` vector must contain every structural parameter, every
-log-scale residual SD, and every Cholesky entry `om$cholPars`. See
-the Theophylline example for a worked starting vector.
+log-scale residual SD, and every Cholesky entry `om$cholPars`. Build a
+complete, correctly-ordered start with `nlmeInit(structural, om)`, which
+appends default log-Cholesky diagonals (`log(sd)`) for you:
+
+```{r init}
+init <- nlmeInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
+                 om, sd = 0.3)
+```
 
 ## FOCEI
 
+`nlmeFit()` takes just the composed objective and a starting vector: the
+prediction function, data, error model, and omega spec are recovered from
+`obj` (stamped at construction by `normL2` / `constraintL2`), so they are
+never passed a second time.
+
 ```{r focei-call}
 fit_focei <- nlmeFit(
-  obj, om, init,
-  prdfn    = g * x * p,
-  data     = dlist,
-  errfn    = err,
+  obj, init,
   method   = "focei",
   control  = list(focei = list(
-    innerControl = list(rtol = 1e-7, maxit = 30),
+    innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
     trustControl = list(iterlim = 100))))
 
-print(fit_focei)
+summary(fit_focei)
 ```
 
 There is one FOCEI path: the C++ kernel with eager Stage-2 correction.
 `innerControl` tunes the per-subject inner trust region (warmstart
 radius, convergence tolerances, eigenvalue floor); `trustControl`
 tunes the outer trust region. Multi-output and $\eta$-dependent
-$\sigma$ models are handled by the same loop. There are no other
-knobs.
+$\sigma$ models are handled by the same loop. Unrecognised control keys
+raise a warning rather than being silently ignored.
 
 ## Quadrature refinement
 
@@ -862,8 +1054,7 @@ estimate with the higher-accuracy quadrature ECM:
 
 ```{r quad-call}
 fit_quad <- nlmeFit(
-  obj, om, init,
-  prdfn    = g * x * p, data = dlist, errfn = err,
+  obj, init,
   method   = "foceiQuadrature",
   control  = list(
     quadrature = list(epsQuadLevels  = c(4, 5, 6),
@@ -873,6 +1064,12 @@ fit_quad <- nlmeFit(
 print(fit_quad)
 print(fit_quad$stageTrace)
 ```
+
+The quadrature control also accepts `pruneTol` (default `Inf` = off): a
+finite value drops per-subject nodes whose augmented log-weight sits more
+than `pruneTol` below the maximum, trading a bounded (`exp(-pruneTol)`-order)
+accuracy loss for fewer per-node ODE solves. The per-subject mode-finding
+runs through the compiled `focei_inner_trust` kernel (Gauss-Newton curvature).
 
 `epsQuadLevels` is the sequence of Smolyak depths used by the outer
 stages. Defaults to $K{+}1{:}3$ (for $K{=}3$, that is
@@ -890,14 +1087,75 @@ downward, the textbook Laplace-bias correction. Quantitative
 numbers depend on the exact starting values, the local hardware,
 and the BLAS in use.
 
+## Laplace-EM
+
+`method = "laplaceEM"` runs the deterministic EM of Section 4 directly: the
+E-step is the single-node Laplace approximation (mode $\hat\eta_i$ and
+curvature $H_i$), the M-step splits into CM-1 (a `trust()` on the structural
+parameters at the frozen modes) and CM-2, the **closed-form** $\Omega$ update
+
+$$
+\Omega \;\leftarrow\; \frac{1}{N}\sum_i \Big(\hat\eta_i \hat\eta_i^\top + H_i^{-1}\Big)
+$$
+
+via [updateOmegaChol]. The $H_i^{-1}$ term is the per-subject posterior
+variance; dropping it recovers ITS, which under-estimates $\Omega$.
+
+```{r laplaceem-call}
+fit_em <- nlmeFit(obj, init, method = "laplaceEM",
+                  control = list(quadrature = list(maxEcm = 200L)))
+```
+
+Because EM converges linearly it typically needs many more outer iterations
+than FOCEI's Newton outer loop (hence the larger `maxEcm` default), and its
+fixed point maximises the ELBO rather than the Laplace marginal, so the
+estimate can differ slightly from FOCEI's on weakly-identified problems.
+`fit_em$value` is reported as an accurate marginal $-2\log L$ (evaluated at
+level $K{+}2$ at the converged point) so it stays comparable to the FOCEI and
+quadrature OFVs.
+
+## SAEM
+
+`method = "saem"` runs the stochastic-approximation EM developed in the SAEM
+chapter: an MCMC E-step, a Robbins-Monro A-step on the sufficient statistic,
+and an M-step combining the same closed-form $\Omega$ update with a damped
+structural `trust()`. It reads `control$saem`:
+
+* `nBurnin` (default 200): exploration iterations at $\gamma_k = 1$.
+* `nEM` (default 200): convergence iterations at $\gamma_k = 1/(k - \texttt{nBurnin})$.
+* `nMcmc` (default 10): Metropolis steps per subject per iteration.
+* `cm1Control`, `cores`: structural `trust()` knobs and E-step parallelism.
+
+```{r saem-call}
+fit_saem <- nlmeFit(obj, init, method = "saem",
+                    control = list(saem = list(nBurnin = 200L, nEM = 200L)))
+```
+
+SAEM trades FOCEI's Laplace bias for Monte-Carlo variance and is the method of
+choice for high $K$, strong nonlinearity, or non-Gaussian posteriors. The MCMC
+machinery is the one that also powers dMod's Bayesian NLME sampler. Note that
+`fit_saem$value` and the reported standard errors come from a single quadrature
+evaluation at the converged point, not from the SAEM recursion itself.
+
 ## Inspecting the fit
 
 `fit_focei` and `fit_quad` are `nlmeFit` S3 objects with the same
-field layout (`argument`, `value`, `gradient`, `hessian`, `omega`,
-`etaModes`, `converged`, `iterations`, `emDiag`, `method`, ...).
-The diagnostic generics are camelCase S3 methods:
+field layout (`argument`, `value`, `value_nonmem`, `ofvType`, `nObs`,
+`gradient`, `hessian`, `omega`, `etaModes`, `converged`, `iterations`,
+`emDiag`, `method`, ...). `value` is the plain-ML $-2\log L$ (both
+estimators share this additive-constant convention); `value_nonmem`
+$= \text{value} - N_{\text{obs}}\log(2\pi)$ is the NONMEM-`OBJ`-comparable
+number.
+
+`summary()` reports population estimates with standard errors and RSE%
+(from the outer observed information, `vcov(fit)`), the $\Omega$ standard
+deviations and correlation matrix, and mean $\eta$ shrinkage; `coef()`,
+`vcov()`, and `confint()` (Wald) are also provided. The diagnostic
+generics are camelCase S3 methods:
 
 ```{r diagnostics}
+summary       (fit_focei)   # pop estimates + RSE% + Omega + shrinkage
+confint       (fit_focei)   # Wald CIs from vcov(fit)
 plot          (fit_focei)   # DV vs IPRED + DV vs PRED
 plotIndivs    (fit_focei)   # per-subject IPRED/PRED curves
 plotResiduals (fit_focei)   # IWRES vs IPRED + IWRES vs TIME
@@ -922,6 +1180,13 @@ Smolyak, S. A. (1963). Quadrature and interpolation formulas for
 tensor products of certain classes of functions. *Soviet Math. Dokl.*
 4, 240-243.
 
+Heiss, F., Winschel, V. (2008). Likelihood approximation by numerical
+integration on sparse grids. *J. Econometrics* 144, 62-80.
+
+Clausen, W. H. O., R{\o}nn, B. B., Skovgaard, I. M. (2009). Maximum
+likelihood estimation in nonlinear mixed effect models: Adaptive
+Gaussian quadrature by sparse grid sampling. *PAGE* 18, Abstr. 1607.
+
 Pinheiro, J. C., Bates, D. M. (2000). *Mixed-Effects Models in S and
 S-PLUS*. Springer.
 
@@ -934,3 +1199,18 @@ the ECM algorithm: A general framework. *Biometrika* 80, 267-278.
 Dempster, A. P., Laird, N. M., Rubin, D. B. (1977). Maximum
 likelihood from incomplete data via the EM algorithm.
 *J. R. Stat. Soc. B* 39, 1-38.
+
+Robbins, H., Monro, S. (1951). A stochastic approximation method.
+*Ann. Math. Stat.* 22, 400-407.
+
+Delyon, B., Lavielle, M., Moulines, E. (1999). Convergence of a
+stochastic approximation version of the EM algorithm.
+*Ann. Statist.* 27, 94-128.
+
+Kuhn, E., Lavielle, M. (2004). Coupling a stochastic approximation
+version of EM with an MCMC procedure. *ESAIM Probab. Stat.* 8,
+115-131.
+
+Kuhn, E., Lavielle, M. (2005). Maximum likelihood estimation in
+nonlinear mixed effects models. *Comput. Stat. Data Anal.* 49,
+1020-1038.

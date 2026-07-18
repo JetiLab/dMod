@@ -2,14 +2,26 @@ Package: dMod
 Type: Package
 Title: Dynamic Modeling and Parameter Estimation in ODE Models
 Version: 1.2.0
-Date: 2020-02-10
-Author: Daniel Kaschek
-Maintainer: Daniel Kaschek <daniel.kaschek@gmail.com>
-Description: The framework provides functions to generate ODEs of reaction
-    networks, parameter transformations, observation functions, residual functions,
-    etc. The framework follows the paradigm that derivative information should be
-    used for optimization whenever possible. Therefore, all major functions produce
-    and can handle expressions for symbolic derivatives.
+Date: 2026-07-18
+Authors@R: c(
+    person("Simon", "Beyer", email = "simon.beyer@fdm.uni-freiburg.de",
+           role = c("aut", "cre")),
+    person("Daniel", "Kaschek", email = "daniel.kaschek@gmail.com",
+           role = c("aut", "cph"),
+           comment = "Created dMod 1.0; original design, philosophy"))
+Description: Tools for dynamic modeling and parameter estimation in ordinary
+    differential equation (ODE) models of reaction networks. Models are built
+    symbolically and compiled to C/C++ with first- and second-order
+    sensitivities. Prediction, observation and objective functions are
+    composable function objects that carry symbolic derivatives, following the
+    paradigm that derivative information should be used for optimization
+    whenever possible. Beyond single-model fitting via trust-region
+    optimization, multi-start search and profile-likelihood identifiability
+    analysis, the package supports nonlinear mixed-effects (population) fitting
+    (FOCEI, adaptive sparse-grid Gauss-Hermite quadrature, Laplace-EM and
+    stochastic-approximation EM), Bayesian Markov chain Monte Carlo, structural
+    identifiability via symmetry detection, symbolic steady states, and
+    PEtab / SBML import and export.
 License: GPL (>= 2)
 Depends: R (>= 4.5.0)
 Imports:
@@ -21,23 +33,15 @@ Imports:
     dplyr,
     foreach,
     doParallel,
-    rjson,
-    yaml,
     rlang,
     data.table,
-    purrr,
     tidyselect,
     abind,
-    optimx,
-    reticulate,
     Rcpp,
-    cowplot,
     digest,
     nleqslv,
     scales,
-    MASS,
-    pander,
-    lpSolve
+    MASS
 Remotes:
     simonbeyer1/CppODE,
     dkaschek/cOde
@@ -50,7 +54,15 @@ Suggests:
     deSolve,
     JuliaCall,
     openxlsx,
-    Polychrome
+    Polychrome,
+    reticulate,
+    rjson,
+    yaml,
+    lpSolve,
+    optimx,
+    cowplot,
+    pander,
+    purrr
 VignetteBuilder: knitr
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

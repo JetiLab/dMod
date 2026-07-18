@@ -47,8 +47,7 @@ test_that("nlmeFit(method='focei') runs on a minimal one-eta NLME prdfn", {
   outer_init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
   fit <- suppressMessages(nlmeFit(
-    obj, om, outer_init,
-    prdfn = g * x * p, data = data,
+    obj, outer_init,
     method = "focei",
     control = list(focei = list(
       trustControl = list(rinit = 1, rmax = 10, iterlim = 50,
@@ -66,9 +65,9 @@ test_that("nlmeFit(method='focei') runs on a minimal one-eta NLME prdfn", {
 
 test_that("nlmeFit() rejects unknown method via match.arg", {
   # Match on the choices list rather than match.arg()'s boilerplate ("should be
-  # one of"), which is localised — on a non-English locale R prints e.g.
+  # one of"), which is localised -- on a non-English locale R prints e.g.
   # "'arg' sollte eines von ..." and an English-only regexp would spuriously fail.
-  expect_error(nlmeFit(obj = NULL, omega = NULL, init = c(p = 1),
+  expect_error(nlmeFit(obj = NULL, init = c(p = 1),
                        method = "doesNotExist"),
                "foceiQuadrature")
 })
@@ -141,13 +140,10 @@ test_that("nlmeFit(method='focei') matches the pre-rewrite Theoph baseline", {
   obj <- normL2(dlist, prdfn, errmodel = err, use.bessel = FALSE) +
            constraintL2(mu = 0, Omega = om)
 
-  fit <- nlmeFit(obj, om, ref$init,
-                 prdfn    = prdfn,
-                 data     = dlist,
-                 errfn = err,
+  fit <- nlmeFit(obj, ref$init,
                  method   = "focei",
                  control  = list(focei = list(
-                   innerControl = list(rtol = 1e-7, maxit = 30),
+                   innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
                    trustControl = list(iterlim = 100))),
                  verbose = FALSE)
 

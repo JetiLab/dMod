@@ -35,7 +35,9 @@ P(
 \item{deriv, deriv2}{Attach first/second-order sensitivities. \code{deriv2}
 requires \code{deriv = TRUE}.}
 
-\item{...}{Forwarded to the chosen backend.}
+\item{...}{Forwarded to the chosen backend. In particular \code{outdir}
+(directory for the generated sources and shared object, default the
+working directory).}
 }
 \value{
 A \link{parfn}.

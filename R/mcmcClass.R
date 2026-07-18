@@ -200,8 +200,6 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
   outer_names_meta <- meta$outerNames
   data_per_subject <- lapply(subjects, function(s) data[[s]])
   names(data_per_subject) <- subjects
-  times_union <- sort(unique(c(0, unlist(lapply(data_per_subject, `[[`,
-                                                "time")))))
   correction_cb <- function(full_pars, joint_hessian, H_inv_list) {
     .computeFoceiCorrection(
       full_pars = full_pars, joint_hessian = joint_hessian,
@@ -210,7 +208,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
       prdfn = prdfn, errfn = meta$errfn, omega = omegaSpec,
       subjects = subjects, subject_etas = omegaSpec$subjectEtas,
       K = K, N = N,
-      data_per_subject = data_per_subject, times_union = times_union)
+      data_per_subject = data_per_subject)
   }
 
   eta_warm_cache <- new.env(parent = emptyenv())

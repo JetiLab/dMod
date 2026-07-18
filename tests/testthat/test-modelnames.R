@@ -26,7 +26,7 @@ test_that("modelnames behave as expected", {
     as.eqnvec()
   events <- eventlist(var = "A", time = 5, value = "A_add", method = "add")
 
-  # Use a name distinct from the default `odemodel` used in test-odemodel.R —
+  # Use a name distinct from the default `odemodel` used in test-odemodel.R --
   # both tests would otherwise share a DLL symbol space across the testthat
   # session and corrupt each other's parms-length contract.
   x1 <- odemodel(f, events = events, modelname = "mn_odemodel", compile = FALSE) %>% Xs

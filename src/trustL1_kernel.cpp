@@ -261,7 +261,7 @@ List trustL1_impl(Function objfun,
         g_red[ii] = grad_obj[i] + l1_grad(i, theta);
         for (int jj = 0; jj < Kred; ++jj) {
           int j = active[jj];
-          // L1 Hessian contribution is zero — only the smooth part.
+          // L1 Hessian contribution is zero -- only the smooth part.
           H_red[ii + (std::size_t) jj * Kred] = H_full[i + (std::size_t) j * K];
         }
       }

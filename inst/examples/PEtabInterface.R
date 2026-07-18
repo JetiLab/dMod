@@ -2,7 +2,7 @@
   ## Import a PEtab problem from disk. importPEtab dispatches on the YAML's
   ## `format_version` key, so v1 and v2 manifests are both supported. The
   ## TSVs and the SBML model live next to the YAML; native artefacts
-  ## (`.c`, `.cpp`, `.so`) land in the current working directory —
+  ## (`.c`, `.cpp`, `.so`) land in the current working directory --
   ## `setwd(tempdir())` keeps them out of the project tree.
   setwd(tempdir())
 
@@ -10,12 +10,12 @@
   yamlPath <- system.file("PEtabTests/v2/0001/_0001.yaml", package = "dMod")
   petab <- importPEtab(yamlPath, solver = "deSolve")
 
-  ## v1 still works — same call, different YAML schema:
+  ## v1 still works -- same call, different YAML schema:
   ## yamlPath <- system.file("PEtabTests/0001/_0001.yaml", package = "dMod")
 
   print(petab)
 
-  ## petab is a plain list — every slot is a regular dMod object.
+  ## petab is a plain list -- every slot is a regular dMod object.
   ## The objective has the PEtab `fixed` parameters baked in, so calling
   ## obj(bestfit) evaluates the likelihood at the nominal estimate:
   petab$obj(petab$bestfit)$value

@@ -215,13 +215,10 @@ init[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## 4. Single FOCEI fit (reference run)
 ## ----------------------------------------------------------------------------
 cat("\n== nlmeFit(method = 'focei') ==\n")
-fit_focei <- nlmeFit(obj, om, init,
-                     prdfn   = prd,
-                     data    = dlist,
-                     errfn   = e,
+fit_focei <- nlmeFit(obj, init,
                      method  = "focei",
                      control = list(focei = list(
-                       innerControl = list(rtol = 1e-7, maxit = 50),
+                       innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
                        trustControl = list(iterlim = 200))))
 print(fit_focei)
 
@@ -236,11 +233,10 @@ print(fit_focei)
 ## lowest OFV is the signature of a globally identified fit.
 ## ----------------------------------------------------------------------------
 cat("\n== msnlmeFit (20 starts, perturbed around init) ==\n")
-ms_fits <- msnlmeFit(obj, om, init,
-                     prdfn  = prd, data = dlist, errfn = e,
+ms_fits <- msnlmeFit(obj, init,
                      method = "focei",
                      control = list(focei = list(
-                       innerControl = list(rtol = 1e-7, maxit = 50),
+                       innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
                        trustControl = list(iterlim = 200))),
                      fits  = 50L,
                      cores = 10L,
@@ -251,7 +247,7 @@ summary(ms_fits)
 
 # parlist -> parframe -> waterfall via plotValues().
 ms_pframe   <- as.parframe(ms_fits)
-p_waterfall <- plotValues(ms_pframe, tol = 1)
+p_waterfall <- plotValues(ms_pframe, tol = 0.1)
 
 ## ----------------------------------------------------------------------------
 ## 6. Population summary (linear-scale pharma units + %CV + OFV)

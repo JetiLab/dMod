@@ -7,7 +7,7 @@
 ## in the current working directory. The resulting list is the single
 ## authoritative source consulted by `compile()` when given dMod fn objects.
 ## Merge two compileInfo lists, deduplicating by srcfile (per file, the first
-## occurrence wins — that keeps the originating compile/link flags). Returns
+## occurrence wins -- that keeps the originating compile/link flags). Returns
 ## NULL when both inputs are empty so the attribute stays absent on objects
 ## that never had native code to begin with.
 mergeCompileInfo <- function(a, b) {
@@ -426,7 +426,7 @@ parlist <- function(...) {
 #' An object of class `"parvec"`, i.e. a named numeric vector with
 #' attributes:
 #' \itemize{
-#'   \item `attr(x, "deriv")` — Jacobian matrix
+#'   \item `attr(x, "deriv")` -- Jacobian matrix
 #' }
 #'
 #' @example inst/examples/parvec.R
@@ -839,6 +839,14 @@ objframe <- function(mydata, deriv = NULL, deriv.err = NULL,
     attr(outfn, "conditions") <- conditions12
     attr(outfn, "parameters") <- parameters12
     attr(outfn, "modelname") <- modelname12
+    # Propagate NLME reconstruction handles so a composed objective exposes its
+    # model pieces (prdfn/data/errfn/omegaSpec) regardless of term order or
+    # nesting. Coalesce from either operand. See .nlmeReconstruct() in nlme.R.
+    for (.a in c("prdfn", "data", "errfn", "omegaSpec")) {
+      .v <- attr(x1, .a, exact = TRUE)
+      if (is.null(.v)) .v <- attr(x2, .a, exact = TRUE)
+      if (!is.null(.v)) attr(outfn, .a) <- .v
+    }
     return(outfn)
 
   }

@@ -18,7 +18,8 @@
   verbose,
   start.time,
   end.time,
-  dotArgs
+  dotArgs,
+  outdir = getwd()
 )
 }
 \arguments{
@@ -31,6 +32,8 @@
 \item{attach.input, keep.root, controlsODE, compile, modelname, condition, verbose, start.time, end.time}{As in \link{Pequil}.}
 
 \item{dotArgs}{Extra arguments forwarded to \link[CppODE:CppODE]{CppODE::CppODE}.}
+
+\item{outdir}{Directory for the generated source and shared object.}
 }
 \value{
 A \link{parfn}.

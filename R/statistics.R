@@ -1425,12 +1425,12 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #' @export
 #' @importFrom stats qchisq
 #' @importFrom ggplot2 ggplot aes geom_point geom_line geom_ribbon ylab facet_wrap scale_y_log10 theme
-#' @importFrom optimx optimr
 fitErrorModel <- function(data, factors, errorModel = "exp(s0)+exp(srel)*x^2",
-                          par = c(s0 = 1, srel = .1), 
+                          par = c(s0 = 1, srel = .1),
                           lower = NULL, upper = NULL,  # Optional: Parametergrenzen
                           plotting = TRUE, blather = FALSE, ...) {
-  
+
+  .require_ns("optimx", "fitErrorModel()")
   # Assemble conditions
   condidnt <- Reduce(paste, subset(data, select = factors))
   conditions <- unique(condidnt)
@@ -1459,7 +1459,7 @@ fitErrorModel <- function(data, factors, errorModel = "exp(s0)+exp(srel)*x^2",
     if (is.null(upper)) upper <- rep(Inf, length(par))
     
     # Optimierung mit L-BFGS-B
-    fit <- optimr(par, obj, method = "L-BFGS-B", lower = lower, upper = upper, ...)
+    fit <- optimx::optimr(par, obj, method = "L-BFGS-B", lower = lower, upper = upper, ...)
     
     sigma <- sqrt(with(as.list(fit$par), eval(parse(text = errorModel))))
     dataErrorModel[condidnt == cond, ]$sigma <- sigma 

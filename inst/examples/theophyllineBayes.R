@@ -132,11 +132,10 @@ init_outer[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## 3. FOCEI MAP -- warm-start for the Bayesian run
 ## ----------------------------------------------------------------------------
 cat("\n== nlmeFit(method = 'focei')  (MAP warm-start) ==\n")
-fit_focei <- nlmeFit(obj, om, init_outer,
-                     prdfn   = prd, data = dlist, errfn = e,
+fit_focei <- nlmeFit(obj, init_outer,
                      method  = "focei",
                      control = list(focei = list(
-                       innerControl = list(rtol = 1e-7, maxit = 30),
+                       innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
                        trustControl = list(iterlim = 100))))
 print(fit_focei)
 

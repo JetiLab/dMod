@@ -132,8 +132,10 @@ prd <- g * x * p
 compile(prd, e, cores = 6)
 
 om <- omega(eta = c("eta_Ka", "eta_V", "eta_Cl"), subjects = subjects)
-# use.bessel = FALSE keeps the marginal-likelihood OFV directly comparable to
-# NONMEM / Monolix / nlmixr2 (plain ML, no n/(n-p) inflation).
+# use.bessel = FALSE gives the plain-ML marginal OFV (no n/(n-p) inflation).
+# fit$value is then the full -2 log L (all 2*pi constants retained) == nlmixr2's
+# -2LL == NONMEM's "OFV with constant". For a raw NONMEM .lst OBJ (which drops
+# the data-side sum log(2*pi)) compare fit$value_nonmem instead.
 obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
          constraintL2(mu = 0, Omega = om)
 
@@ -148,13 +150,10 @@ init[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## 4. FOCEI fit
 ## ----------------------------------------------------------------------------
 cat("\n== nlmeFit(method = 'focei') ==\n")
-fit_focei <- nlmeFit(obj, om, init,
-                     prdfn    = prd,
-                     data     = dlist,
-                     errfn    = e,
+fit_focei <- nlmeFit(obj, init,
                      method   = "focei",
                      control  = list(focei = list(
-                       innerControl = list(rtol = 1e-7, maxit = 30),
+                       innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
                        trustControl = list(iterlim = 100))))
 print(fit_focei)
 

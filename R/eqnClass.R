@@ -820,7 +820,7 @@ print.eqnlist <- function(x, pander = FALSE, ...) {
     }
     cat("\n")
     print(r)
-  } else {
+  } else if (requireNamespace("pander", quietly = TRUE)) {
     pander::panderOptions("table.alignment.default", "left")
     pander::panderOptions("table.split.table", Inf)
     pander::panderOptions("table.split.cells", Inf)
@@ -828,6 +828,8 @@ print.eqnlist <- function(x, pander = FALSE, ...) {
     r <- r[, setdiff(colnames(r), exclude)]
     r$Rate <- paste0(format.eqnvec(as.character(r$Rate)))
     pander::pander(r)
+  } else {
+    print(r)
   }
 }
 
@@ -1091,7 +1093,7 @@ print.eqnvec <- function(x, width = 140, pander = FALSE, ...) {
                m_rel,
                "Outer\n"))
     cat(m_msgEqn, sep = "\n")
-  } else {
+  } else if (requireNamespace("pander", quietly = TRUE)) {
     pander::panderOptions("table.alignment.default", "left")
     pander::panderOptions("table.split.table", Inf)
     pander::panderOptions("table.split.cells", Inf)
@@ -1099,7 +1101,12 @@ print.eqnvec <- function(x, width = 140, pander = FALSE, ...) {
     colnames(out) <- "" #  as.character(substitute(eqnvec))
     out[, 1] <- format.eqnvec(out[, 1])
     pander::pander(out)
-    
+
+  } else {
+    out <- as.data.frame(unclass(eqnvec), stringsAsFactors = FALSE)
+    colnames(out) <- ""
+    out[, 1] <- format.eqnvec(out[, 1])
+    print(out)
   }
   
 
@@ -1161,13 +1168,13 @@ c.eqnvec <- function(...) {
 #' )
 #' getLinVars(eqnvec)
 #'
-#' @importFrom reticulate import py_run_string
 #' @export
 getLinVars <- function(eqnvec) {
   if (!inherits(eqnvec, "eqnvec")) {
     stop("Input 'eqnvec' must be of class 'eqnvec'.")
   }
-  
+  .require_ns("reticulate", "getLinVars()")
+
   sympy <- reticulate::import("sympy")
   sympy_zero <- sympy$Integer(0)
   

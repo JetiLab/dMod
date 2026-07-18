@@ -793,7 +793,7 @@ addTrafoForPaths <- function(
     trafo,
     rescale = c("lin", "log", "log10", "log2")[1]
 ) {
-  
+  .require_ns("purrr", "addTrafoForPaths()")
   # check if 'rescale' is a valid input
   if (!(rescale %in% c("lin", "log", "log10", "log2"))) {
     stop("'rescale' must be one of 'lin', 'log', 'log10' or 'log2'")
@@ -807,9 +807,9 @@ addTrafoForPaths <- function(
       function (i) {
         parset <- do.call(c,profs[i,9:ncol(profs)])
         tParset <- trafo(parset)
-        flattened <- flatten(tParset[1])
+        flattened <- purrr::flatten(tParset[1])
         if (is.list(flattened)) {
-          namedTParset <- do.call(c, flatten(tParset[1]))
+          namedTParset <- do.call(c, purrr::flatten(tParset[1]))
         } else {
           namedTParset <- flattened
         }

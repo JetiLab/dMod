@@ -107,7 +107,7 @@ test_that("getFluxes produces identical output for legacy single-compartment mod
   f <- addReaction(f, "Compl", "Enz + Prod", "k3*Compl", "prod_product")
   f <- addReaction(f, "Enz", "", "k4*Enz", "deg_enzyme")
   fl <- getFluxes(f)
-  # No volume-ratio factors should appear — every reaction lives in the same
+  # No volume-ratio factors should appear -- every reaction lives in the same
   # (default) compartment.
   flat <- unlist(fl)
   expect_false(any(grepl("\\(1/1\\)", flat)))

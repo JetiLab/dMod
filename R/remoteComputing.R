@@ -21,7 +21,7 @@ detectFreeCores <- function(machine = NULL) {
     os <- if (!is.null(prefix)) cmd("uname") else Sys.info()[["sysname"]]
     
     if (grepl("Windows", os, ignore.case = TRUE)) {
-      # No load average on Windows — return 1 free core as safe default
+      # No load average on Windows -- return 1 free core as safe default
       warning("detectFreeCores: load average not available on Windows, returning 1")
       nCores <- parallel::detectCores()
       return(list(free = 1, nCores = nCores, occupied = NA_real_))

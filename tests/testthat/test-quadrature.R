@@ -505,9 +505,7 @@ test_that("emObjfn quadrature constructs and exposes rebuildQuadrature", {
   on.exit(setwd(oldwd))
   s <- .build_quad_setup(1L)
 
-  em <- emObjfn(s$obj, s$om,
-                prdfn = s$prdfn, data = s$data,
-                method = "quadrature", control = list(level = 4L))
+  em <- emObjfn(s$obj, control = list(level = 4L))
   expect_s3_class(em, "emObjfn")
   expect_equal(attr(em, "method"), "quadrature")
   expect_true(is.function(attr(em, "rebuildQuadrature")))
@@ -521,9 +519,7 @@ test_that("rebuildQuadrature populates nodes, modes, and frozen state", {
   on.exit(setwd(oldwd))
   s <- .build_quad_setup(2L)
 
-  em <- emObjfn(s$obj, s$om,
-                prdfn = s$prdfn, data = s$data,
-                method = "quadrature", control = list(level = 4L))
+  em <- emObjfn(s$obj, control = list(level = 4L))
   psi <- c(mu_pop = 2.0, setNames(log(0.3), s$om$cholPars))
   refresh <- attr(em, "rebuildQuadrature")(psi)
   expect_equal(dim(refresh$etaModes), c(length(s$subjects), 1L))
@@ -544,9 +540,7 @@ test_that("frozen-node invariance: em(pars1) and em(pars2) reuse the same nodes"
   on.exit(setwd(oldwd))
   s <- .build_quad_setup(3L)
 
-  em <- emObjfn(s$obj, s$om,
-                prdfn = s$prdfn, data = s$data,
-                method = "quadrature", control = list(level = 4L))
+  em <- emObjfn(s$obj, control = list(level = 4L))
   psi <- c(mu_pop = 2.0, setNames(log(0.3), s$om$cholPars))
   attr(em, "rebuildQuadrature")(psi)
   out_a <- em(c(mu_pop = 2.0))
@@ -567,9 +561,7 @@ test_that("quadrature gradient matches numDeriv on the one-eta prdfn", {
   on.exit(setwd(oldwd))
   s <- .build_quad_setup(4L)
 
-  em <- emObjfn(s$obj, s$om,
-                prdfn = s$prdfn, data = s$data,
-                method = "quadrature", control = list(level = 5L))
+  em <- emObjfn(s$obj, control = list(level = 5L))
   psi <- c(mu_pop = 2.0, setNames(log(0.3), s$om$cholPars))
   attr(em, "rebuildQuadrature")(psi)
 
@@ -578,3 +570,45 @@ test_that("quadrature gradient matches numDeriv on the one-eta prdfn", {
   gr_ana <- em(c(mu_pop = 2.1))$gradient["mu_pop"]
   expect_equal(unname(gr_ana), gr_num, tolerance = 1e-3)
 })
+
+
+# ---- M3: sparse-grid memoisation + weight-pruning ------------------------
+
+test_that("sparse-grid memoisation returns grids identical to a fresh build", {
+  a <- dMod:::.getSparseGrid(2L, 5L)
+  b <- dMod:::.getSparseGrid(2L, 5L)
+  expect_identical(a$zNodes, b$zNodes)
+  expect_identical(a$logAbsW, b$logAbsW)
+  raw <- dMod::sparseGridGH(2L, 5L)
+  expect_equal(a$zNodes, raw$nodes)
+  expect_equal(a$signs, sign(raw$weights))
+  expect_equal(a$z2Sum, rowSums(raw$nodes^2))
+})
+
+test_that("weight-pruning drops low-weight nodes and preserves the marginal", {
+  oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
+  s <- .build_quad_setup(9L)
+  psi  <- c(mu_pop = 2.0, setNames(log(0.3), s$om$cholPars))
+  pars <- c(mu_pop = 2.1)
+
+  em_full <- emObjfn(s$obj, control = list(level = 5L))
+  attr(em_full, "rebuildQuadrature")(psi)
+  v_full <- em_full(pars, deriv = FALSE)$value
+
+  em_pr <- emObjfn(s$obj, control = list(level = 5L, pruneTol = 35))
+  attr(em_pr, "rebuildQuadrature")(psi)
+  v_pr <- em_pr(pars, deriv = FALSE)$value
+
+  # Conservative pruning leaves the marginal essentially unchanged.
+  expect_equal(v_pr, v_full, tolerance = 1e-4)
+
+  # Pruning on a 2-D grid removes the low-weight tail; kept nodes are the
+  # top-weight ones. Tol chosen from the observed range to guarantee a drop.
+  full2 <- dMod:::makeSubjectNodes(c(a = 0, b = 0), diag(2), level = 5L)
+  tol   <- diff(range(full2$logAbsWeights)) / 2
+  pr2   <- dMod:::makeSubjectNodes(c(a = 0, b = 0), diag(2), level = 5L,
+                                   pruneTol = tol)
+  expect_lt(nrow(pr2$etaNodes), nrow(full2$etaNodes))
+  expect_true(all(pr2$logAbsWeights >= max(full2$logAbsWeights) - tol))
+})
+

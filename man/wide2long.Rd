@@ -25,10 +25,10 @@ wide2long(out, keep = 1, na.rm = FALSE)
 \value{
 A \code{data.frame} in long format with the following columns:
 \itemize{
-\item \code{"time"} — values from \code{out[, 1]}.
-\item \code{"name"} — column names from \code{out[, -1]}.
-\item \code{"value"} — corresponding numeric values.
-\item \code{"condition"} — if \code{out} was a list, contains the list names.
+\item \code{"time"} -- values from \code{out[, 1]}.
+\item \code{"name"} -- column names from \code{out[, -1]}.
+\item \code{"value"} -- corresponding numeric values.
+\item \code{"condition"} -- if \code{out} was a list, contains the list names.
 }
 }
 \description{

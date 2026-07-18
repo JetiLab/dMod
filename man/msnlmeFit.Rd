@@ -6,11 +6,7 @@
 \usage{
 msnlmeFit(
   obj,
-  omega,
   center,
-  prdfn = NULL,
-  data = NULL,
-  errfn = NULL,
   fixed = NULL,
   method = c("focei", "quadrature", "foceiQuadrature"),
   control = list(),
@@ -30,20 +26,13 @@ msnlmeFit(
 }
 \arguments{
 \item{obj}{An \code{objfn} passed straight to \code{\link[=nlmeFit]{nlmeFit()}} (typically
-\code{normL2(data, g*x*p) + constraintL2(mu = 0, Omega = om)}).}
-
-\item{omega}{An \link{omega} spec with subject expansion.}
+\code{normL2(data, g*x*p, errmodel = e) + constraintL2(mu = 0, Omega = om)}).
+The model pieces are recovered from it automatically.}
 
 \item{center}{Named numeric or \link{parframe}. If numeric, the population
 parameter vector around which random starts are sampled (structural pars
-plus \code{omega$cholPars}). If a parframe, each row is used as a fixed
-starting point and \code{fits} is overridden by \code{nrow(center)}.}
-
-\item{prdfn}{The prediction function \code{g * x * p} used to build \code{obj}.}
-
-\item{data}{The \link{datalist} used for \code{obj}.}
-
-\item{errfn}{Optional obsfn defining a parameter-dependent error model.}
+plus the omega Cholesky parameters). If a parframe, each row is used as a
+fixed starting point and \code{fits} is overridden by \code{nrow(center)}.}
 
 \item{fixed}{Optional named-numeric of fixed parameters.}
 

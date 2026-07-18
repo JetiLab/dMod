@@ -306,7 +306,7 @@ def _try_positive_direct_solve(SM, F, X, positive_syms=None):
     # structurally positive closed-form steady-state solution y = -In/Out
     # under positive_syms (None = all symbols positive). Returns
     # (row_idx, y, sol) or None. Used BEFORE cycle breaking to resolve the
-    # parts of the network that don't actually need an r_* helper — this
+    # parts of the network that don't actually need an r_* helper -- this
     # avoids leaking negative r_* contributions into downstream states whose
     # own ODE would otherwise have been positive by construction.
     for i in range(len(X)):
@@ -338,7 +338,7 @@ def _simplify_with_sqrt(expr):
     # Decompose a rational expression with at most one sqrt subterm into
     # (P + Q*sqrt(D))/R, factor each piece independently, and recombine.
     # SymPy's generic simplify/factor treats sqrt(.) as an opaque atom and
-    # therefore can't reduce expressions of this shape — it just leaves the
+    # therefore can't reduce expressions of this shape -- it just leaves the
     # numerator as a giant sum mixing rational and irrational monomials.
     # The decomposition below catches the structure the quadratic solver
     # actually produces and reliably compacts it.
@@ -615,7 +615,7 @@ def _side_type(flux_col_counts):
 
       1 = single flux on this side, appears only in this ODE (safe).
       2 = multiple fluxes on this side, each only in its own ODE (safe).
-      3 = otherwise — resolving this side may create new cycles.
+      3 = otherwise -- resolving this side may create new cycles.
       None = no fluxes on this side (caller marks dontUseThisSide=1).
     """
     if len(flux_col_counts) == 0:
@@ -648,7 +648,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
       - fluxLength         : number of fluxes on the chosen side
       - fluxParIDs, fluxPars: per-side flux indices and their flux parameters
       - dontUseThisSide    : 1 if any flux parameter is in `neglect` or the
-                             side has no flux — the side is unusable
+                             side has no flux -- the side is unusable
       - OccInCycles        : 1 if the state is in any simple cycle, else 0
       - NoCycleOccur       : number of simple cycles containing the state
       - OccInRhs           : number of OTHER ODE equations whose RHS
@@ -687,7 +687,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
 
     neglect_set = set(str(x) for x in neglect)
     # Flux parameters that were consumed by a direct-positive-solve earlier
-    # and therefore must not be reparameterized by cycle-breaking — doing so
+    # and therefore must not be reparameterized by cycle-breaking -- doing so
     # would create a self-referential substitution (the fp's new expression
     # is derived from an F already containing a state solution that itself
     # contains fp). See the "Direct positive-solve pass" block in Alyssa()
@@ -706,7 +706,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     for i in range(n):
         nm = X_names[i]
 
-        # CQ-type row: the state is in an active conservation law — we can
+        # CQ-type row: the state is in an active conservation law -- we can
         # drop its ODE entirely and recover the state via the CQ later.
         # Only emit when the state is actually in a cycle, otherwise we'd
         # eagerly consume LCLs that aren't blocking progress.
@@ -749,7 +749,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
             # sum over pivot-side flux columns of (col_count - 1), i.e.
             # the number of OTHER ODEs whose flux expressions get rewired
             # by this pivot's trafo. A zero-risk pivot (all col_counts==1)
-            # is either type 1 or type 2 — by construction it cannot
+            # is either type 1 or type 2 -- by construction it cannot
             # introduce sign conflicts downstream because each substituted
             # flux parameter only appears in the pivot's own ODE.
             prop_risk = sum(max(c - 1, 0) for c in fc_counts)
@@ -771,7 +771,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     # We insert two extra keys to preserve dMod's manifestly-positive
     # rational output contract, which Julia's pipeline does not need:
     #
-    #  (a) propagationRisk — sum of (col_count - 1) over the chosen
+    #  (a) propagationRisk -- sum of (col_count - 1) over the chosen
     #      side's flux columns, i.e. how many OTHER ODEs get rewired by
     #      the trafo. A zero-risk side is exactly type 1 or type 2, in
     #      which case every substituted flux parameter appears only in
@@ -779,7 +779,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     #      3 sides always have propagationRisk >= 1; among them we
     #      prefer the smallest risk.
     #
-    #  (b) rowop_penalty — a binary flag that demotes type-3 anz==1
+    #  (b) rowop_penalty -- a binary flag that demotes type-3 anz==1
     #      pivots. Those take the direct-solve + SM row-manipulation
     #      path, which INSERTS new flux terms (with inherited negative
     #      stoichiometry) into other ODEs. That is strictly worse than
@@ -1194,7 +1194,7 @@ def Alyssa(filename,
             PosRows=checkPosRows(SM)
         # Row-local checks exhausted. Try structural sink-cluster detection:
         # find a subset C of states with c^T*SM <= 0 (and strictly negative in
-        # some column) — the combined mass of C leaks monotonically, so every
+        # some column) -- the combined mass of C leaks monotonically, so every
         # state in C must be zero in steady state. Classic example: TGFb alone
         # looks OK (binding/dissociation balance) but {TGFb, R1_TGFb} is a
         # sink because the complex degrades.
@@ -1358,7 +1358,7 @@ def Alyssa(filename,
 #### Find conserved quantities
     # Computed before sparsification so we can protect CQ-involved state rows
     # during sparsification (see below). FindLCL consumes CMbig, built from
-    # the un-sparsified SM*F decomposition above — independent of sparsify.
+    # the un-sparsified SM*F decomposition above -- independent of sparsify.
     if(givenCQs==[]):
         print('\nFinding conserved quantities ...',flush=True)
         LCLs, rowsToDel=FindLCL(CMbig.transpose(), X)
@@ -1381,7 +1381,7 @@ def Alyssa(filename,
     # sparsifyLevel parameter is kept in the signature for R-side
     # backward-compatibility and is silently ignored.
     if sparsifyLevel != 0:
-        print('Note: sparsifyLevel='+str(sparsifyLevel)+' is ignored — sparsification '
+        print('Note: sparsifyLevel='+str(sparsifyLevel)+' is ignored -- sparsification '
               'was removed in favour of the priority-table cycle-breaking heuristic.',
               flush=True)
 #### Define graph structure
@@ -1397,7 +1397,7 @@ def Alyssa(filename,
 #### and both flux sides, sorts by (dontUseThisSide, OccInCycles desc, type,
 #### fluxLength, NoCycleOccur desc, OccInRhs), and resolves the top-ranked
 #### candidate. This replaces the old FindCycle+GetBestPair pair, which
-#### picked the best pair from the FIRST found cycle only — the global
+#### picked the best pair from the FIRST found cycle only -- the global
 #### ranking avoids locally-good-but-globally-poor choices and is also what
 #### makes the removal of the sparsify step tolerable (the table's `type`
 #### classification implicitly penalises sides whose resolution would create
@@ -1405,7 +1405,7 @@ def Alyssa(filename,
 #### stoichiometry).
     # Track flux parameters that must not be reparameterized by cycle
     # breaking (because an earlier direct-positive-solve already baked them
-    # into a state's final expression — reparameterizing them now would
+    # into a state's final expression -- reparameterizing them now would
     # create self-referential eqOut entries, see _try_positive_direct_solve).
     locked_fluxpars=set()
     fluxpar_str_to_sym={str(fp): fp for fp in fluxpars}
@@ -1447,7 +1447,7 @@ def Alyssa(filename,
         # Returns True if at least one state was solved this sweep.
         # See _try_positive_direct_solve for why back-substitution matters:
         # without it, sol would reference a state name that dMod's P() treats
-        # as its init-default parameter instead of the SS expression —
+        # as its init-default parameter instead of the SS expression --
         # producing initial conditions that are not actually at steady state.
         found=False
         while True:
@@ -1515,7 +1515,7 @@ def Alyssa(filename,
         isOutflux = row['isOutflux']
         anz      = row['fluxLength']
         # Map priority-row's side selection onto the (sign, signChanged)
-        # flags the existing type-2/3 bodies already consume — they branch
+        # flags the existing type-2/3 bodies already consume -- they branch
         # on `(sign=="minus") XOR signChanged`, so setting signChanged=False
         # and sign from isOutflux gives the body the right branch directly.
         sign = "minus" if isOutflux else ("plus" if isOutflux is not None else None)
@@ -1607,7 +1607,7 @@ def Alyssa(filename,
             print(f"         Does {nodes_str} participate in enough independent reactions?",flush=True)
             print(f"         A state needs both production and consumption to be solvable.",flush=True)
             # Extra note when the model has CQ-involved bilinear coupling that
-            # the sign-preserving sparsify protection cannot resolve — this is
+            # the sign-preserving sparsify protection cannot resolve -- this is
             # the failure mode of models like TGFb (pSmad2/pSmad3/Smad4 linked
             # by k_form*pSmad2*pSmad3*Smad4 → C3).
             cq_related = any(
@@ -1701,7 +1701,7 @@ def Alyssa(filename,
                 # Each substituted flux parameter on the chosen side becomes
                 # sum_opp * r_j / nenner (r_0=1, r_j for j>0). After the
                 # substitution, the RAW flux F[j] (i.e. flux/fp_j rescaled)
-                # equals sum_opp * r_j / (nenner * |SM[pivot,j]|) — the
+                # equals sum_opp * r_j / (nenner * |SM[pivot,j]|) -- the
                 # stoichiometric multiplier is absorbed by the prefactor.
                 # When we split the pivot-side column into len(opp_fps) new
                 # columns (one per opposite-side flux), each new raw flux
@@ -1775,7 +1775,7 @@ def Alyssa(filename,
     while(SSgraph!={}):
         node=FindNodeToSolve(SSgraph, SM, F, X)
         if node is None:
-            print('   WARNING: no solvable leaf left — aborting solve phase.',flush=True)
+            print('   WARNING: no solvable leaf left -- aborting solve phase.',flush=True)
             break
         xi=parse_expr(node)
         index=list(X).index(xi)
@@ -1786,12 +1786,12 @@ def Alyssa(filename,
             if SM[index,k]!=0:
                 expr=expr+SM[index,k]*F[k]
         # Direct linear solve: expr = In + Out*xi  =>  xi = -In/Out.
-        # No sympy.solve(), no simplify — cancel keeps the result compact.
+        # No sympy.solve(), no simplify -- cancel keeps the result compact.
         In=expr.subs(xi, 0)
         Out=expr.diff(xi)
         if cancel(Out)==0:
             # The ODE has collapsed into a 0=0 identity after upstream
-            # substitutions — typically because the state is constrained by
+            # substitutions -- typically because the state is constrained by
             # a conservation law whose other members have already been
             # resolved. Keep `xi` as a free parameter.
             sol=xi
@@ -1804,7 +1804,7 @@ def Alyssa(filename,
         SM.row_del(index)
         # Incremental graph update: sol contains only parameters and earlier-
         # solved symbols, never other unknown states, so the only change is
-        # that `node` is gone — both as a key and as a dependency.
+        # that `node` is gone -- both as a key and as a dependency.
         del SSgraph[node]
         for k in SSgraph:
             if node in SSgraph[k]:
@@ -1825,12 +1825,12 @@ def Alyssa(filename,
         _simplify_aborted=False
         for i in range(len(eqOut)):
             if _check_walltime():
-                # Budget exhausted — leave the remaining expressions in
+                # Budget exhausted -- leave the remaining expressions in
                 # their cancelled-but-not-simplified form. They're still
                 # correct (cancel() kept them in rational normal form),
                 # just bulkier than they could be.
                 print(f'   Walltime exceeded after simplifying {i}/{len(eqOut)} '
-                      f'expressions — leaving the rest un-simplified.',flush=True)
+                      f'expressions -- leaving the rest un-simplified.',flush=True)
                 _simplify_aborted=True
                 break
             ls, rs = eqOut[i].split(' = ', 1)

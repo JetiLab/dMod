@@ -465,7 +465,7 @@ List constraintL2_mvn_kernel(
 
   // Gather eta_mat as K x N: eta_mat[k, i] = allp[all_eta_names[i*K + k]]
   // (matches R's subjectEtas which is N x K but indexed with all_eta_names
-  // = as.vector(subjectEtas) — by column).
+  // = as.vector(subjectEtas) -- by column).
   std::vector<double> eta_mat((std::size_t) K * N, 0.0);
   bool all_present = true;
   for (int i = 0; i < N; ++i) {

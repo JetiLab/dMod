@@ -67,6 +67,7 @@ plotArray <- function (par, profs, prd, times, direction = c("up", "down"), covt
 }
 
 predict_array <- function (prd, times, pars = partable, whichpar = par, keep_names = NULL, FLAGverbose = FALSE, FLAGverbose2 = FALSE, FLAGbrowser = FALSE, ...) {
+  .require_ns("purrr", "predict_array()")
   if (FLAGverbose2) cat("Simulating", "\n")
   out <- lapply(1:nrow(pars), function(i) {
     if (FLAGverbose) cat("Parameter set", i, "\n")
@@ -281,8 +282,8 @@ PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = 
 #' }
 #' @export
 #' @import data.table
-#' @importFrom cowplot plot_grid
 plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) {
+  .require_ns("cowplot", "plotPathsMulti()")
   if(length(whichpars) == 1){
     p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars, normalizePaths = normalizePaths)
     return(p)
@@ -316,10 +317,10 @@ plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) 
 #' 
 #' @return A combined `ggplot` object containing the profiles and paths (no shared legend).
 #' 
-#' @importFrom cowplot align_plots plot_grid
 #' @export
 plotProfilesAndPaths <- function(profs, whichpars, npars = 5, ncols = 3, normalizePaths = FALSE, modes = c("data", "prior"), ...) {
-  
+  .require_ns("cowplot", "plotProfilesAndPaths()")
+
   # Save original obj.attributes before any subsetting drops them
   orig_oa <- attr(profs, "obj.attributes")
   filtered_oa <- if (!is.null(orig_oa)) intersect(orig_oa, modes) else NULL

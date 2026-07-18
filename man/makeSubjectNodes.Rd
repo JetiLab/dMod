@@ -4,7 +4,7 @@
 \alias{makeSubjectNodes}
 \title{Build per-subject quadrature nodes for adaptive NLME marginal integration}
 \usage{
-makeSubjectNodes(etaHat, Hi, level)
+makeSubjectNodes(etaHat, Hi, level, pruneTol = Inf)
 }
 \arguments{
 \item{etaHat}{Length-K numeric, posterior mode of the random effects.}
@@ -14,6 +14,13 @@ at \code{etaHat}.}
 
 \item{level}{Integer >= K, Smolyak depth. K+1 to K+3 is the useful range
 for typical NLME problems; higher levels exponentially raise node count.}
+
+\item{pruneTol}{Non-negative scalar (default \code{Inf}, i.e. no pruning). When
+finite, nodes whose augmented log-weight sits more than \code{pruneTol} below
+the per-subject maximum are dropped, cutting the per-node ODE work at a
+bounded (\code{exp(-pruneTol)}-order) relative cost in the marginal likelihood.
+Values of 25-40 remove negligible-weight nodes with no material accuracy
+loss; validate against the un-pruned value for a new model.}
 }
 \value{
 A list with components \code{etaNodes} (B x K matrix, batch-first),
@@ -35,5 +42,5 @@ as \verb{sum_b W_b * g(eta_b)} includes: the raw Smolyak-Gauss-Hermite weight
 physicists' GH rule. Combined: \verb{log W_b = (K/2)*log(2) - log|det L_H| + log|w_b_GH| + z_b' z_b}, with sign carried in \code{weightSigns}.
 }
 \seealso{
-\code{\link[=sparseGridGH]{sparseGridGH()}}.
+\code{\link[=sparseGridGH]{sparseGridGH()}}
 }

@@ -2,7 +2,7 @@
 #'
 #' Reads an SBML Level 3 file via a Python helper (`inst/code/sbmlImport.py`)
 #' that uses `python-libsbml`. The Python environment is provisioned
-#' automatically by `reticulate` on first use — no manual venv setup is
+#' automatically by `reticulate` on first use -- no manual venv setup is
 #' required. Users who want to point dMod at an existing interpreter
 #' (e.g. a hand-managed venv or conda env) can set the
 #' `DMOD_LIBSBML_PYTHON` environment variable to its absolute path; that
@@ -20,10 +20,11 @@
 #'
 #' @return list of eqnlist, parameters and inits
 #' @export
-#' @importFrom rjson fromJSON
 #' @importFrom stringr str_replace_all
 import_sbml <- function(modelpath) {
 
+  .require_ns("reticulate", "SBML import")
+  .require_ns("rjson", "SBML import")
   importscript <- system.file("code/sbmlImport.py", package = "dMod")
   tmpfile_json <- tempfile()
   modelpath <- normalizePath(modelpath, mustWork = TRUE)
@@ -54,8 +55,8 @@ import_sbml <- function(modelpath) {
 
   # libsbml L3 emits natural log as `ln(x)`, but both R's stats::D() and the
   # C math library expect `log(x)` for natural log. Apply this normalisation
-  # to every formula channel — rates, initial-value expressions, and
-  # AssignmentRule RHSs — at a single point. The leading boundary
+  # to every formula channel -- rates, initial-value expressions, and
+  # AssignmentRule RHSs -- at a single point. The leading boundary
   # `(^|[^A-Za-z0-9_.])` prevents matching `eln`, `arcln`, etc.
   .normalise_formula <- function(s) {
     if (length(s) == 0L) return(s)
@@ -75,7 +76,7 @@ import_sbml <- function(modelpath) {
   spc_json  <- json_content[["speciesCompartments"]]
   if (!is.null(comp_json) && length(comp_json) > 0L) {
     for (c in comp_json) {
-      # Compartments with size = 1 (and no rule) carry no symbolic content —
+      # Compartments with size = 1 (and no rule) carry no symbolic content --
       # storing them as the literal "1" keeps the compartment ID out of the
       # kinetic laws, which is what dMod's roundtrip expects when the source
       # eqnlist had volume "1". Otherwise use the SBML compartment ID as the
@@ -258,10 +259,11 @@ import_sbml <- function(modelpath) {
 #' @param modelID SBML model identifier. Defaults to `"dMod_export"`.
 #' @return `filepath`, invisibly.
 #' @export
-#' @importFrom rjson toJSON
 export_sbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
                          modelID = "dMod_export") {
 
+  .require_ns("reticulate", "SBML export")
+  .require_ns("rjson", "SBML export")
   stopifnot(is.eqnlist(eqnlist))
   if (is.null(eqnlist$compartments) || is.null(eqnlist$compartmentOf))
     stop("`eqnlist` must have populated compartments/compartmentOf. Use the updated constructor.")
@@ -296,12 +298,12 @@ export_sbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
   }
 
   # Each row of the stoichiometric matrix becomes one reaction. The kinetic
-  # law is `rate * V_home` — the α-bridge identity in the export direction.
+  # law is `rate * V_home` -- the α-bridge identity in the export direction.
   smatrix <- eqnlist$smatrix
   rxn_list <- lapply(seq_len(nrow(smatrix)), function(i) {
     row_i <- smatrix[i, ]
     # `which()` on a named vector preserves names, which would propagate
-    # through lapply() into a *named* list — rjson then serialises it as
+    # through lapply() into a *named* list -- rjson then serialises it as
     # a JSON object, breaking the array-of-dicts contract dmodToSbml.py
     # expects. unname() the indices.
     educt_idx <- unname(which(!is.na(row_i) & row_i < 0))

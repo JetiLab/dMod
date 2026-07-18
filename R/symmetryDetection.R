@@ -213,8 +213,8 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
                               symEngine = c("modular", "symbolic"),
                               verbose = getOption("dMod.sym.verbose", TRUE)) {
 
-  if (!requireNamespace("reticulate", quietly = TRUE))
-    stop("Package 'reticulate' is required for symmetryDetection().")
+  .require_ns("reticulate", "symmetryDetection()")
+  .require_ns("lpSolve", "symmetryDetection()")
   symEngine <- match.arg(symEngine)
   method <- match.arg(method)
   equilibrate <- isTRUE(equilibrate)

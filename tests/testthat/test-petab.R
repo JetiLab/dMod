@@ -52,7 +52,7 @@ test_that(".petab_parse_parameters splits estimated / fixed and tracks scales", 
 
   expect_equal(names(pm$pouter), c("a", "b"))
   # a (lin)   = 1.0
-  # b (log10) = log10(100) = 2  — pouter on parameter scale
+  # b (log10) = log10(100) = 2  -- pouter on parameter scale
   expect_equal(unname(pm$pouter), c(1.0, 2.0))
   expect_equal(names(pm$fixed),  c("c"))
   # c is fixed → stays on linear scale (no scale chain rule wraps it).
@@ -278,7 +278,7 @@ test_that("PEtab Stage-2 test cases 0007-0016 produce solution-matching llh", {
   if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
   if (!.libsbml_works())   skip("libsbml virtualenv not available")
 
-  # Cases 0007 (log10 trafo), 0008 (replicates), 0009/0010 (preequilibration —
+  # Cases 0007 (log10 trafo), 0008 (replicates), 0009/0010 (preequilibration --
   # numeric Pequil fallback is exercised because steadyStates() leaves one
   # state unresolved on the A↔B reaction), 0011-0013 (init / compartment /
   # parametric init overrides), 0014/0015 (numeric / symbolic noise parameter
@@ -349,7 +349,7 @@ test_that("two-condition roundtrip preserves objective value", {
 ## bundled 0001-0016 fixtures don't:
 ##   - log10 parameter scaling on 9 outer parameters,
 ##   - libsbml `<power/>` MathML (kinetic laws contain STAT5A^2 / STAT5B^2
-##     which the L2 formatter rendered as `pow(...)` — broke jacobianSymb),
+##     which the L2 formatter rendered as `pow(...)` -- broke jacobianSymb),
 ##   - <assignmentRule> for time-varying input BaF3_Epo,
 ##   - sub-condition splitting from per-observable noiseParameter symbols.
 ## At nominalValue (= the published optimum), -log L should reproduce the
@@ -455,7 +455,7 @@ test_that(".petab_strip_param_scale compensates the chain rule per-occurrence", 
     dMod:::.petab_strip_param_scale("K1 * K2 + offset",
       c(K1 = "log10", K2 = "log10", offset = "lin")),
     "log10(K1) * log10(K2) + offset")
-  # Pure numeric literal — passes through
+  # Pure numeric literal -- passes through
   expect_equal(
     dMod:::.petab_strip_param_scale("0", c()), "0")
 })
@@ -663,7 +663,7 @@ test_that("native exportPEtab roundtrips per-row sigma via noiseParameters colum
   p <- P(trafo, condition = "c1", compile = FALSE, modelname = "rt_sig_par")
   compile(g, x, p, cores = 1)
 
-  # Three measurements with three different sigmas — exercise the
+  # Three measurements with three different sigmas -- exercise the
   # noiseParameter1_<obsId> placeholder + per-row noiseParameters path.
   data <- as.datalist(data.frame(
     name = "obs_a", time = c(1, 2, 3),
@@ -707,7 +707,7 @@ test_that("native exportPEtab roundtrips compound trafos like 10^(KM + 5)", {
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
 
   # 1-state, 1-reaction with a non-trivial compound mapping for the rate:
-  #   k = 10^(K + 5) — chain-rule "compensation" path, not strippable.
+  #   k = 10^(K + 5) -- chain-rule "compensation" path, not strippable.
   reactions <- eqnlist() %>%
     addReaction("A", "B", rate = "k*A", description = "fwd")
   m <- odemodel(reactions, modelname = "rt3_ode", compile = FALSE,
@@ -1006,7 +1006,7 @@ test_that("exportPEtabObject v2 writes nominalValue verbatim (no parameterScale 
                          full.names = TRUE)
   par_df <- read.delim(par_path, stringsAsFactors = FALSE, na.strings = "")
   expect_false("parameterScale" %in% colnames(par_df))
-  # nominalValue equals the internal pouter (log10-scale) — i.e. NOT
+  # nominalValue equals the internal pouter (log10-scale) -- i.e. NOT
   # 10^pouter as the old linearised code emitted.
   est <- par_df[par_df$estimate == "true", , drop = FALSE]
   expect_equal(est$nominalValue,

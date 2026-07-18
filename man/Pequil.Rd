@@ -21,6 +21,7 @@ Pequil(
   verbose = FALSE,
   deriv = TRUE,
   deriv2 = FALSE,
+  outdir = getwd(),
   ...
 )
 }
@@ -67,6 +68,9 @@ the conservation manifold fixed by the totals.}
 
 \item{deriv, deriv2}{Attach first/second-order sensitivities; \code{deriv2}
 requires the model built with \code{deriv2 = TRUE}.}
+
+\item{outdir}{Directory for the generated source and shared object,
+default the working directory.}
 
 \item{...}{Forwarded to \link[CppODE:CppODE]{CppODE::CppODE}.}
 }
