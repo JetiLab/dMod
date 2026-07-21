@@ -80,12 +80,11 @@ certain combinations of the unknowns, and the remaining directions are
 free.
 
 dMod answers this through the `method` argument of `symmetryDetection()`,
-whose four settings fall into two families. One tests identifiability by a
+whose three settings fall into two families. One tests identifiability by a
 rank computation and names the unconstrained combinations
 (`"observability"`); the others return the explicit symmetry generators, in
-full generality (`"polynomial"`) or as the exact multiplicative and additive
-lattices that cover the bulk of practical cases (`"scaling"`,
-`"translation"`).
+full generality (`"polynomial"`) or as the exact multiplicative lattice that
+covers the bulk of practical cases (`"scaling"`).
 
 * `method = "observability"` (the default) builds the
   *observability-identifiability matrix* and reads off, from its rank,
@@ -105,9 +104,6 @@ lattices that cover the bulk of practical cases (`"scaling"`,
   monomial-exponent conditions. It is pure integer linear algebra and so
   scales to large models, but it sees only the scaling part of the
   symmetry algebra (Section \ref{sec-scaling}).
-* `method = "translation"` returns the additive (constant-shift) symmetries
-  $z_i \mapsto z_i + \varepsilon\, a_i$ exactly, the additive analogue of
-  `"scaling"`, from the same integer/finite-field linear algebra.
 
 Sections \ref{sec-sym} and \ref{sec-oim} develop the mathematics of the two
 methods from first principles, assuming only multivariable calculus.
@@ -685,7 +681,7 @@ reconstructed and falls back to its support.
 against an unlucky evaluation or a non-generic pivot pattern, every reconstructed
 direction is re-evaluated at a fifth prime, disjoint from the four used to build
 it, and checked against the null vector there. A direction that fails this check
-is reported by its support with `reconstruct = FALSE` rather than as a wrong
+is reported by its support with `explicit = FALSE` rather than as a wrong
 closed form, so the closed forms that are returned are certified.
 
 **Why primes: lifting $\mathrm{GF}(p)$ back to $\mathbb{Q}$.** Each sample of
@@ -746,7 +742,7 @@ recovers any coefficient with numerator and denominator up to about $2^{61}$.
 remaindering and the reconstruction, is exact integer or finite-field
 arithmetic; no floating-point number enters and no rounding threshold is
 chosen. A direction whose relevant set or whose minimal degree exceeds a cap
-is returned with its support and `reconstruct = FALSE` rather than a guess, so
+is returned with its support and `explicit = FALSE` rather than a guess, so
 the call never stalls on expression swell. Those caps, together with the
 saturation and gap-order bounds, are the fields of `reconstControl()`, passed as
 `symmetryDetection(..., control = reconstControl(...))`; raising them recovers
@@ -924,7 +920,7 @@ argument & meaning \\
 \texttt{f} & the right-hand sides: an \texttt{eqnlist}, an \texttt{eqnvec}, or a named character vector \\
 \texttt{g} & the observation functions, as an \texttt{eqnvec} or named character vector \\
 \texttt{trafo} & an optional parameter transformation (parameter-named entries) and initial conditions (state-named entries) \\
-\texttt{method} & \texttt{"observability"} (default), \texttt{"polynomial"}, \texttt{"scaling"} or \texttt{"translation"} \\
+\texttt{method} & \texttt{"observability"} (default), \texttt{"polynomial"} or \texttt{"scaling"} \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -1553,7 +1549,7 @@ generic points, not from a symbolic determining system, so `"observability"`
 also applies to networks with dozens of states and conserved moieties. There the
 closed-form reconstruction is attempted only for directions that couple few
 unknowns; one that couples too many is returned with its support and
-`reconstruct = FALSE`.
+`explicit = FALSE`.
 
 ## Two rates on a curve
 
@@ -1939,8 +1935,7 @@ calibration.
   conserved moieties are eliminated before the search, which reduces the
   number of variables.
 * *Reproducibility.* The observability point is chosen deterministically,
-  so repeated runs give the same verdict; a custom evaluation point can be
-  supplied through `point`.
+  so repeated runs give the same verdict.
 
 # References
 

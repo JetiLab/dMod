@@ -8,7 +8,7 @@ symmetryDetection(
   f = NULL,
   g = NULL,
   trafo = NULL,
-  method = c("observability", "polynomial", "scaling", "translation"),
+  method = c("observability", "polynomial", "scaling"),
   parameters = NULL,
   fixed = NULL,
   forcings = NULL,
@@ -41,8 +41,8 @@ that state's initial condition. A solved steady state from \link{steadyStates} c
 passed whole, and a per-condition list is the explicit route for per-condition
 steady states.}
 
-\item{method}{One of \code{"observability"} (default), \code{"polynomial"}, \code{"scaling"}
-or \code{"translation"}; see Description.}
+\item{method}{One of \code{"observability"} (default), \code{"polynomial"} or
+\code{"scaling"}; see Description.}
 
 \item{parameters}{Character vector of extra symbols to treat as parameters.}
 
@@ -146,10 +146,10 @@ no \code{equilibrate}, no event gaps, no closed-form reconstruction).}
 An object of class \code{symmetryDetection}, the same shape for every
 \code{method}, holding the \emph{verdict} at the top level and the \emph{how} under \verb{$info}:
 \describe{
-\item{\code{method}}{the engine that ran (\code{"observability"}, \code{"translation"},
-\code{"scaling"} or \code{"polynomial"}).}
-\item{\code{identifiable}}{\code{TRUE}/\code{FALSE} for \code{"observability"}/\code{"translation"}
-(a full-rank verdict); \code{NA} for \code{"scaling"}/\code{"polynomial"}, which search
+\item{\code{method}}{the engine that ran (\code{"observability"}, \code{"scaling"} or
+\code{"polynomial"}).}
+\item{\code{identifiable}}{\code{TRUE}/\code{FALSE} for \code{"observability"} (a full-rank
+verdict); \code{NA} for \code{"scaling"}/\code{"polynomial"}, which search
 non-exhaustively so "nothing found" is no proof of identifiability.}
 \item{\code{rank}, \code{dim}}{the observability-matrix rank and coordinate-space
 dimension (both \code{NA} for the scaling/polynomial engines).}
@@ -171,7 +171,7 @@ block, and \code{summary(x, verbose = TRUE)} the settings and guard detail.
 }
 \description{
 Detects structural non-identifiabilities of a reaction network and
-its observation map, via the Python module \code{symmetryDetectionVersion2}
+its observation map, via the Python module \code{symmetryDetection}
 (\code{reticulate}). The model \code{f}, observables \code{g} and optional \code{trafo} are given as
 equations (anything \link{as.eqnvec} accepts). The engine is chosen with \code{method}:
 \itemize{
@@ -183,8 +183,6 @@ power/Hill exponent (\code{base^exp}) is supported, recast internally.
 returning the explicit generator and finite transformation (grows with \code{pMax}).
 \item \code{"scaling"}: the scaling symmetries only, from the integer kernel of the
 monomial-exponent conditions (\code{equilibrate} does not apply).
-\item \code{"translation"}: the exact additive (constant-shift) symmetries, the additive
-analogue of \code{"scaling"}.
 }
 }
 \details{

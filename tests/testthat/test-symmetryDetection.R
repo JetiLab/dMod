@@ -1,7 +1,7 @@
 # Behavioral tests for symmetryDetection() (structural non-identifiabilities).
 #
 # symmetryDetection drives the self-contained Python module
-# symmetryDetectionVersion2 via reticulate. Engines:
+# symmetryDetection via reticulate. Engines:
 #   method = "observability"  -> observability-identifiability matrix (rank)
 #   method = "polynomial"      -> polynomial Lie-symmetry ansatz (generators)
 #   method = "scaling"        -> integer-kernel scaling symmetries
@@ -22,7 +22,7 @@
   code_dir <- system.file("code", package = "dMod")
   sysmod <- reticulate::import("sys", convert = TRUE)
   if (!(code_dir %in% sysmod$path)) sysmod$path <- c(code_dir, sysmod$path)
-  reticulate::import("symmetryDetectionVersion2", convert = TRUE)
+  reticulate::import("symmetryDetection", convert = TRUE)
 }
 
 
@@ -1474,30 +1474,6 @@ test_that("a pure constant shift is classified as a translation", {
   expect_equal(ab[[1]]$type, "translation")
   expect_true(.sym_expr_equal(ab[[1]]$generator[["A"]], "1"))
   expect_true(.sym_expr_equal(ab[[1]]$generator[["B"]], "-1"))
-})
-
-
-test_that("method = 'translation' peels the exact additive lattice", {
-  if (!.sympy_works()) skip("reticulate/sympy not available")
-
-  # the conserved moiety A + B and both rates are additively non-identifiable
-  # (the output A + B is constant): the translation engine peels all three
-  # constant directions directly, reconstruction-free
-  moi <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")
-  tr <- symmetryDetection(moi, eqnvec(y = "A + B"), method = "translation",
-                          reduceCQ = FALSE)
-  expect_equal(tr$method, "translation")
-  expect_length(tr$symmetries, 3L)
-  expect_true(all(vapply(tr$symmetries,
-                         function(d) isTRUE(d$type == "translation"), logical(1))))
-  supp <- lapply(tr$symmetries, function(d) d$support)
-  expect_true(any(vapply(supp, function(s) setequal(s, c("A", "B")), logical(1))))
-
-  # a pure scaling model has NO constant direction: its tangent w*z varies with the
-  # sample point and drops out of the intersection, so the lattice is empty
-  gene <- eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p")
-  tg <- symmetryDetection(gene, eqnvec(y = "p"), method = "translation")
-  expect_length(tg$symmetries, 0L)
 })
 
 

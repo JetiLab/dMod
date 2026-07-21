@@ -2,7 +2,7 @@
 #' Search for structural non-identifiabilities of a model
 #'
 #' @description Detects structural non-identifiabilities of a reaction network and
-#'   its observation map, via the Python module `symmetryDetectionVersion2`
+#'   its observation map, via the Python module `symmetryDetection`
 #'   (`reticulate`). The model `f`, observables `g` and optional `trafo` are given as
 #'   equations (anything [as.eqnvec] accepts). The engine is chosen with `method`:
 #'
@@ -14,8 +14,6 @@
 #'     returning the explicit generator and finite transformation (grows with `pMax`).
 #'   * `"scaling"`: the scaling symmetries only, from the integer kernel of the
 #'     monomial-exponent conditions (`equilibrate` does not apply).
-#'   * `"translation"`: the exact additive (constant-shift) symmetries, the additive
-#'     analogue of `"scaling"`.
 #'
 #' @param f The model right-hand sides: an [eqnlist], an [eqnvec], or a named
 #'   character vector keyed by state name (anything [as.eqnvec] accepts). With an
@@ -27,8 +25,8 @@
 #'   that state's initial condition. A solved steady state from [steadyStates] can be
 #'   passed whole, and a per-condition list is the explicit route for per-condition
 #'   steady states.
-#' @param method One of `"observability"` (default), `"polynomial"`, `"scaling"`
-#'   or `"translation"`; see Description.
+#' @param method One of `"observability"` (default), `"polynomial"` or
+#'   `"scaling"`; see Description.
 #' @param parameters Character vector of extra symbols to treat as parameters.
 #' @param forcings Character vector of externally driven (input) state names. For
 #'   `"observability"` a forcing is an integrated state (default initial value 0)
@@ -115,10 +113,10 @@
 #' @return An object of class `symmetryDetection`, the same shape for every
 #'   `method`, holding the *verdict* at the top level and the *how* under `$info`:
 #'   \describe{
-#'     \item{`method`}{the engine that ran (`"observability"`, `"translation"`,
-#'       `"scaling"` or `"polynomial"`).}
-#'     \item{`identifiable`}{`TRUE`/`FALSE` for `"observability"`/`"translation"`
-#'       (a full-rank verdict); `NA` for `"scaling"`/`"polynomial"`, which search
+#'     \item{`method`}{the engine that ran (`"observability"`, `"scaling"` or
+#'       `"polynomial"`).}
+#'     \item{`identifiable`}{`TRUE`/`FALSE` for `"observability"` (a full-rank
+#'       verdict); `NA` for `"scaling"`/`"polynomial"`, which search
 #'       non-exhaustively so "nothing found" is no proof of identifiability.}
 #'     \item{`rank`, `dim`}{the observability-matrix rank and coordinate-space
 #'       dimension (both `NA` for the scaling/polynomial engines).}
@@ -200,8 +198,7 @@
 #' }
 #' @export
 symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
-                              method = c("observability", "polynomial", "scaling",
-                                         "translation"),
+                              method = c("observability", "polynomial", "scaling"),
                               parameters = NULL, fixed = NULL, forcings = NULL,
                               events = NULL, conditions = NULL,
                               equilibrate = FALSE,
@@ -245,7 +242,6 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   supplied <- setdiff(names(match.call())[-1], "")
   applies <- switch(method,
     observability = c("events", "conditions", "equilibrate", "control"),
-    translation   = c("events", "conditions", "equilibrate", "control"),
     polynomial = "polynomial",
     scaling = c("scaling", "events", "conditions"))
   methodSpecific <- c("events", "conditions", "equilibrate",
@@ -269,19 +265,19 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
 
   # freeInitial names the moiety species that keep a free resting initial value (the
   # held pivot) under the held-variable parameterisation. It only applies to
-  # observability/translation with equilibrate = TRUE and reduceCQ = FALSE; elsewhere
-  # every species already carries a free initial (reduceCQ = FALSE, no equilibrate) or
-  # the moiety is reduced to a `total` (reduceCQ = TRUE), so it is warned and ignored.
+  # observability with equilibrate = TRUE and reduceCQ = FALSE; elsewhere every
+  # species already carries a free initial (reduceCQ = FALSE, no equilibrate) or the
+  # moiety is reduced to a `total` (reduceCQ = TRUE), so it is warned and ignored.
   freeInitial <- freeInitial %||% character(0)
   if (length(freeInitial)) {
     if (length(bad <- setdiff(freeInitial, states)))
       warning("symmetryDetection(): freeInitial names non-state(s) ",
               paste(bad, collapse = ", "), "; ignored.", call. = FALSE)
     freeInitial <- intersect(freeInitial, states)
-    if (length(freeInitial) && !(method %in% c("observability", "translation") &&
+    if (length(freeInitial) && !(method == "observability" &&
                                  equilibrate && !isTRUE(reduceCQ))) {
       warning("symmetryDetection(): freeInitial applies only to ",
-              "method = \"observability\"/\"translation\" with equilibrate = TRUE and ",
+              "method = \"observability\" with equilibrate = TRUE and ",
               "reduceCQ = FALSE (the held-variable moiety parameterisation); ignored.",
               call. = FALSE)
       freeInitial <- character(0)
@@ -406,7 +402,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   code_dir <- system.file("code", package = "dMod")
   sysmod <- reticulate::import("sys", convert = TRUE)
   if (!(code_dir %in% sysmod$path)) sysmod$path <- c(code_dir, sysmod$path)
-  sd <- reticulate::import("symmetryDetectionVersion2", convert = TRUE)
+  sd <- reticulate::import("symmetryDetection", convert = TRUE)
 
   # event times must be numeric (an event at a parameter time has no place in the
   # local Taylor jet at t0)
@@ -418,12 +414,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
            call. = FALSE)
   }
 
-  if (method %in% c("observability", "translation")) {
-    # method = "translation" is the observability engine restricted to the exact
-    # constant (additive) symmetry lattice: it peels the translation directions and
-    # returns only those (the additive analogue of method = "scaling"). It always
-    # uses the modular kernel (the peel needs it).
-    translationsOnly <- (method == "translation")
+  if (method == "observability") {
     # shared condition/event resolution -- both the symbolic and modular engines use
     # the same per-condition substitutions and initial conditions, so it is computed
     # once here (the modular path below reuses `res`, `spy`, `constStates`, ...).
@@ -487,7 +478,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
     # single-time events by stacking each condition's observability rows over one
     # shared coordinate space (the intersection of the per-condition codistributions);
     # later events (gaps) and equilibrate stay a modular feature.
-    if (symEngine == "symbolic" && !translationsOnly) {
+    if (symEngine == "symbolic") {
       if (isTRUE(equilibrate))
         stop("symEngine = \"symbolic\" does not support equilibrate; supply the ",
              "steady state explicitly through `trafo` (e.g. from steadyStates()), ",
@@ -545,7 +536,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
              equilZeroStates = equilZeroStates, t0events = res$events0,
              nConditions = res$nConditions, chainOf = res$chainOf,
              nGaps = res$nGaps, implicitSteadyState = isTRUE(ui), control = control,
-             verify = verify, translationsOnly = translationsOnly))
+             verify = verify))
     }
     ro <- runObs(useImplicit)
     if (useImplicit && !isFALSE(ro$ok) && is.null(ro$result))
@@ -566,16 +557,9 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
     if (is.list(res)) {
       res$nonIdentifiable <- .sym_relabel_directions(res$nonIdentifiable, sd,
         if (is.null(control$degreeCap)) 4L else control$degreeCap)
-      if (!translationsOnly && isTRUE(control$certifyPoly))
+      if (isTRUE(control$certifyPoly))
         res$nonIdentifiable <- .sym_certify_poly(res$nonIdentifiable,
           toLines(fdyn), toLines(gobs), forcings, fixed, parameters, control, sd)
-      if (translationsOnly) {
-        # keep only the translation class (the peel returns just these; a fallback
-        # full reconstruction may also carry other classes)
-        res$nonIdentifiable <- Filter(function(d) isTRUE(d$type == "translation"),
-                                      res$nonIdentifiable)
-        res$method <- "translation"
-      }
     }
     if (isTRUE(verify) && is.list(res) && is.list(res$verification) &&
         isFALSE(res$verification$ok))
@@ -583,7 +567,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
               "found the rank still growing past the reported Lie order -- the ",
               "directions may be over-reported; inspect $verification (",
               res$verification$reason, ").", call. = FALSE)
-    return(deliver(res, if (!is.null(res$method)) res$method else method))
+    return(deliver(res, method))
   }
 
   # scaling: exact integer-kernel engine. A known-value dose (replace/add) pins the
@@ -1925,110 +1909,6 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 }
 
 
-# Nullspace basis (columns) of an arbitrary GF(p) matrix M with nc columns.
-.sym_null_basis_of <- function(M, nc, p) {
-  rr <- .sym_rref_modp(M, p)
-  free <- setdiff(seq_len(nc) - 1L, rr$piv)
-  if (!length(free)) return(matrix(0L, nc, 0L))
-  vapply(free, function(fc) {
-    v <- integer(nc); v[fc + 1L] <- 1L
-    for (ri in seq_along(rr$piv))
-      v[rr$piv[ri] + 1L] <- as.integer((p - rr$R[ri, fc + 1L]) %% p)
-    v
-  }, integer(nc))
-}
-
-
-# RREF row-basis (rank x nz) of the intersection of the column spans of A and B
-# over GF(p), via the nullspace of [A | -B]: a combination (x, y) there gives a
-# vector A x = B y common to both spans. The canonical RREF makes the result
-# comparable across primes/points.
-.sym_intersect_rref <- function(A, B, nz, p) {
-  a <- ncol(A); b <- ncol(B)
-  if (a == 0L || b == 0L) return(matrix(0L, 0L, nz))
-  Am <- matrix(as.numeric(A) %% p, nz, a)
-  M <- cbind(Am, (p - matrix(as.numeric(B) %% p, nz, b)) %% p)   # [A | -B]
-  nb <- .sym_null_basis_of(M, a + b, p)
-  if (ncol(nb) == 0L) return(matrix(0L, 0L, nz))
-  X <- matrix(as.numeric(nb[seq_len(a), , drop = FALSE]), a)
-  inter <- .sym_mulmod_matmat(Am, X, p)                          # nz x k, = A x
-  rr <- .sym_rref_modp(t(inter), p)
-  rr$R[seq_len(rr$rank), , drop = FALSE]
-}
-
-
-# GF(p) matrix product A (m x k) %*% B (k x n), split-multiply to stay exact.
-.sym_mulmod_matmat <- function(A, B, p) {
-  m <- nrow(A); n <- ncol(B); k <- ncol(A)
-  out <- matrix(0, m, n)
-  for (j in seq_len(n)) {
-    acc <- numeric(m)
-    for (l in seq_len(k)) acc <- (acc + .sym_mulmod(A[, l], B[l, j], p)) %% p
-    out[, j] <- acc
-  }
-  out
-}
-
-
-# Exact translation lattice: the CONSTANT tangents that lie in the observability
-# nullspace at EVERY point. A translation z_i -> z_i + eps*a_i has a point-
-# independent tangent a, so it survives the intersection of the nullspaces over
-# several generic points; a scaling's tangent w*z varies with the point and drops
-# out. The surviving GF(p) subspace is the translation lattice; each basis vector's
-# constant components are lifted to exact rationals by single-prime rational
-# reconstruction. Reconstruction-free (no rational fit over the whole coordinate),
-# so the directions carry the same exactness as the scalings. Returns the
-# translation entries and the Bmat with their tangents appended (excluding them
-# from the residual reconstruction), or NULL if generic points could not be
-# gathered (caller then skips the peel -- no regression).
-.sym_peel_translations <- function(sc, kcall, freeCols, N, nz, P, ctrl, Bmat, znames) {
-  if (!ncol(N)) return(list(translations = list(), Bmat = Bmat))
-  npts <- if (is.null(ctrl$translPoints)) 3L else as.integer(ctrl$translPoints)
-  C <- N
-  nL <- length(sc$point0)
-  base <- sc$poolNext + 4096L                    # clear of the reconstruction probes
-  for (t in seq_len(npts)) {
-    if (!ncol(C)) break
-    cand <- NULL
-    for (att in seq_len(ctrl$probeRetries)) {
-      off <- base + ((t - 1L) * ctrl$probeRetries + (att - 1L)) * (nL + 1L)
-      pert <- sc$point0
-      for (li in seq_len(nL)) pert[li] <- sc$pool(off + li)
-      cnd <- tryCatch(kcall(pert, P, sc$NtUsed), error = function(e) NULL)
-      if (!is.null(cnd) && isTRUE(cnd$ok) &&
-          identical(as.integer(cnd$pivots), as.integer(sc$pivots))) { cand <- cnd; break }
-    }
-    if (is.null(cand)) return(NULL)              # graceful skip: no regression
-    Nk <- .sym_nullspace_basis(cand, freeCols, P)
-    rows <- .sym_intersect_rref(C, Nk, nz, P)
-    C <- if (nrow(rows)) t(rows) else matrix(0L, nz, 0L)
-  }
-  if (!ncol(C)) return(list(translations = list(), Bmat = Bmat))
-  latt <- .sym_rref_modp(t(C), P)                # canonical RREF row-basis mod P
-  rows <- latt$R[seq_len(latt$rank), , drop = FALSE]
-  translations <- list()
-  for (r in seq_len(nrow(rows))) {
-    tang <- as.integer(rows[r, ] %% P)
-    if (all(tang == 0) || .sym_in_span(Bmat, tang, nz, P)) next
-    rec <- tryCatch(symRatRecon(matrix(tang, ncol = 1L), as.integer(P)),
-                    error = function(e) NULL)
-    if (is.null(rec) || any(rec$den == "0")) next
-    num <- rec$num; den <- rec$den
-    comps <- list()
-    for (i in seq_len(nz)) {
-      if (num[i] == "0") next
-      comps[[znames[i]]] <- if (den[i] == "1") num[i] else paste0(num[i], "/", den[i])
-    }
-    if (!length(comps)) next
-    Bmat <- cbind(Bmat, tang)
-    translations[[length(translations) + 1L]] <- list(
-      support = sort(names(comps)), vector = comps,
-      type = "translation", closedForm = TRUE)
-  }
-  list(translations = translations, Bmat = Bmat)
-}
-
-
 # Classify one closed-form direction into {scaling, translation, affine,
 # polynomial, general} on its canonical poly-primitive generator, via the Python
 # classifier. A generator is defined only up to a nonzero function h(z); the
@@ -2239,7 +2119,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       # stash the engine handle in the worker process' options (persists across
       # parLapply tasks on the same PSOCK node) rather than its global env
       options(dMod.sym.worker_sd =
-                reticulate::import("symmetryDetectionVersion2", convert = TRUE))
+                reticulate::import("symmetryDetection", convert = TRUE))
       TRUE
     }, error = function(e) conditionMessage(e))
   }
@@ -2273,8 +2153,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
                                           t0events = list(), nConditions = NULL,
                                           chainOf = NULL, nGaps = 0L,
                                           implicitSteadyState = FALSE,
-                                          control = reconstControl(), verify = FALSE,
-                                          translationsOnly = FALSE) {
+                                          control = reconstControl(), verify = FALSE) {
   ctrl <- control
   jointSS <- isTRUE(multi$jointSteadyState) && isTRUE(implicitSteadyState)
   # `cores` drives two NESTED parallelism axes without oversubscribing: the coarse
@@ -3004,27 +2883,9 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     }
   }
 
-  scalCols <- ncol(Bmat)          # scaling tangents only (fixed before translations)
+  scalCols <- ncol(Bmat)          # scaling tangents (fixed before the residual fit)
 
-  # exact translation lattice for method = "translation": the constant (additive)
-  # directions, extracted before reconstruction. Their tangents join Bmat so the
-  # residual reconstruction skips them, like the scalings. A graceful skip (NULL,
-  # e.g. no generic point on a coupled steady state) falls back to the ordinary
-  # reconstruction, which still finds them.
-  translations <- list()
-  if (translationsOnly) {
-    tp <- tryCatch(.sym_peel_translations(sc, kcall, freeCols, N, nz, P, ctrl, Bmat,
-                                          znames),
-                   error = function(e) NULL)
-    if (!is.null(tp)) {
-      translations <- tp$translations; Bmat <- tp$Bmat
-      # method = "translation": return only the exact lattice, no rational fit of
-      # the residual (general) directions
-      if (translationsOnly) { result$nonIdentifiable <- translations; return(result) }
-    }
-  }
-
-  # free directions not spanned by the scalings/translations are the residual ones
+  # free directions not spanned by the scalings are the residual ones
   residualFree <- integer(0)
   for (fc in freeCols) {
     bf <- .sym_null_residues(sc$ref, fc, P)
@@ -3343,13 +3204,13 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     .tlog(sprintf("reconstruction done: %d/%d closed",
                   sum(vapply(interp, function(e) isTRUE(e$closedForm), logical(1))),
                   length(interp)))
-    result$nonIdentifiable <- c(scaling, translations, peeled, interp)
+    result$nonIdentifiable <- c(scaling, peeled, interp)
   } else {
     support <- lapply(residualFree, function(fc) {
       v <- .sym_null_residues(sc$ref, fc, P)
       list(support = sort(znames[v != 0]), type = "general", closedForm = FALSE)
     })
-    result$nonIdentifiable <- c(scaling, translations, support)
+    result$nonIdentifiable <- c(scaling, support)
   }
   # joint mode: drop directions supported only on the auxiliary recast / state
   # coordinates with no physical-parameter content (e.g. the trivial log-coordinate
@@ -4616,7 +4477,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # the grouped generators. This is all print() shows -- summary() prints the header
 # and computation block above it.
 .sym_cat_result <- function(object, verbose = FALSE) {
-  m <- object$method; isObs <- m %in% c("observability", "translation")
+  m <- object$method; isObs <- m == "observability"
   n <- length(object$symmetries)
   if (isObs && isTRUE(object$identifiable)) {
     cat(sprintf("Result:  structurally locally identifiable (rank %d / %d)\n",
@@ -4624,10 +4485,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     return(invisible())
   }
   if (isObs) {
-    dirs <- if (m == "translation") .sym_plural(n, "translation direction", "translation directions")
-            else .sym_plural(n, "non-identifiable direction", "non-identifiable directions")
-    pre <- if (m == "translation") "translation lattice, " else ""
-    cat(sprintf("Result:  %srank %d / %d  --  %s\n\n", pre, object$rank, object$dim, dirs))
+    dirs <- .sym_plural(n, "non-identifiable direction", "non-identifiable directions")
+    cat(sprintf("Result:  rank %d / %d  --  %s\n\n", object$rank, object$dim, dirs))
   } else if (m == "scaling") {
     cat(sprintf("Result:  %s (exact integer kernel)\n\n",
                 .sym_plural(n, "scaling symmetry", "scaling symmetries")))
@@ -4682,11 +4541,11 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # Assemble the class-"symmetryDetection" object every engine return funnels
 # through. Top level carries only the verdict (method / identifiable / rank /
 # dim / symmetries); everything about *how* it was computed lives in $info.
-# `identifiable` is a real rank verdict only for observability/translation; the
-# scaling and polynomial engines are non-exhaustive (they find only scalings, or
-# only generators up to pMax), so there "nothing found" is no proof -> NA.
+# `identifiable` is a real rank verdict only for observability; the scaling and
+# polynomial engines are non-exhaustive (they find only scalings, or only
+# generators up to pMax), so there "nothing found" is no proof -> NA.
 .sym_finalize <- function(raw, method, settings, call, elapsed = NA_real_) {
-  isObs   <- method %in% c("observability", "translation")
+  isObs   <- method == "observability"
   rawSyms <- if (isObs || method == "scaling") raw$nonIdentifiable else raw
   if (is.null(rawSyms)) rawSyms <- list()
   syms    <- lapply(rawSyms, .sym_public_symmetry)
@@ -4724,7 +4583,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # a compact "k=v" join of the settings relevant to `method` (more when verbose)
 .sym_settings_line <- function(s, method, verbose) {
   keys <- switch(method,
-    observability = , translation =
+    observability =
       if (verbose) c("reduceCQ", "equilibrate", "reconstruct", "verify",
                      "symEngine", "certifyPoly", "degreeCap")
       else c("reduceCQ", "equilibrate", "reconstruct"),
@@ -4759,7 +4618,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   m    <- object$method
   info <- object$info
   s    <- info$settings
-  isObs <- m %in% c("observability", "translation")
+  isObs <- m == "observability"
   bar  <- strrep("-", 60)
 
   engLabel <- switch(as.character(info$engine),
