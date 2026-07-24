@@ -81,20 +81,20 @@ prd <- g * x * p
 compile(prd, e, cores = 4)
 
 ## 4. Marginal likelihood. normL2() and constraintL2() stamp the model pieces
-## onto the objective, so nlmeFit() recovers prd, dlist, e and om from `obj`
+## onto the objective, so EM() recovers prd, dlist, e and om from `obj`
 ## and they are never passed again.
 om  <- omega(eta = c("eta_Ka", "eta_V", "eta_Cl"), subjects = subjects)
 obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
          constraintL2(mu = 0, Omega = om)
 
-## nlmeInit() fills in the omega Cholesky entries (here sd = 0.3 on each
+## emInit() fills in the omega Cholesky entries (here sd = 0.3 on each
 ## diagonal) around the named structural starting values.
-init <- nlmeInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
+init <- emInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
                  om, sd = 0.3)
 
 ## 5. Fit. FOCEI is the default and the right starting point for exploratory
 ## work: Laplace E-step plus an exact d log|H_i| / d theta correction.
-fit <- nlmeFit(obj, init, method = "focei")
+fit <- EM(obj, init, method = "focei")
 
 ## Population estimates with SE and RSE%, Omega SDs and correlations, and eta
 ## shrinkage. coef(), vcov() and confint() (Wald) are also available.
@@ -119,22 +119,22 @@ plotHistIndivs(fit)   # eta histograms with QQ line vs N(0, Omega_kk)
 ## Sparse-grid Gauss-Hermite refinement, warm-started from FOCEI. Use it as a
 ## confirmatory step once the model structure is settled: it removes the
 ## Laplace bias in Omega, at a cost that grows with the number of etas.
-fit_quad <- nlmeFit(obj, init, method = "foceiQuadrature")
+fit_quad <- EM(obj, init, method = "foceiQuadrature")
 plotTrace(fit_quad)   # per-stage ECM convergence
 
 ## Deterministic EM at the Laplace level: the closed-form Omega update keeps
 ## the H_i^-1 posterior-variance term that ITS drops.
-fit_em <- nlmeFit(obj, init, method = "laplaceEM",
+fit_em <- EM(obj, init, method = "laplaceEM",
                   control = list(quadrature = list(maxEcm = 200L)))
 
 ## Stochastic approximation EM. MCMC E-step, so no Gaussian assumption on the
 ## posterior and a cost per iteration that does not grow with the number of
 ## etas. Preferred for high-dimensional or strongly nonlinear problems.
-fit_saem <- nlmeFit(obj, init, method = "saem",
+fit_saem <- EM(obj, init, method = "saem",
                     control = list(saem = list(nBurnin = 200L, nEM = 200L)))
 
 ## Multi-start from a perturbed center, to check for local optima.
-fit_ms <- msnlmeFit(obj, center = init, method = "focei",
+fit_ms <- msEM(obj, center = init, method = "focei",
                     fits = 8, sd = 0.5, cores = 4)
 
 }

@@ -28,7 +28,7 @@ is freed.}
 \item{subjects}{Optional character vector of subject identifiers. When given,
 the per-subject random-effect parameter names are constructed as
 \code{paste0(eta[k], "_", subjects[i])} and stored in \code{subjectEtas}. Required
-when the spec is fed into \code{\link[=nlmeFit]{nlmeFit()}} / \code{\link[=mcmc]{mcmc()}}; optional standalone.}
+when the spec is fed into \link{EM} / \code{\link[=mcmc]{mcmc()}}; optional standalone.}
 
 \item{prefix}{Character string used as a name stem for Cholesky parameters.
 Default \code{"omega"}. With \code{eta = c("eta_Cl", "eta_V")} this yields
@@ -57,7 +57,7 @@ given a named numeric vector containing at least \code{cholPars}.}
 Builds an \code{omegaSpec} object describing a Cholesky-parametrised random-effect
 covariance matrix \verb{Omega = L L^T}, with \code{L} lower-triangular, log-diagonal,
 and arbitrary sparsity below the diagonal. The result is consumed by
-\link{constraintL2} (when its \code{Omega} argument is set) and by \link{nlmeFit}.
+\link{constraintL2} (when its \code{Omega} argument is set) and by \link{EM}.
 }
 \details{
 The Cholesky diagonal is on the log scale (enforces positive definiteness
@@ -76,5 +76,5 @@ om2$cholPars
 
 }
 \seealso{
-\link{constraintL2}, \link{nlmeFit}
+\link{constraintL2}, \link{EM}
 }

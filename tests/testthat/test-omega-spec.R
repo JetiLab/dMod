@@ -1,4 +1,4 @@
-context("omega() helper for FOCEI")
+## Context: "omega() helper for FOCEI"  (context() is deprecated in testthat 3e; kept as a note)
 
 
 test_that("diagonal omega returns K Cholesky parameters", {
@@ -84,11 +84,11 @@ test_that("correlate with unknown eta name fails clearly", {
 })
 
 
-test_that("parnames.omegaSpec returns correct subsets", {
+test_that("parnames.omegaspec returns correct subsets", {
   om <- omega(eta = c("eta_Cl", "eta_V"), subjects = c("s1", "s2"))
-  all_names  <- parnames.omegaSpec(om, "all")
-  eta_names  <- parnames.omegaSpec(om, "eta")
-  chol_names <- parnames.omegaSpec(om, "chol")
+  all_names  <- parnames.omegaspec(om, "all")
+  eta_names  <- parnames.omegaspec(om, "eta")
+  chol_names <- parnames.omegaspec(om, "chol")
   expect_equal(length(eta_names),  4L)
   expect_equal(length(chol_names), 2L)
   expect_equal(length(all_names),  6L)

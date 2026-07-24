@@ -99,7 +99,7 @@ initialisation, including the first. Default \code{10L}.}
 \item{...}{Additional arguments forwarded as dots into the objfn.}
 }
 \value{
-An object of class \code{c("mcmcResult", ...)}, subclassed to
+An object of class \code{c("mcmcresult", ...)}, subclassed to
 \code{mcmcResultSingle}, \code{mcmcResultSequential} (carries \code{logEvidence},
 \code{betaPath}, \code{ESSPath}, \code{acceptRates}, \code{stepsizePath}, \code{nLevels}),
 \code{mcmcResultBlocked} (adds \code{etaSamples}, \code{acceptOuter}, \code{acceptEta}),

@@ -8,7 +8,13 @@ Authors@R: c(
            role = c("aut", "cre")),
     person("Daniel", "Kaschek", email = "daniel.kaschek@gmail.com",
            role = c("aut", "cph"),
-           comment = "Created dMod 1.0; original design, philosophy"))
+           comment = "Created dMod 1.0; original design, philosophy"),
+    person("Wolfgang", "Mader", role = "ctb"),
+    person("Malenka", "Mader", role = "ctb"),
+    person("Svenja", "Kemmer", role = "ctb"),
+    person("Mirjam", "Fehling-Kaschek", role = "ctb"),
+    person("Marcus", "Rosenblatt", role = "ctb"),
+    person("Severin", "Bang", role = "ctb"))
 Description: Tools for dynamic modeling and parameter estimation in ordinary
     differential equation (ODE) models of reaction networks. Models are built
     symbolically and compiled to C/C++ with first- and second-order
@@ -52,7 +58,6 @@ Suggests:
     numDeriv,
     withr,
     deSolve,
-    JuliaCall,
     openxlsx,
     Polychrome,
     reticulate,
@@ -69,4 +74,5 @@ Roxygen: list(markdown = TRUE)
 LinkingTo: 
     Rcpp
 Config/roxygen2/version: 8.0.0
+Config/testthat/edition: 3
 Config/testthat/parallel: true

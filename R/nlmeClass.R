@@ -11,7 +11,7 @@
 #' Builds an `omegaSpec` object describing a Cholesky-parametrised random-effect
 #' covariance matrix `Omega = L L^T`, with `L` lower-triangular, log-diagonal,
 #' and arbitrary sparsity below the diagonal. The result is consumed by
-#' [constraintL2] (when its `Omega` argument is set) and by [nlmeFit].
+#' [constraintL2] (when its `Omega` argument is set) and by [EM].
 #'
 #' @param eta Character vector of base eta names, one per random effect, e.g.
 #'   `c("eta_Cl", "eta_V", "eta_Ka")`. Determines the dimension `K`.
@@ -25,7 +25,7 @@
 #' @param subjects Optional character vector of subject identifiers. When given,
 #'   the per-subject random-effect parameter names are constructed as
 #'   `paste0(eta[k], "_", subjects[i])` and stored in `subjectEtas`. Required
-#'   when the spec is fed into [nlmeFit()] / [mcmc()]; optional standalone.
+#'   when the spec is fed into [EM] / [mcmc()]; optional standalone.
 #' @param prefix Character string used as a name stem for Cholesky parameters.
 #'   Default `"omega"`. With `eta = c("eta_Cl", "eta_V")` this yields
 #'   `omega_Cl_Cl`, `omega_V_V`, `omega_V_Cl`.
@@ -63,7 +63,7 @@
 #' om2$subjectEtas
 #' om2$cholPars
 #'
-#' @seealso [constraintL2], [nlmeFit]
+#' @seealso [constraintL2], [EM]
 #' @export
 omega <- function(eta,
                   structure = c("diag", "full"),
@@ -157,7 +157,7 @@ omega <- function(eta,
     buildL      = build_L,
     prefix      = prefix
   )
-  class(out) <- c("omegaSpec", "list")
+  class(out) <- c("omegaspec", "list")
   out
 }
 
@@ -168,7 +168,7 @@ omega <- function(eta,
 #' @param x An `omegaSpec` object.
 #' @param ... Ignored.
 #' @export
-print.omegaSpec <- function(x, ...) {
+print.omegaspec <- function(x, ...) {
   cat("omega\n")
   cat(sprintf("  K           : %d\n", x$K))
   cat(sprintf("  eta         : %s\n", paste(x$eta, collapse = ", ")))
@@ -182,7 +182,7 @@ print.omegaSpec <- function(x, ...) {
     cat(sprintf("  subjectEtas : %d unique random-effect parameters\n",
                 length(unique(as.vector(x$subjectEtas)))))
   } else {
-    cat("  subjects    : none (call omega(..., subjects = ...) before nlmeFit)\n")
+    cat("  subjects    : none (call omega(..., subjects = ...) before .fitNormal)\n")
   }
   invisible(x)
 }
@@ -194,7 +194,7 @@ print.omegaSpec <- function(x, ...) {
 #' @description
 #' Given a list of per-subject posterior second moments
 #' `MHat_i = Ehat[eta_i %*% t(eta_i) | y_i]` (the output of the ECM E-step
-#' implemented in [ecmEvaluateSubject]), returns the cholPars vector that
+#' implemented in `.normalEcmSubject`), returns the cholPars vector that
 #' maximises the EM Q-function
 #' \deqn{Q(\Omega) = -\frac{1}{2} N \, (\log|\Omega| + \mathrm{tr}(\Omega^{-1} S)),
 #'   \quad S = \frac{1}{N}\sum_i \hat M_i,}
@@ -209,10 +209,10 @@ print.omegaSpec <- function(x, ...) {
 #' @param omega An [omega] spec object.
 #' @return Named numeric vector matching `omega$cholPars` (log-diagonal
 #'   on diagonals, free real on off-diagonals).
-#' @seealso [omega], [ecmEvaluateSubject]
+#' @seealso [omega]
 #' @export
 updateOmegaChol <- function(MHatList, omega) {
-  if (!inherits(omega, "omegaSpec"))
+  if (!inherits(omega, "omegaspec"))
     stop("`omega` must be an omegaSpec object (built by omega()).")
   K <- omega$K
   N <- length(MHatList)
@@ -311,7 +311,7 @@ updateOmegaChol <- function(MHatList, omega) {
 #' Parameter names of an object
 #'
 #' Generic for extracting the parameter names carried by an object. See
-#' [parnames.omegaSpec] for the random-effects spec method.
+#' [parnames.omegaspec] for the random-effects spec method.
 #'
 #' @param x An object.
 #' @param ... Passed to methods.
@@ -324,7 +324,7 @@ parnames <- function(x, ...) UseMethod("parnames")
 #' @description
 #' Returns the union of `cholPars` and all subject-level eta names in a single
 #' character vector. Useful for constructing initial parameter vectors and for
-#' partitioning the outer/inner parameter space in [nlmeFit].
+#' partitioning the outer/inner parameter space in [EM].
 #'
 #' @param x An `omegaSpec` object.
 #' @param what One of `"all"` (default, both eta and Cholesky parameters),
@@ -333,7 +333,7 @@ parnames <- function(x, ...) UseMethod("parnames")
 #' @param ... Ignored.
 #' @return Character vector of parameter names.
 #' @export
-parnames.omegaSpec <- function(x, what = c("all", "eta", "chol"), ...) {
+parnames.omegaspec <- function(x, what = c("all", "eta", "chol"), ...) {
   what <- match.arg(what)
   eta_names <- if (is.null(x$subjectEtas)) character(0) else as.vector(x$subjectEtas)
   switch(what,
@@ -423,7 +423,7 @@ makeSubjectNodes <- function(etaHat, Hi, level, pruneTol = Inf) {
   # times the (mode-dominated) integrand peak, so nodes whose log-weight sits
   # `pruneTol` below the per-subject maximum contribute at most exp(-pruneTol)
   # of the peak and can be dropped with bounded relative error. This directly
-  # shrinks the per-node ODE work in ecmEvaluateSubject.
+  # shrinks the per-node ODE work in .normalEcmSubject.
   if (is.finite(pruneTol)) {
     keep <- log_abs >= (max(log_abs) - pruneTol)
     if (!all(keep)) {

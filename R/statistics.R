@@ -1,6 +1,6 @@
 #' Profile-likelihood (PL) computation
 #' 
-#' @param obj Objective function \code{obj(pars, fixed, ...)} returning a list with "value",
+#' @param objfun Objective function \code{objfun(pars, fixed, ...)} returning a list with "value",
 #' "gradient" and "hessian". If attribute "valueData" and/or "valuePrior are returned they are attached to the return value.
 #' @param pars Parameter vector corresponding to the log-liklihood optimum.
 #' @param whichPar Numeric or character vector. The parameters for which the profile is computed.
@@ -22,7 +22,8 @@
 #' (its `cores` argument); keep the product below your core count.
 #' @param cautiousMode Logical, write every step to disk and don't delete intermediate results
 #' @param side either, "left", "right" or "both": determines the side of the profile which is calculated (usefeull for parallelization). default is "both"
-#' @param ... Arguments going to obj()
+#' @param ... Arguments going to objfun()
+#' @param obj Deprecated, use `objfun`. Only honored when spelled out in full.
 #' @details Computation of the profile likelihood is based on the method of Lagrangian multipliers
 #' and Euler integration of the corresponding differential equation of the profile likelihood paths.
 #' 
@@ -47,10 +48,10 @@
 #' @return Named list of length one. The name is the parameter name. The list enty is a
 #' matrix with columns "value" (the objective value), "constraint" (deviation of the profiled paramter from
 #' the original value), "stepsize" (the stepsize take for the iteration), "gamma" (the gamma value employed for the
-#' iteration), "valueData" and "valuePrior" (if specified in obj), one column per parameter (the profile paths).
+#' iteration), "valueData" and "valuePrior" (if specified in objfun), one column per parameter (the profile paths).
 #' @example inst/examples/profiles.R
 #' @export
-profile <- function(obj, pars, whichPar, alpha = 0.05, 
+profile <- function(objfun, pars, whichPar, alpha = 0.05, 
                     limits = c(lower = -Inf, upper = Inf), 
                     method = c("integrate", "optimize"),
                     stepControl = NULL, 
@@ -60,10 +61,19 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                     cores = 1,
                     cautiousMode = FALSE,
                     side = c("both", "left", "right"),
-                    ...) {
-  # Ensure that obj is defined in this environment such that it is copied to the parallel workers
-  force(obj)
-  
+                    ...,
+                    obj) {
+  # `obj` sits behind `...` on purpose: R disables partial matching there, so
+  # it is only ever hit by an explicit, fully spelled obj = ... call.
+  if (!missing(obj)) {
+    .Deprecated(msg = paste0("profile(): argument 'obj' is deprecated, ",
+                             "use 'objfun' instead."))
+    if (missing(objfun)) objfun <- obj
+  }
+
+  # Ensure that objfun is defined in this environment such that it is copied to the parallel workers
+  force(objfun)
+
   # Guarantee that pars is named numeric without deriv attribute
   dotArgs <- list(...)
   sanePars <- sanitizePars(pars, dotArgs$fixed)
@@ -89,7 +99,7 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
   
   # Check if on Windows
   cores <- min(length(whichPar), cores)
-  cores <- sanitizeCores(cores)
+  cores <- .sanitizeCores(cores)
   
   # Substitute user-set control parameters
   if (!is.null(stepControl)) sControl[match(names(stepControl), names(sControl))] <- stepControl
@@ -116,7 +126,7 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
       
       varlist <- ls()
       # Exclude things like "missing argument"
-      varlist <- c("obj", "whichPar", "alpha", "limits", "method", "verbose", "cores",
+      varlist <- c("objfun", "whichPar", "alpha", "limits", "method", "verbose", "cores",
                    "pars", "fixed", "dotArgs",
                    "sControl", "aControl", "oControl")
       parallel::clusterExport(cluster, envir = environment(), varlist = varlist)
@@ -146,7 +156,7 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                           .inorder = TRUE,
                           .options.multicore = list(preschedule = FALSE)) %mydo% {
                             
-                            loadDLL(obj)
+                            loadDLL(objfun)
                             
                             
                             whichPar.name <- names(pars)[whichIndex]
@@ -154,9 +164,9 @@ profile <- function(obj, pars, whichPar, alpha = 0.05,
                             
                             
                             ## Functions needed during profile computation -----------------------
-                            obj.opt <- obj
+                            obj.opt <- objfun
                             obj.prof <- function(p, ...) {
-                              out <- obj(p, ...)
+                              out <- objfun(p, ...)
                               # If "identity", substitute hessian such that steps are in whichPar-direction.
                               Id <- diag(1/.Machine$double.eps, length(out$gradient))
                               Id[whichIndex, whichIndex] <- 1
@@ -795,7 +805,7 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
   
   
   # Check if on Windows
-  cores <- sanitizeCores(cores)
+  cores <- .sanitizeCores(cores)
   
   
   # Argument parsing, sorting, and enhancing

@@ -34,7 +34,7 @@ test_that("mstrust returns the global minimum across random starts on a convex q
 test_that("profile on a 1D quadratic increases monotonically on both sides", {
   obj <- constraintL2(mu = c(theta = 0.0, nuisance = 0.0), sigma = 1)
 
-  prof <- profile(obj = obj, pars = c(theta = 0, nuisance = 0),
+  prof <- profile(objfun = obj, pars = c(theta = 0, nuisance = 0),
                   whichPar = "theta",
                   limits = c(lower = -2, upper = 2),
                   method = "integrate",

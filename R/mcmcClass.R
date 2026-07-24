@@ -14,7 +14,7 @@
 #'   likelihood's parameter names. Required when [mcmc()] is called
 #'   with `sequenceType = "sequential"`.
 #'
-#' @return An object of class `c("mcmcTarget", "flatTarget", "list")`.
+#' @return An object of class `c("mcmctarget", "flattarget", "list")`.
 #'
 #' @seealso [mcmc()], [bayesNLMEMarginal()], [bayesNLMEJoint()]
 #' @export
@@ -31,7 +31,7 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
                  priorSample = priorSample,
                  parNames    = parNames,
                  kind        = "flat"),
-            class = c("mcmcTarget", "flatTarget", "list"))
+            class = c("mcmctarget", "flattarget", "list"))
 }
 
 
@@ -39,7 +39,7 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
                                    errfn        = NULL,
                                    innerControl = list(),
                                    trustControl = list()) {
-  if (is.null(errfn)) errfn <- .makeStaticErr(data)
+  if (is.null(errfn)) errfn <- .normalStaticErr(data)
 
   K        <- omegaSpec$K
   subjects <- rownames(omegaSpec$subjectEtas)
@@ -80,7 +80,7 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
 
   pars_probe <- setNames(numeric(length(pars_full_names)), pars_full_names)
   pars_probe[outer_names] <- initFull
-  fast_meta <- .buildFastMeta(prdfn, errfn, data, subjects,
+  fast_meta <- .normalFastMeta(prdfn, errfn, data, subjects,
                               eta_names_list, pars_full_names, pars_probe)
   om_meta <- list(
     chol_pars = omegaSpec$cholPars,
@@ -105,7 +105,7 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
 #' \eqn{p(\theta_{\text{struct}}, \omega_{\text{chol}} \mid y)} with the
 #' per-subject \eqn{\eta_i} integrated out via FOCEI's Laplace
 #' approximation. The marginal likelihood matches the frequentist
-#' [nlmeFit()] path with `method = "focei"`.
+#' [EM] path with `method = "focei"`.
 #'
 #' @param obj A joint `objfn`, conventionally
 #'   `normL2(data, prdfn) + constraintL2(mu = 0, Omega = omegaSpec)`.
@@ -128,7 +128,7 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
 #'   `trustControl` lists forwarded to focei_inner_trust.
 #'
 #' @return An object of class
-#'   `c("mcmcTarget", "bayesNLMEMarginal", "flatTarget", "list")`,
+#'   `c("mcmctarget", "bayesnlmemarginal", "flattarget", "list")`,
 #'   consumed by [mcmc()].
 #'
 #' @seealso [mcmc()], [bayesNLMEJoint()], [priorOmega()], [omega()]
@@ -153,7 +153,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
                  omegaSpec       = omegaSpec,
                  structuralNames = attr(likObj, "structuralNames"),
                  kind            = "flat"),
-            class = c("mcmcTarget", "bayesNLMEMarginal", "flatTarget", "list"))
+            class = c("mcmctarget", "bayesnlmemarginal", "flattarget", "list"))
 }
 
 
@@ -163,7 +163,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
                                        control = list()) {
   if (!inherits(obj, "objfn"))
     stop("bayesNLMEMarginal: obj must be an objfn (normL2 + constraintL2(Omega = ...)).")
-  if (!inherits(omegaSpec, "omegaSpec"))
+  if (!inherits(omegaSpec, "omegaspec"))
     stop("bayesNLMEMarginal: omegaSpec must come from omega().")
   if (is.null(omegaSpec$subjectEtas))
     stop("bayesNLMEMarginal: omegaSpec must have subject expansion ",
@@ -201,7 +201,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
   data_per_subject <- lapply(subjects, function(s) data[[s]])
   names(data_per_subject) <- subjects
   correction_cb <- function(full_pars, joint_hessian, H_inv_list) {
-    .computeFoceiCorrection(
+    .normalFoceiCorrection(
       full_pars = full_pars, joint_hessian = joint_hessian,
       fixed = NULL, outer_names = outer_names_meta,
       H_inv_list = H_inv_list,
@@ -265,7 +265,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
     out
   }
 
-  class(bayesFn) <- c("bayesNLMEMarginalLik", "objfn", "fn")
+  class(bayesFn) <- c("bayesnlmemarginallik", "objfn", "fn")
   attr(bayesFn, "parameters")      <- outer_names_full
   attr(bayesFn, "conditions")      <- subjects
   attr(bayesFn, "modelname")       <- attr(obj, "modelname")
@@ -374,7 +374,7 @@ bayesNLMEMarginal <- function(obj, omegaSpec, prdfn, data,
 #' @param errfn Optional error model (`obsfn`).
 #'
 #' @return An object of class
-#'   `c("mcmcTarget", "bayesNLMEJoint", "list")`, consumed by [mcmc()].
+#'   `c("mcmctarget", "bayesnlmejoint", "list")`, consumed by [mcmc()].
 #'
 #' @seealso [mcmc()], [bayesNLMEMarginal()], [priorOmega()]
 #' @export
@@ -386,13 +386,13 @@ bayesNLMEJoint <- function(obj, omegaSpec, prdfn, data,
                            errfn         = NULL) {
   if (!inherits(obj, "objfn"))
     stop("bayesNLMEJoint: obj must be an objfn.")
-  if (!inherits(omegaSpec, "omegaSpec"))
+  if (!inherits(omegaSpec, "omegaspec"))
     stop("bayesNLMEJoint: omegaSpec must come from omega().")
   if (is.null(omegaSpec$subjectEtas))
     stop("bayesNLMEJoint: omegaSpec must have subject expansion.")
   if (is.null(priorSample))
     stop("bayesNLMEJoint: priorSample is required.")
-  if (is.null(errfn)) errfn <- .makeStaticErr(data)
+  if (is.null(errfn)) errfn <- .normalStaticErr(data)
 
   eta_names_all <- as.vector(omegaSpec$subjectEtas)
   cholPars      <- omegaSpec$cholPars
@@ -434,7 +434,7 @@ bayesNLMEJoint <- function(obj, omegaSpec, prdfn, data,
                  outerNames       = outer_names_full,
                  structuralNames  = structural_names,
                  kind             = "blocked"),
-            class = c("mcmcTarget", "bayesNLMEJoint", "list"))
+            class = c("mcmctarget", "bayesnlmejoint", "list"))
 }
 
 
@@ -535,7 +535,7 @@ metricContext <- function(data, prdfn, errmodel = NULL) {
   if (!inherits(data, "datalist"))
     data <- as.datalist(data)
   out <- list(data = data, prdfn = prdfn, errmodel = errmodel)
-  class(out) <- c("metricContext", "list")
+  class(out) <- c("metriccontext", "list")
   out
 }
 
@@ -579,7 +579,7 @@ priorOmega <- function(omegaSpec,
                        scaleSD = 1.0,
                        df      = NULL) {
 
-  if (!inherits(omegaSpec, "omegaSpec"))
+  if (!inherits(omegaSpec, "omegaspec"))
     stop("`omegaSpec` must be of class 'omegaSpec'.")
   kind <- match.arg(kind)
   stopifnot(lkjEta > 0, scaleSD > 0)
@@ -676,7 +676,7 @@ priorOmega <- function(omegaSpec,
 #' @export
 nonCenteredOmega <- function(omegaSpec, zPrefix = "z") {
 
-  if (!inherits(omegaSpec, "omegaSpec"))
+  if (!inherits(omegaSpec, "omegaspec"))
     stop("`omegaSpec` must come from omega().")
   if (is.null(omegaSpec$subjectEtas))
     stop("`omegaSpec` must have subject expansion (omega(..., subjects = ...)).")
@@ -722,12 +722,12 @@ nonCenteredOmega <- function(omegaSpec, zPrefix = "z") {
                  mapZtoEta = mapZtoEta,
                  mapEtaToZ = mapEtaToZ,
                  omegaSpec = omegaSpec),
-            class = c("nonCenteredOmega", "list"))
+            class = c("noncenteredomega", "list"))
 }
 
 
 #' @export
-print.nonCenteredOmega <- function(x, ...) {
+print.noncenteredomega <- function(x, ...) {
   cat("nonCenteredOmega (",
       nrow(x$zNames), " subjects, ",
       ncol(x$zNames), " etas)\n", sep = "")
@@ -761,7 +761,7 @@ print.nonCenteredOmega <- function(x, ...) {
 #' @export
 foceiOmegaGradient <- function(omegaChol, omegaSpec, etaModes, HInvList) {
 
-  if (!inherits(omegaSpec, "omegaSpec"))
+  if (!inherits(omegaSpec, "omegaspec"))
     stop("`omegaSpec` must be of class 'omegaSpec'.")
   stopifnot(all(omegaSpec$cholPars %in% names(omegaChol)))
   stopifnot(is.matrix(etaModes))
@@ -807,10 +807,10 @@ foceiOmegaGradient <- function(omegaChol, omegaSpec, etaModes, HInvList) {
 
 
 #' @export
-print.mcmcResult <- function(x, ...) {
-  type <- if (inherits(x, "mcmcResultMulti"))      "multi-chain"
-          else if (inherits(x, "mcmcResultSequential")) "SMC"
-          else if (inherits(x, "mcmcResultBlocked"))    "blocked Particle-Gibbs"
+print.mcmcresult <- function(x, ...) {
+  type <- if (inherits(x, "mcmcresultmulti"))      "multi-chain"
+          else if (inherits(x, "mcmcresultsequential")) "SMC"
+          else if (inherits(x, "mcmcresultblocked"))    "blocked Particle-Gibbs"
           else "single-chain"
   cat("mcmcResult [", type, "]: ", nrow(x$samples), " samples, ",
       ncol(x$samples), " parameters\n", sep = "")

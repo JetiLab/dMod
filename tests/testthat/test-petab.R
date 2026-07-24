@@ -1,4 +1,4 @@
-context("PEtab importer / exporter")
+## Context: "PEtab importer / exporter"  (context() is deprecated in testthat 3e; kept as a note)
 
 # PEtabTests/ and BenchmarkModels/ are .Rbuildignore'd (too large to ship),
 # so they live at the repo root and tests find them via env vars set in
@@ -14,7 +14,7 @@ context("PEtab importer / exporter")
   if (nzchar(p) && dir.exists(p)) normalizePath(p, winslash = "/") else ""
 }
 
-# Skip integration tests that need import_sbml() when the libsbml virtualenv
+# Skip integration tests that need importSbml() when the libsbml virtualenv
 # is missing.
 .libsbml_works <- function() {
   # Probe by importing case 0001 (the smallest of the bundled PEtab models).
@@ -24,7 +24,7 @@ context("PEtab importer / exporter")
   if (!nzchar(petab_dir)) return(FALSE)
   isTRUE(tryCatch({
     res <- suppressWarnings(
-      import_sbml(file.path(petab_dir, "0001", "_model.xml")))
+      importSbml(file.path(petab_dir, "0001", "_model.xml")))
     !is.null(res$reactions)
   }, error = function(e) FALSE))
 }
@@ -146,23 +146,23 @@ test_that(".petab_parse_measurements unfolds per-row observableParameters", {
 })
 
 
-test_that("read_petab_yaml resolves manifest paths correctly", {
+test_that("readPetabYaml resolves manifest paths correctly", {
 
   petab_dir <- .petab_repo_dir()
   if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
 
-  y <- read_petab_yaml(file.path(petab_dir, "0001", "_0001.yaml"))
+  y <- readPetabYaml(file.path(petab_dir, "0001", "_0001.yaml"))
   expect_equal(y$formatVersion, 1L)
   expect_true(file.exists(y$problems[[1]]$sbmlFile))
   expect_true(file.exists(y$problems[[1]]$measurementFile))
 })
 
 
-test_that("read_petab_tables returns the expected slots for v1", {
+test_that("readPetabTables returns the expected slots for v1", {
   petab_dir <- .petab_repo_dir()
   if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
 
-  tabs <- read_petab_tables(file.path(petab_dir, "0001", "_0001.yaml"))
+  tabs <- readPetabTables(file.path(petab_dir, "0001", "_0001.yaml"))
   expect_named(tabs, c("parameters", "conditions", "measurements",
                        "observables", "experiments", "mapping",
                        "sbmlPath", "sbmlPaths", "formatVersion"))
@@ -390,7 +390,7 @@ test_that("Boehm_JProteomeRes2014 benchmark imports and matches published optimu
 })
 
 
-test_that("export_sbml emits InitialAssignment for symbolic state initials", {
+test_that("exportSbml emits InitialAssignment for symbolic state initials", {
 
   withr::local_dir(tempdir())
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
@@ -406,7 +406,7 @@ test_that("export_sbml emits InitialAssignment for symbolic state initials", {
   pars  <- c(a0 = 0.8, k1 = 0.8, k2 = 0.6, compartment = 1.0)
 
   out_xml <- file.path(tempdir(), "ia_export.xml")
-  export_sbml(reactions, parameters = pars, inits = inits,
+  exportSbml(reactions, parameters = pars, inits = inits,
               filepath = out_xml, modelID = "ia_export")
 
   xml_text <- readLines(out_xml, warn = FALSE)
@@ -927,7 +927,7 @@ test_that(".petab_v2_normalize_tables applies mapping table substitutions", {
 })
 
 
-test_that("read_petab_yaml dispatches v1 vs v2 schema", {
+test_that("readPetabYaml dispatches v1 vs v2 schema", {
   td <- tempfile("petab_v2_"); dir.create(td)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
 
@@ -954,7 +954,7 @@ test_that("read_petab_yaml dispatches v1 vs v2 schema", {
     experiment_files  = list("experiments.tsv")
   ), file.path(td, "problem.yaml"))
 
-  m <- read_petab_yaml(file.path(td, "problem.yaml"))
+  m <- readPetabYaml(file.path(td, "problem.yaml"))
   expect_identical(m$formatVersion, 2L)
   expect_equal(m$problems[[1]]$modelID, "my_model")
   expect_match(m$problems[[1]]$sbmlFile,        "model\\.xml$")
@@ -963,7 +963,7 @@ test_that("read_petab_yaml dispatches v1 vs v2 schema", {
 })
 
 
-test_that("read_petab_yaml errors on non-SBML model language", {
+test_that("readPetabYaml errors on non-SBML model language", {
   td <- tempfile("petab_v2_"); dir.create(td)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
   writeLines("dummy", file.path(td, "model.bngl"))
@@ -978,7 +978,7 @@ test_that("read_petab_yaml errors on non-SBML model language", {
     measurement_files = list("m.tsv")
   ), file.path(td, "problem.yaml"))
 
-  expect_error(read_petab_yaml(file.path(td, "problem.yaml")),
+  expect_error(readPetabYaml(file.path(td, "problem.yaml")),
                regexp = "SBML")
 })
 

@@ -303,9 +303,9 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL,
   err_pars <- if (!is.null(errmodel)) attr(errmodel, "parameters") else character(0)
   attr(myfn, "parameters") <- union(attr(x, "parameters"), err_pars)
   attr(myfn, "modelname") <- modelname(x, errmodel)
-  # NLME reconstruction handles: let nlmeFit()/emObjfn() recover the model
+  # NLME reconstruction handles: let .fitNormal()/emObjfn() recover the model
   # pieces from a composed objective instead of re-demanding them as arguments
-  # (see .nlmeReconstruct() in nlme.R). Setting an attribute to NULL is a no-op,
+  # (see .normalReconstruct() in nlmeNormal.R). Setting an attribute to NULL is a no-op,
   # so "errfn" is simply absent when there is no error model.
   attr(myfn, "prdfn") <- x
   attr(myfn, "data")  <- data
@@ -472,7 +472,7 @@ constraintL2 <- function(mu, sigma = 1, Omega = NULL,
 # to the Cholesky parameters; sandwich via dP for chain rule).
 constraintL2_mvn <- function(mu, Omega, attr.name = "prior", condition = NULL) {
 
-  if (!inherits(Omega, "omegaSpec"))
+  if (!inherits(Omega, "omegaspec"))
     stop("`Omega` must be an omegaSpec object built by omega().")
   if (is.null(Omega$subjectEtas))
     stop("`Omega` must have subject expansion. Call omega(..., subjects = ...).")
@@ -664,7 +664,7 @@ constraintL2_mvn <- function(mu, Omega, attr.name = "prior", condition = NULL) {
   attr(myfn, "conditions") <- condition
   attr(myfn, "parameters") <- parnames
   # NLME reconstruction handle: expose the omegaSpec so a composed objective
-  # (normL2 + constraintL2(Omega=)) self-describes (see .nlmeReconstruct()).
+  # (normL2 + constraintL2(Omega=)) self-describes (see .normalReconstruct()).
   attr(myfn, "omegaSpec") <- Omega
   myfn
 }
@@ -962,12 +962,237 @@ print.objlist <- function(x, n1 = 20, n2 = 6, ...) {
 
 #' @export
 print.objfn <- function(x, ...) {
-  
+
   parameters <- attr(x, "parameters")
-  
+
   cat("Objective function:\n")
   str(args(x))
   cat("\n")
   cat("... parameters:", paste0(parameters, collapse = ", "), "\n")
-  
+
 }
+
+
+#' @export
+summary.objfn <- function(object, ...) {
+
+  x <- object
+
+  parameters <- attr(x, "parameters")
+  conditions <- attr(x, "conditions")
+  modelnames <- attr(x, "modelname")
+
+  cat("Details:\n")
+  cat("... class:      ", paste0(class(x), collapse = ", "), "\n")
+  cat("... parameters: ", paste0(parameters, collapse = ", "), "\n")
+  if (!is.null(conditions))
+    cat("... conditions: ", paste0(conditions, collapse = ", "), "\n")
+  if (!is.null(modelnames))
+    cat("... modelname:  ", paste0(modelnames, collapse = ", "), "\n")
+
+  ctrls <- try(controls(x), silent = TRUE)
+  if (!inherits(ctrls, "try-error") && length(ctrls))
+    cat("... controls:   ", paste0(ctrls, collapse = ", "), "\n")
+
+  invisible(list(class = class(x), parameters = parameters,
+                 conditions = conditions, modelname = modelnames))
+
+}
+
+
+
+## res (moved from data.R) ---------------------------------------------------
+
+#' Compute residuals between data and model prediction
+#'
+#' Matches data to predictions by time and observable, computes (weighted)
+#' residuals, and propagates parameter derivatives. Values below `lloq` are
+#' censored via `pmax(value, lloq)`.
+#'
+#' @md
+#' @param data Data frame with columns `time`, `name`, `value`, `sigma`, `lloq`.
+#'   Rows with `sigma = NA` are filled from `err`.
+#' @param out Prediction matrix (first column = time, remaining = observables).
+#'   Optional `"deriv"` attribute: `[name, param, time]` array.
+#' @param err Optional error-model matrix (same layout as `out`).
+#'   Optional `"deriv"` attribute: `[name, param, time]` array.
+#'
+#' @details
+#' The returned `"deriv"` and `"deriv.err"` matrices have shape
+#' \eqn{n \times p}{n x p} (residuals x parameters), extracted from the
+#' `[name, param, time]` arrays on `out` and `err`.
+#'
+#' @return An [objframe()] with columns `time`, `name`, `value`, `prediction`,
+#'   `sigma`, `residual`, `weighted.residual`, `bloq`, `weighted.0` and
+#'   attributes `"deriv"` and `"deriv.err"`.
+#'
+#' @seealso [objframe()]
+#' @export
+res <- function(data, out, err = NULL) {
+  
+  data$name <- as.character(data$name)
+  n <- nrow(data)
+  times <- sort(unique(data$time))
+  names <- unique(data$name)
+  
+  ti <- .matchNum(times, out[, 1])[.matchNum(data$time, times)]
+  ni <- match(names, colnames(out))[match(data$name, names)]
+  if (anyNA(ni))
+    stop("Observable not found: ",
+         paste(setdiff(names, colnames(out)), collapse = ", "))
+  if (anyNA(ti)) stop("Some data$time not found in out[,1]")
+  
+  pred <- out[cbind(ti, ni)]
+  
+  deriv <- NULL
+  if (!is.null(d <- attr(out, "deriv"))) {
+    oi <- match(data$name, dimnames(d)[[2]])
+    np <- dim(d)[3]
+    deriv <- matrix(
+      d[cbind(rep(ti, np), rep(oi, np), rep(seq_len(np), each = n))],
+      n, np, dimnames = list(NULL, dimnames(d)[[3]]))
+  }
+
+  deriv2 <- NULL
+  if (!is.null(d2 <- attr(out, "deriv2"))) {
+    oi2 <- match(data$name, dimnames(d2)[[2]])
+    np2 <- dim(d2)[3]
+    # Build [n*np*np x 4] index matrix; outermost loop = k, then j, then i.
+    idx <- cbind(
+      rep(ti,  np2 * np2),
+      rep(oi2, np2 * np2),
+      rep(rep(seq_len(np2), each = n), np2),
+      rep(seq_len(np2), each = n * np2)
+    )
+    deriv2 <- array(d2[idx], c(n, np2, np2),
+                    dimnames = list(NULL, dimnames(d2)[[3]], dimnames(d2)[[4]]))
+  }
+
+  sig  <- data$sigma
+  sNA  <- is.na(sig)
+  derr <- NULL
+  derr2 <- NULL
+
+  if (any(sNA)) {
+    if (is.null(err)) stop("NA sigmas but no errmodel")
+    ti_e <- .matchNum(times, err[, 1])[.matchNum(data$time, times)]
+    ni_e <- match(names, colnames(err))[match(data$name, names)]
+    sig[sNA] <- err[cbind(ti_e, ni_e)][sNA]
+
+    if (!is.null(de <- attr(err, "deriv"))) {
+      oi <- match(data$name, dimnames(de)[[2]])
+      np <- dim(de)[3]
+      ns <- sum(sNA)
+      derr <- matrix(0, n, np, dimnames = list(NULL, dimnames(de)[[3]]))
+      derr[sNA, ] <- matrix(
+        de[cbind(rep(ti_e[sNA], np), rep(oi[sNA], np), rep(seq_len(np), each = ns))],
+        ns, np)
+    }
+
+    if (!is.null(de2 <- attr(err, "deriv2"))) {
+      oi <- match(data$name, dimnames(de2)[[2]])
+      np2 <- dim(de2)[3]
+      ns <- sum(sNA)
+      derr2 <- array(0, c(n, np2, np2),
+                     dimnames = list(NULL, dimnames(de2)[[3]], dimnames(de2)[[4]]))
+      idx <- cbind(
+        rep(ti_e[sNA],  np2 * np2),
+        rep(oi[sNA],    np2 * np2),
+        rep(rep(seq_len(np2), each = ns), np2),
+        rep(seq_len(np2), each = ns * np2)
+      )
+      derr2[sNA, , ] <- array(de2[idx], c(ns, np2, np2))
+    }
+  }
+
+  val  <- pmax(data$value, data$lloq)
+  resi <- pred - val
+  inv  <- 1 / sig
+
+  objframe(
+    data.table::data.table(
+      time = data$time, name = data$name, value = val,
+      prediction = pred, sigma = sig, residual = resi,
+      weighted.residual = resi * inv,
+      bloq = val <= data$lloq, weighted.0 = pred * inv),
+    deriv = deriv, deriv.err = derr,
+    deriv2 = deriv2, deriv2.err = derr2)
+}
+
+
+## objlist / objframe constructors (moved from classes.R) ----------------------------------------
+
+## Objective classes ---------------------------------------------------------
+
+
+#' Generate objective list
+#'
+#' @description An objective list contains an objective value, a gradient, and a Hessian matrix.
+#'
+#' Objective lists can contain additional numeric attributes that are preserved or
+#' combined with the corresponding attributes of another objective list when
+#' both are added by the "+" operator, see [sumobjlist].
+#'
+#' Objective lists are returned by objective functions as being generated
+#' by [normL2], [constraintL2], [priorL2] and [datapointL2].
+#' @param value numeric of length 1
+#' @param gradient named numeric
+#' @param hessian matrix with rownames and colnames according to gradient names
+#' @return Object of class `objlist`
+#' @export
+#' 
+#' @examples
+#' # objlist(1, c(a = 1, b = 2),
+#' #         matrix(2, nrow = 2, ncol = 2,
+#' #                dimnames = list(c("a", "b"), c("a", "b"))))
+objlist <- function(value, gradient, hessian) {
+
+  out <- list(value = value, gradient = gradient, hessian = hessian)
+  class(out) <- c("objlist", "list")
+  return(out)
+
+}
+
+
+#' Objective frame
+#'
+#' @description
+#' An objective frame stores residuals and their derivatives with respect to parameters.
+#' It is typically created by [res] and used internally in objective functions.
+#'
+#' @param mydata data.table produced by [res]
+#' @param deriv numeric matrix of first-order derivatives of residuals (Jacobian)
+#' @param deriv.err numeric matrix of first-order derivatives of the error model
+#' @param deriv2 numeric 3D array `[n_residuals, p, p]` of second-order derivatives
+#'   of residuals with respect to parameters. Optional.
+#' @param deriv2.err numeric 3D array `[n_residuals, p, p]` of second-order
+#'   derivatives of the error model. Optional.
+#'
+#' @return
+#' An object of class `"objframe"` (data.table) with attributes `"deriv"` and `"deriv.err"`.
+#' These arrays have the same parameter axes as those returned by [prdframe] and [res].
+#' When `deriv2`/`deriv2.err` are supplied, the corresponding 3D arrays are
+#' attached as `"deriv2"` / `"deriv2.err"`.
+#'
+#' @export
+objframe <- function(mydata, deriv = NULL, deriv.err = NULL,
+                     deriv2 = NULL, deriv2.err = NULL) {
+
+  required <- c("time", "name", "value", "prediction",
+                "sigma", "residual", "weighted.residual",
+                "bloq", "weighted.0")
+  if (!all(required %in% names(mydata)))
+    stop("mydata does not have all required columns.")
+
+  out <- data.table::as.data.table(mydata)[, ..required]
+  data.table::setattr(out, "deriv",      deriv)
+  data.table::setattr(out, "deriv.err",  deriv.err)
+  data.table::setattr(out, "deriv2",     deriv2)
+  data.table::setattr(out, "deriv2.err", deriv2.err)
+  data.table::setattr(out, "class", c("objframe", "data.table", "data.frame"))
+  out
+}
+
+
+
+

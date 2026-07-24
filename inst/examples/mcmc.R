@@ -149,7 +149,7 @@
                  sequenceControl = smcControl(malaSteps = 5L))
 
   ## Cross-check against the FOCEI MAP
-  mapNLME <- nlmeFit(obj_nlme, c(mu_pop = 2.0, omega_eta_eta = log(0.3)),
+  mapNLME <- EM(obj_nlme, c(mu_pop = 2.0, omega_eta_eta = log(0.3)),
                      method = "focei")
   rbind(MAP   = mapNLME$argument,
         PfadA = colMeans(chainA$samples),

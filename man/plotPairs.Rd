@@ -2,12 +2,12 @@
 % Please edit documentation in R/plots.R
 \name{plotPairs}
 \alias{plotPairs}
-\alias{plotPairs.mcmcResult}
+\alias{plotPairs.mcmcresult}
 \title{Pair (corner-style) plot for \code{\link[=mcmc]{mcmc()}} outputs}
 \usage{
 plotPairs(x, ...)
 
-\method{plotPairs}{mcmcResult}(x, parameters = NULL, ...)
+\method{plotPairs}{mcmcresult}(x, parameters = NULL, ...)
 }
 \arguments{
 \item{x}{An \code{mcmcResult} (or subclass) object.}

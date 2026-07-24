@@ -212,6 +212,40 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// normalLaplaceCpp
+List normalLaplaceCpp(NumericVector a, NumericVector m, NumericVector lambda);
+RcppExport SEXP _dMod_normalLaplaceCpp(SEXP aSEXP, SEXP mSEXP, SEXP lambdaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type a(aSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type m(mSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type lambda(lambdaSEXP);
+    rcpp_result_gen = Rcpp::wrap(normalLaplaceCpp(a, m, lambda));
+    return rcpp_result_gen;
+END_RCPP
+}
+// clusterMarginalCpp
+List clusterMarginalCpp(NumericVector H, NumericVector m, double lambda, NumericVector sizes, NumericMatrix B, NumericMatrix L, NumericVector zc, NumericMatrix U, NumericVector logw, NumericVector z2, NumericVector sgn);
+RcppExport SEXP _dMod_clusterMarginalCpp(SEXP HSEXP, SEXP mSEXP, SEXP lambdaSEXP, SEXP sizesSEXP, SEXP BSEXP, SEXP LSEXP, SEXP zcSEXP, SEXP USEXP, SEXP logwSEXP, SEXP z2SEXP, SEXP sgnSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type H(HSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type m(mSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type sizes(sizesSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type B(BSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type L(LSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type zc(zcSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type U(USEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type logw(logwSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type z2(z2SEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type sgn(sgnSEXP);
+    rcpp_result_gen = Rcpp::wrap(clusterMarginalCpp(H, m, lambda, sizes, B, L, zc, U, logw, z2, sgn));
+    return rcpp_result_gen;
+END_RCPP
+}
 // mcmc_chain_run
 Rcpp::List mcmc_chain_run(Rcpp::Function objfun, Rcpp::NumericVector parinit, int n, int warmup, int moveType, Rcpp::List control, Rcpp::List bounds, Rcpp::NumericVector parscale_, Rcpp::Nullable<Rcpp::Function> dG_cb_opt);
 RcppExport SEXP _dMod_mcmc_chain_run(SEXP objfunSEXP, SEXP parinitSEXP, SEXP nSEXP, SEXP warmupSEXP, SEXP moveTypeSEXP, SEXP controlSEXP, SEXP boundsSEXP, SEXP parscale_SEXP, SEXP dG_cb_optSEXP) {
@@ -658,6 +692,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_dMod_focei_inner_trust", (DL_FUNC) &_dMod_focei_inner_trust, 9},
     {"_dMod_focei_outer_objfn", (DL_FUNC) &_dMod_focei_outer_objfn, 12},
     {"_dMod_focei_run", (DL_FUNC) &_dMod_focei_run, 9},
+    {"_dMod_normalLaplaceCpp", (DL_FUNC) &_dMod_normalLaplaceCpp, 3},
+    {"_dMod_clusterMarginalCpp", (DL_FUNC) &_dMod_clusterMarginalCpp, 11},
     {"_dMod_mcmc_chain_run", (DL_FUNC) &_dMod_mcmc_chain_run, 9},
     {"_dMod_mcmc_smc_reweight", (DL_FUNC) &_dMod_mcmc_smc_reweight, 4},
     {"_dMod_mcmc_stratified_resample", (DL_FUNC) &_dMod_mcmc_stratified_resample, 1},

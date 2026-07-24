@@ -34,7 +34,7 @@
 
 
 # exact symbolic equality of two expression strings via sympy
-.sym_expr_equal <- function(a, b) {
+.symExprEqual <- function(a, b) {
   spy <- reticulate::import("sympy", convert = TRUE)
   as.character(spy$simplify(spy$sympify(paste0("(", a, ") - (", b, ")")))) == "0"
 }
@@ -44,7 +44,7 @@
 # always holds the tangent components xi_i directly (a scaling's integer weight
 # w_i is expanded to xi_i = w_i * z_i at the finalisation boundary), so evaluating
 # each component at the point gives the tangent.
-.sym_tangent <- function(d, pt, coords) {
+.symTangent <- function(d, pt, coords) {
   v <- setNames(numeric(length(coords)), coords)
   for (nm in names(d$generator))
     v[nm] <- eval(parse(text = d$generator[[nm]]), pt)
@@ -224,9 +224,9 @@ test_that("reconstruct observability reconstructs a non-monomial direction", {
   expect_gte(length(d), 1L)
   d <- d[[1]]
   expect_equal(d$type, "affine")
-  expect_true(.sym_expr_equal(d$generator[["k2"]], "-k2"))
-  expect_true(.sym_expr_equal(d$generator[["k1"]], "k2"))
-  expect_true(.sym_expr_equal(d$generator[["B"]], "A + B"))
+  expect_true(.symExprEqual(d$generator[["k2"]], "-k2"))
+  expect_true(.symExprEqual(d$generator[["k1"]], "k2"))
+  expect_true(.symExprEqual(d$generator[["B"]], "A + B"))
 
   # the scaling engine alone finds only the scaling symmetry, not this direction
   sc <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
@@ -363,7 +363,7 @@ test_that("equilibrate reproduces the explicit steady state", {
   vals <- list(a = 2, b = 3, s = 5)
   grad <- c(a = -vals$s * vals$b / vals$a^2, b = vals$s / vals$a, s = vals$b / vals$a)
   for (d in res$symmetries) {
-    v <- .sym_tangent(d, vals, c("a", "b", "s"))
+    v <- .symTangent(d, vals, c("a", "b", "s"))
     expect_equal(sum(grad * v), 0, tolerance = 1e-9)
   }
 })
@@ -581,7 +581,7 @@ test_that("the batched chain kernel matches the serial path (joint + gap)", {
   }
   batched <- run(FALSE)
   serial  <- run(TRUE)
-  lineOf <- function(o) sort(vapply(o$symmetries, dMod:::.sym_direction_line,
+  lineOf <- function(o) sort(vapply(o$symmetries, dMod:::.symDirectionLine,
                                     character(1)))
   expect_identical(batched$rank, serial$rank)
   expect_identical(batched$identifiable, serial$identifiable)
@@ -619,7 +619,7 @@ test_that("observability recovers the Michaelis-Menten enzyme symmetries", {
     sVmax = pt$kcat * pt$Etot * v["s"] + pt$s * pt$Etot * v["kcat"] +
             pt$s * pt$kcat * v["Etot"])
   for (d in res$symmetries)
-    expect_equal(unname(dInv(.sym_tangent(d, pt, coords))), c(0, 0, 0),
+    expect_equal(unname(dInv(.symTangent(d, pt, coords))), c(0, 0, 0),
                  tolerance = 1e-9)
 })
 
@@ -644,7 +644,7 @@ test_that("observability finds the transcription-translation rate curve", {
   expect_setequal(names(d$generator), c("m", "ktx", "ktl"))
 
   pt <- list(m = 2, p = 3, ktx = 5, ktl = 7, dm = 11, dp = 13)
-  v <- .sym_tangent(d, pt, c("m", "p", "ktx", "ktl", "dm", "dp"))
+  v <- .symTangent(d, pt, c("m", "p", "ktx", "ktl", "dm", "dp"))
   # d(ktx*ktl) and d(ktl*m) vanish along the direction
   expect_equal(unname(pt$ktl * v["ktx"] + pt$ktx * v["ktl"]), 0, tolerance = 1e-9)
   expect_equal(unname(pt$m * v["ktl"] + pt$ktl * v["m"]), 0, tolerance = 1e-9)
@@ -716,7 +716,7 @@ test_that("peeled scalings and per-entry reconstruction combine on two moieties"
   gen <- Filter(function(d) d$type == "affine", res$symmetries)
   for (d in gen) {
     expect_true(any(grepl("^B[12]$", names(d$generator))))
-    expect_true(.sym_expr_equal(d$generator[[grep("^B[12]$", names(d$generator),
+    expect_true(.symExprEqual(d$generator[[grep("^B[12]$", names(d$generator),
                                                 value = TRUE)]],
                                 if ("B1" %in% names(d$generator)) "A1 + B1"
                                 else "A2 + B2"))
@@ -751,9 +751,9 @@ test_that("equilibrate supports a free Hill/power exponent", {
   expect_false("q" %in% d2$support)                  # the exponent is identifiable
   # the free-exponent recast makes dp's scaling weight 1 - q; the readout scale s and
   # the synthesis rates carry integer weights, and the input rate kin scales along
-  expect_true(.sym_expr_equal(d2$weights[["dp"]], "1 - q"))
-  expect_true(.sym_expr_equal(d2$weights[["kpr"]], "1"))
-  expect_true(.sym_expr_equal(d2$weights[["s"]], "-1"))
+  expect_true(.symExprEqual(d2$weights[["dp"]], "1 - q"))
+  expect_true(.symExprEqual(d2$weights[["kpr"]], "1"))
+  expect_true(.symExprEqual(d2$weights[["s"]], "-1"))
   exprs2 <- as.character(unlist(d2$weights))
   expect_false(any(grepl("log\\(", exprs2)))         # the direction is rational
   expect_false(any(grepl("_E_|_L_", exprs2)))         # no internal recast symbol leaks
@@ -834,8 +834,8 @@ test_that("a parameter-base (Michaelis) Hill exponent is non-identifiable (dim 7
   nd <- Filter(function(d) "n" %in% d$support, sres$symmetries)
   expect_length(nd, 1L)
   v <- nd[[1]]$generator
-  expect_true(.sym_expr_equal(v[["n"]], "1"))
-  expect_true(.sym_expr_equal(v[["K"]], "(-K*log(K) + K*log(k_pr_FB/d_FB))/n"))
+  expect_true(.symExprEqual(v[["n"]], "1"))
+  expect_true(.symExprEqual(v[["K"]], "(-K*log(K) + K*log(k_pr_FB/d_FB))/n"))
 })
 
 
@@ -902,7 +902,7 @@ test_that("equilibrate without reduceCQ uses the held-variable moiety parameteri
                          function(d) isTRUE(d$explicit), logical(1))))
   pool <- Filter(function(d) "A" %in% d$support, rF$symmetries)
   expect_true(length(pool) >= 1L)
-  expect_true(.sym_expr_equal(pool[[1]]$generator[["A"]], "A"))     # weight +1
+  expect_true(.symExprEqual(pool[[1]]$generator[["A"]], "A"))     # weight +1
 
   # a single condition works too, and does not error on the rank-deficient f = 0
   cond1 <- data.frame(dose = 1, row.names = "d1")
@@ -929,9 +929,9 @@ test_that("the verification gate accepts correct and rejects wrong closed forms"
     ((t0 %% m) + m) %% m
   }
   ref <- ((-18 %% qs) * modinv(13, qs)) %% qs
-  expect_equal(dMod:::.sym_eval_modq("-(A + B)/k2", list(A = 7, B = 11, k2 = 13),
+  expect_equal(dMod:::.symEvalModq("-(A + B)/k2", list(A = 7, B = 11, k2 = 13),
                                      qs, sd), as.integer(ref))
-  expect_equal(dMod:::.sym_eval_modq("-1", list(A = 7), qs, sd), as.integer(qs - 1))
+  expect_equal(dMod:::.symEvalModq("-1", list(A = 7), qs, sd), as.integer(qs - 1))
 
   # a fake reduction whose free column 1 has null vector (a : -3, b : 1); the
   # matching closed form certifies, a wrong one is rejected
@@ -940,9 +940,9 @@ test_that("the verification gate accepts correct and rejects wrong closed forms"
   znames <- c("a", "b"); leafNames <- c("a", "b"); point0 <- c(7, 11)
   good <- list(vector = list(a = "-3", b = "1"), type = "general", reconstruct = TRUE)
   bad  <- list(vector = list(a = "-5", b = "1"), type = "general", reconstruct = TRUE)
-  expect_true(dMod:::.sym_verify_direction(good, 1L, znames, leafNames, point0, 1L,
+  expect_true(dMod:::.symVerifyDirection(good, 1L, znames, leafNames, point0, 1L,
                                            fakeKcall, sd))
-  expect_false(dMod:::.sym_verify_direction(bad, 1L, znames, leafNames, point0, 1L,
+  expect_false(dMod:::.symVerifyDirection(bad, 1L, znames, leafNames, point0, 1L,
                                             fakeKcall, sd))
 })
 
@@ -1026,7 +1026,7 @@ test_that("symMonoResidues computes modular monomial values including Laurent", 
 })
 
 
-test_that(".sym_sparse_entry recovers a wide Laurent entry exactly", {
+test_that(".symSparseEntry recovers a wide Laurent entry exactly", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
   sd <- .sd_module()
   # a degree-1 numerator over a single-monomial denominator, 8 relevant variables
@@ -1043,13 +1043,13 @@ test_that(".sym_sparse_entry recovers a wide Laurent entry exactly", {
     R[1, f + 1L] <- as.integer((p - (as.numeric(tv) %% p)) %% p)
     list(ok = TRUE, R = R, pivots = 0L, rank = 1L, dim = nz)
   }
-  e <- dMod:::.sym_sparse_entry(1:8, sc, f, rep(1, 8), vars, 1L, fakeKcall, 0L)
+  e <- dMod:::.symSparseEntry(1:8, sc, f, rep(1, 8), vars, 1L, fakeKcall, 0L)
   expect_false(is.null(e))
-  expect_true(.sym_expr_equal(e, target))
+  expect_true(.symExprEqual(e, target))
 })
 
 
-test_that(".sym_general_rational_entry recovers a multi-term denominator", {
+test_that(".symGeneralRationalEntry recovers a multi-term denominator", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
   sd <- .sd_module()
   # a multi-term denominator with no constant term, 8 relevant variables:
@@ -1066,9 +1066,9 @@ test_that(".sym_general_rational_entry recovers a multi-term denominator", {
     list(ok = TRUE, R = R, pivots = 0L, rank = 1L, dim = nz)
   }
   point0 <- c(7, 11, 13, 17, 19, 23, 29, 31)
-  e <- dMod:::.sym_general_rational_entry(1:8, sc, f, point0, vars, 1L, fakeKcall, 0L)
+  e <- dMod:::.symGeneralRationalEntry(1:8, sc, f, point0, vars, 1L, fakeKcall, 0L)
   expect_false(is.null(e))
-  expect_true(.sym_expr_equal(e, target))
+  expect_true(.symExprEqual(e, target))
 })
 
 
@@ -1096,29 +1096,29 @@ test_that("log-coordinate gauge reconstructs a parameter-weighted scaling", {
   ref <- fakeKcall(point0, P, 1L)
   zvals0 <- as.numeric(point0[zSlots + 1L])
 
-  lg <- dMod:::.sym_logcoord_gauge(1L, matrix(0L, 0L, nz), P, nz, list(ref = ref),
+  lg <- dMod:::.symLogcoordGauge(1L, matrix(0L, 0L, nz), P, nz, list(ref = ref),
                                    zvals0)
   expect_equal(length(lg$anchors), 1L)
 
-  pool <- dMod:::.sym_pool()
-  dir <- dMod:::.sym_interpolate_direction(
+  pool <- dMod:::.symPool()
+  dir <- dMod:::.symInterpolateDirection(
     lg$anchors[1], ref, ref$pivots, znames, zSlots, leafNames, 3L,
     as.numeric(point0), pool, 100L, 1L, fakeKcall, spy, NULL,
     lg$residueFns[[1]], reconstControl())
   e <- dir$entry
   expect_true(isTRUE(e$closedForm))
-  e$vector <- dMod:::.sym_logcoord_backsub(e$vector, spy)
+  e$vector <- dMod:::.symLogcoordBacksub(e$vector, spy)
 
   # back-transformed entries are the sparse c*z form (the b entry couples only n)
-  expect_true(.sym_expr_equal(e$vector[["a"]], "a"))
-  expect_true(.sym_expr_equal(e$vector[["b"]], "-b/n"))
+  expect_true(.symExprEqual(e$vector[["a"]], "a"))
+  expect_true(.symExprEqual(e$vector[["b"]], "-b/n"))
 
   # the direction lies in the nullspace; a corrupted back-transform is rejected
-  expect_true(dMod:::.sym_verify_in_nullspace(
+  expect_true(dMod:::.symVerifyInNullspace(
     e, lg$anchors[1], znames, leafNames, as.numeric(point0), 1L, fakeKcall, pool,
     200L, nz, sd))
   bad <- e; bad$vector[["a"]] <- paste0("2*(", e$vector[["a"]], ")")
-  expect_false(dMod:::.sym_verify_in_nullspace(
+  expect_false(dMod:::.symVerifyInNullspace(
     bad, lg$anchors[1], znames, leafNames, as.numeric(point0), 1L, fakeKcall, pool,
     300L, nz, sd))
 })
@@ -1136,8 +1136,8 @@ test_that("sparse reconstruction matches the dense path when forced", {
   d <- Filter(function(x) all(c("B", "k1", "k2") %in% names(x$generator)) &&
                 isTRUE(x$explicit), res$symmetries)
   expect_gte(length(d), 1L)
-  expect_true(.sym_expr_equal(d[[1]]$generator[["B"]], "A + B"))
-  expect_true(.sym_expr_equal(d[[1]]$generator[["k1"]], "k2"))
+  expect_true(.symExprEqual(d[[1]]$generator[["B"]], "A + B"))
+  expect_true(.symExprEqual(d[[1]]$generator[["k1"]], "k2"))
 })
 
 
@@ -1432,7 +1432,7 @@ test_that("the toric peel recovers a parameter-weighted (Hill) scaling over Q(nh
                    "kinh" %in% names(d$generator), r$symmetries)
   expect_length(hill, 1L)
   expect_true(isTRUE(hill[[1]]$explicit))
-  expect_true(.sym_expr_equal(hill[[1]]$weights[["kinh"]], "-nhill"))  # the exponent weight
+  expect_true(.symExprEqual(hill[[1]]$weights[["kinh"]], "-nhill"))  # the exponent weight
 })
 
 
@@ -1457,7 +1457,7 @@ test_that("both observability engines report the same canonical generator", {
   # identical canonical weights, hence an identical rendered generator line
   expect_equal(dmod$weights[order(names(dmod$weights))],
                dsym$weights[order(names(dsym$weights))])
-  expect_identical(dMod:::.sym_direction_line(dmod), dMod:::.sym_direction_line(dsym))
+  expect_identical(dMod:::.symDirectionLine(dmod), dMod:::.symDirectionLine(dsym))
 })
 
 
@@ -1472,8 +1472,8 @@ test_that("a pure constant shift is classified as a translation", {
   ab <- Filter(function(d) all(c("A", "B") %in% names(d$generator)), r$symmetries)
   expect_gte(length(ab), 1L)
   expect_equal(ab[[1]]$type, "translation")
-  expect_true(.sym_expr_equal(ab[[1]]$generator[["A"]], "1"))
-  expect_true(.sym_expr_equal(ab[[1]]$generator[["B"]], "-1"))
+  expect_true(.symExprEqual(ab[[1]]$generator[["A"]], "1"))
+  expect_true(.symExprEqual(ab[[1]]$generator[["B"]], "-1"))
 })
 
 

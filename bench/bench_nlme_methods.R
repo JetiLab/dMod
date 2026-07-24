@@ -86,7 +86,7 @@ build_theoph <- function() {
   om  <- omega(eta = c("eta_Ka", "eta_V", "eta_Cl"), subjects = subjects)
   obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
            constraintL2(mu = 0, Omega = om)
-  init <- nlmeInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
+  init <- emInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
                    om, sd = 0.3)
   list(obj = obj, init = init, prd = prd, e = e, om = om,
        pars_probe = init)
@@ -140,7 +140,7 @@ build_warfarin <- function() {
   om <- omega(eta = c("eta_V", "eta_Cl", "eta_pca0", "eta_kout"), subjects = subjects)
   obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
            constraintL2(mu = 0, Omega = om)
-  init <- nlmeInit(c(tka = 0, tv = 2, tcl = -2, tpca0 = 4.6, tkout = -3,
+  init <- emInit(c(tka = 0, tv = 2, tcl = -2, tpca0 = 4.6, tkout = -3,
                      tic50 = 0.7, log_sigma_cp = log(0.2), log_sigma_pca = log(7.4)),
                    om, sd = 0.3)
   list(obj = obj, init = init, prd = prd, e = e, om = om, pars_probe = init)
@@ -226,7 +226,7 @@ run_method <- function(method) {
   Rprof(rprof, interval = 0.01, line.profiling = FALSE)
   t <- system.time(
     fit <- tryCatch(
-      nlmeFit(M$obj, M$init, method = method, control = ctrl_for(method),
+      EM(M$obj, M$init, method = method, control = ctrl_for(method),
               verbose = FALSE),
       error = function(err) err))[["elapsed"]]
   Rprof(NULL)

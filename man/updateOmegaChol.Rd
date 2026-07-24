@@ -19,7 +19,7 @@ on diagonals, free real on off-diagonals).
 \description{
 Given a list of per-subject posterior second moments
 \code{MHat_i = Ehat[eta_i \%*\% t(eta_i) | y_i]} (the output of the ECM E-step
-implemented in \link{ecmEvaluateSubject}), returns the cholPars vector that
+implemented in \code{.normalEcmSubject}), returns the cholPars vector that
 maximises the EM Q-function
 \deqn{Q(\Omega) = -\frac{1}{2} N \, (\log|\Omega| + \mathrm{tr}(\Omega^{-1} S)),
   \quad S = \frac{1}{N}\sum_i \hat M_i,}
@@ -30,5 +30,5 @@ obtained via \link{trust} with finite-difference Hessian (convex small-dim
 problem, converges in a handful of iterations).
 }
 \seealso{
-\link{omega}, \link{ecmEvaluateSubject}
+\link{omega}
 }

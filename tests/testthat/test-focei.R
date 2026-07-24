@@ -1,19 +1,19 @@
 # ============================================================================
-# FOCEI tests: end-to-end nlmeFit orchestrator + C++ kernel parity.
+# FOCEI tests: end-to-end EM orchestrator + C++ kernel parity.
 #
 # Sections:
-#   * End-to-end nlmeFit(method = "focei") on a minimal one-eta NLME prdfn.
+#   * End-to-end EM(method = "focei") on a minimal one-eta NLME prdfn.
 #   * Pre-rewrite Theoph regression vs fixtures/focei_theoph_reference.rds.
 #   * C++ kernel parity against R replica on a sigma(eta) (proportional) model.
 #   * C++ kernel parity on a 2-output (parent/metabolite) model.
 # ============================================================================
 
-context("FOCEI orchestrator + C++ kernel")
+## Context: "FOCEI orchestrator + C++ kernel"  (context() is deprecated in testthat 3e; kept as a note)
 
 
-# ---- End-to-end nlmeFit ---------------------------------------------------
+# ---- End-to-end EM ---------------------------------------------------
 
-test_that("nlmeFit(method='focei') runs on a minimal one-eta NLME prdfn", {
+test_that("EM(method='focei') runs on a minimal one-eta NLME prdfn", {
   set.seed(1)
 
   oldwd <- setwd(tempdir())
@@ -46,13 +46,13 @@ test_that("nlmeFit(method='focei') runs on a minimal one-eta NLME prdfn", {
 
   outer_init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     obj, outer_init,
     method = "focei",
     control = list(focei = list(
       trustControl = list(rinit = 1, rmax = 10, iterlim = 50,
                           fterm = 1e-7, mterm = 1e-7)))))
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_equal(fit$method, "focei")
   expect_true(fit$converged)
   expect_true(is.finite(fit$value))
@@ -63,11 +63,11 @@ test_that("nlmeFit(method='focei') runs on a minimal one-eta NLME prdfn", {
 })
 
 
-test_that("nlmeFit() rejects unknown method via match.arg", {
+test_that("EM() rejects unknown method via match.arg", {
   # Match on the choices list rather than match.arg()'s boilerplate ("should be
   # one of"), which is localised -- on a non-English locale R prints e.g.
   # "'arg' sollte eines von ..." and an English-only regexp would spuriously fail.
-  expect_error(nlmeFit(obj = NULL, init = c(p = 1),
+  expect_error(EM(obj = NULL, init = c(p = 1),
                        method = "doesNotExist"),
                "foceiQuadrature")
 })
@@ -75,7 +75,7 @@ test_that("nlmeFit() rejects unknown method via match.arg", {
 
 # ---- Pre-rewrite Theoph regression ---------------------------------------
 
-test_that("nlmeFit(method='focei') matches the pre-rewrite Theoph baseline", {
+test_that("EM(method='focei') matches the pre-rewrite Theoph baseline", {
   # Anchor against the Phase 0 baseline recorded before the C++ kernel landed.
   # The fixture stores ($value, $argument) at convergence with eager Stage-2
   # correction; the consolidated kernel must reproduce them within
@@ -140,7 +140,7 @@ test_that("nlmeFit(method='focei') matches the pre-rewrite Theoph baseline", {
   obj <- normL2(dlist, prdfn, errmodel = err, use.bessel = FALSE) +
            constraintL2(mu = 0, Omega = om)
 
-  fit <- nlmeFit(obj, ref$init,
+  fit <- EM(obj, ref$init,
                  method   = "focei",
                  control  = list(focei = list(
                    innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
@@ -226,7 +226,7 @@ test_that("fast inner: value/gradient/H_GN match R oracle for sigma(eta) (propor
                            function(i) paste0("eta_V_", subjects[i]))
   pars_probe <- pars_full
   pars_probe[grep("^eta_V_", names(pars_probe))] <- 0
-  fast_meta <- dMod:::.buildFastMeta(model, err, dlist, subjects,
+  fast_meta <- dMod:::.normalFastMeta(model, err, dlist, subjects,
                                      eta_names_list, pars_full_names,
                                      pars_probe)
   subject_meta <- list(
@@ -422,7 +422,7 @@ test_that("fast inner: value/gradient/H_GN match R oracle for a 2-output model",
   })
   pars_probe <- pars_full
   pars_probe[grep("^eta_", names(pars_probe))] <- 0
-  fast_meta <- dMod:::.buildFastMeta(model, err, dlist, subjects,
+  fast_meta <- dMod:::.normalFastMeta(model, err, dlist, subjects,
                                      eta_names_list, pars_full_names,
                                      pars_probe)
   subject_meta <- list(

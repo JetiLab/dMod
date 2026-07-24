@@ -2,15 +2,15 @@
 % Please edit documentation in R/plots.R
 \name{plotHistIndivs}
 \alias{plotHistIndivs}
-\alias{plotHistIndivs.nlmeFit}
+\alias{plotHistIndivs.em}
 \title{Random-effect distribution diagnostics}
 \usage{
 plotHistIndivs(x, ...)
 
-\method{plotHistIndivs}{nlmeFit}(x, ...)
+\method{plotHistIndivs}{em}(x, ...)
 }
 \arguments{
-\item{x}{An \link{nlmeFit}.}
+\item{x}{An \link{EM}.}
 
 \item{...}{Ignored.}
 }
@@ -23,5 +23,5 @@ A ggplot (or a list with \code{hist} and \code{qq} if cowplot is unavailable).
 Per-eta histogram against the estimated \code{N(0, Omega_kk)}
 density plus a QQ-plot against the estimated normal. Detects systematic
 shrinkage, bimodality, or distributional misfit. Generic to leave room
-for non-nlmeFit methods in the future.
+for non-EM methods in the future.
 }

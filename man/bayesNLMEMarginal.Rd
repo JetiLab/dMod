@@ -49,7 +49,7 @@ Cholesky parameter names. Required for sequential SMC sampling.}
 }
 \value{
 An object of class
-\code{c("mcmcTarget", "bayesNLMEMarginal", "flatTarget", "list")},
+\code{c("mcmctarget", "bayesnlmemarginal", "flattarget", "list")},
 consumed by \code{\link[=mcmc]{mcmc()}}.
 }
 \description{
@@ -57,7 +57,7 @@ MCMC target for the posterior
 \eqn{p(\theta_{\text{struct}}, \omega_{\text{chol}} \mid y)} with the
 per-subject \eqn{\eta_i} integrated out via FOCEI's Laplace
 approximation. The marginal likelihood matches the frequentist
-\code{\link[=nlmeFit]{nlmeFit()}} path with \code{method = "focei"}.
+\link{EM} path with \code{method = "focei"}.
 }
 \seealso{
 \code{\link[=mcmc]{mcmc()}}, \code{\link[=bayesNLMEJoint]{bayesNLMEJoint()}}, \code{\link[=priorOmega]{priorOmega()}}, \code{\link[=omega]{omega()}}

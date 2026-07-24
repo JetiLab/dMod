@@ -19,7 +19,7 @@ likelihood's parameter names. Required when \code{\link[=mcmc]{mcmc()}} is calle
 with \code{sequenceType = "sequential"}.}
 }
 \value{
-An object of class \code{c("mcmcTarget", "flatTarget", "list")}.
+An object of class \code{c("mcmctarget", "flattarget", "list")}.
 }
 \description{
 Bundles a likelihood objfn, an optional prior objfn, and an optional

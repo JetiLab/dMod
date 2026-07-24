@@ -80,7 +80,7 @@ mhControl <- function(stepsize     = NULL,
                  covFixed     = covFixed,
                  ridge        = ridge,
                  daGamma      = daGamma, daT0 = daT0, daKappa = daKappa),
-            class = c("mhControl", "list"))
+            class = c("mhcontrol", "list"))
 }
 
 
@@ -109,7 +109,7 @@ langevinControl <- function(stepsize       = NULL,
                  GFixed         = GFixed,
                  ridge          = ridge,
                  daGamma        = daGamma, daT0 = daT0, daKappa = daKappa),
-            class = c("langevinControl", "list"))
+            class = c("langevincontrol", "list"))
 }
 
 
@@ -135,7 +135,7 @@ hmcControl <- function(stepsize     = NULL,
                  acceptTarget  = acceptTarget,
                  ridge         = ridge,
                  daGamma       = daGamma, daT0 = daT0, daKappa = daKappa),
-            class = c("hmcControl", "list"))
+            class = c("hmccontrol", "list"))
 }
 
 
@@ -163,7 +163,7 @@ nutsControl <- function(stepsize     = NULL,
                  acceptTarget = acceptTarget,
                  ridge        = ridge,
                  daGamma      = daGamma, daT0 = daT0, daKappa = daKappa),
-            class = c("nutsControl", "list"))
+            class = c("nutscontrol", "list"))
 }
 
 
@@ -171,7 +171,7 @@ nutsControl <- function(stepsize     = NULL,
 #' @rdname mcmcControl
 pathIntegralControl <- function(P = 8L, hbar = 1.0) {
   structure(list(P = as.integer(P), hbar = as.numeric(hbar)),
-            class = c("pathIntegralControl", "list"))
+            class = c("pathintegralcontrol", "list"))
 }
 
 
@@ -197,7 +197,7 @@ smcControl <- function(nParticles       = 1000L,
                  verbose            = isTRUE(verbose),
                  blather            = isTRUE(blather),
                  stepsize           = stepsize),
-            class = c("smcControl", "list"))
+            class = c("smccontrol", "list"))
 }
 
 
@@ -207,12 +207,12 @@ metricControl <- function(metricContext = NULL,
                           ridge         = 1e-8,
                           fisherMode    = c("gn", "exact")) {
   fisherMode <- match.arg(fisherMode)
-  if (!is.null(metricContext) && !inherits(metricContext, "metricContext"))
+  if (!is.null(metricContext) && !inherits(metricContext, "metriccontext"))
     stop("metricControl: metricContext must come from metricContext().")
   structure(list(metricContext = metricContext,
                  ridge         = ridge,
                  fisherMode    = fisherMode),
-            class = c("metricControl", "list"))
+            class = c("metriccontrol", "list"))
 }
 
 
@@ -877,7 +877,7 @@ metricControl <- function(metricContext = NULL,
 #'   initialisation, including the first. Default `10L`.
 #' @param ... Additional arguments forwarded as dots into the objfn.
 #'
-#' @return An object of class `c("mcmcResult", ...)`, subclassed to
+#' @return An object of class `c("mcmcresult", ...)`, subclassed to
 #'   `mcmcResultSingle`, `mcmcResultSequential` (carries `logEvidence`,
 #'   `betaPath`, `ESSPath`, `acceptRates`, `stepsizePath`, `nLevels`),
 #'   `mcmcResultBlocked` (adds `etaSamples`, `acceptOuter`, `acceptEta`),
@@ -940,7 +940,8 @@ mcmc <- function(target,
                           hmc       = hmcControl(),
                           nuts      = nutsControl())
   }
-  expected_class <- paste0(moveType, "Control")
+  # S3 class names are lowercase, so mhControl() carries class "mhcontrol".
+  expected_class <- paste0(moveType, "control")
   if (!inherits(moveControl, expected_class))
     stop("mcmc: moveControl is not of class '", expected_class, "'.")
   if (is.null(metricControl)) metricControl <- metricControl()
@@ -963,7 +964,7 @@ mcmc <- function(target,
   target_obj <- .normalise_target(target)
 
   # Branch: blocked (Particle-Gibbs) target.
-  if (inherits(target_obj, "bayesNLMEJoint")) {
+  if (inherits(target_obj, "bayesnlmejoint")) {
     if (sequenceType != "single")
       stop("mcmc: bayesNLMEJoint targets only support sequenceType = 'single'.")
     if (!is.null(chains) && chains > 1L) {
@@ -977,8 +978,8 @@ mcmc <- function(target,
         .finish_pgibbs(raw, call_capture)
       }, chains, seeds, chainCores %||% min(chains, parallel::detectCores()),
          target_obj$outerNames)
-      class(out) <- c("mcmcResultMulti", "mcmcResultBlocked",
-                       "mcmcResult", "list")
+      class(out) <- c("mcmcresultmulti", "mcmcresultblocked",
+                       "mcmcresult", "list")
       out$method <- "blocked"
       out$call <- call_capture
       return(out)
@@ -1018,8 +1019,8 @@ mcmc <- function(target,
       cc <- chainCores %||% min(chains, parallel::detectCores())
       out <- .run_chains(runOne, chains, seeds, cc,
                           par_names %||% colnames(target_obj$priorSample(1L)))
-      class(out) <- c("mcmcResultMulti", "mcmcResultSequential",
-                       "mcmcResult", "list")
+      class(out) <- c("mcmcresultmulti", "mcmcresultsequential",
+                       "mcmcresult", "list")
       out$method <- "sequential"
       out$call <- call_capture
       return(out)
@@ -1048,8 +1049,8 @@ mcmc <- function(target,
   if (chains > 1L) {
     cc <- chainCores %||% min(chains, parallel::detectCores())
     out <- .run_chains(runOne, chains, seeds, cc, par_names)
-    class(out) <- c("mcmcResultMulti", "mcmcResultSingle",
-                     "mcmcResult", "list")
+    class(out) <- c("mcmcresultmulti", "mcmcresultsingle",
+                     "mcmcresult", "list")
     out$method <- "single"
     out$call <- call_capture
     return(out)
@@ -1059,7 +1060,7 @@ mcmc <- function(target,
 
 
 .normalise_target <- function(target) {
-  if (inherits(target, "mcmcTarget")) return(target)
+  if (inherits(target, "mcmctarget")) return(target)
   if (inherits(target, "objfn"))
     return(flatTarget(likObj = target, priorObj = NULL, priorSample = NULL))
   stop("mcmc: target must be an objfn, a flatTarget(), or a ",
@@ -1093,7 +1094,7 @@ mcmc <- function(target,
               sequenceType  = sequenceType,
               call          = call_capture)
   if (moveType == "nuts") out$treedepth <- raw$treedepth
-  class(out) <- c("mcmcResultSingle", "mcmcResult", "list")
+  class(out) <- c("mcmcresultsingle", "mcmcresult", "list")
   out
 }
 
@@ -1110,11 +1111,11 @@ mcmc <- function(target,
               call         = call_capture)
   if (!is.null(raw$particlesHistory)) out$particlesHistory <- raw$particlesHistory
   if (!is.null(raw$weightsHistory))   out$weightsHistory   <- raw$weightsHistory
-  out_classes <- c("mcmcResultSequential", "mcmcResult", "list")
-  if (inherits(target_obj, "bayesNLMEMarginal")) {
+  out_classes <- c("mcmcresultsequential", "mcmcresult", "list")
+  if (inherits(target_obj, "bayesnlmemarginal")) {
     out$omegaSpec       <- target_obj$omegaSpec
     out$structuralNames <- target_obj$structuralNames
-    out_classes <- c("bayesNLMEMarginal", out_classes)
+    out_classes <- c("bayesnlmemarginal", out_classes)
   }
   class(out) <- out_classes
   out
@@ -1132,6 +1133,6 @@ mcmc <- function(target,
               omegaSpec       = raw$omegaSpec,
               structuralNames = raw$structuralNames,
               call            = call_capture)
-  class(out) <- c("bayesNLMEJoint", "mcmcResultBlocked", "mcmcResult", "list")
+  class(out) <- c("bayesnlmejoint", "mcmcresultblocked", "mcmcresult", "list")
   out
 }

@@ -166,6 +166,8 @@ hill <- eqnlist() |>
   addReaction("x",  "0",  "d_x * x")
 out <- symmetryDetection(hill, eqnvec(xobs = "scale * x"),
                          method = "observability", reconstruct = TRUE)
+
+
 summary(out)   # the n-direction carries an explicit log(base) factor
 
 # a bare power with no turnover term: x* = ((kpr + kin*u)/dp)^(1/q) is a

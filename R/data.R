@@ -1,121 +1,3 @@
-#' Compute residuals between data and model prediction
-#'
-#' Matches data to predictions by time and observable, computes (weighted)
-#' residuals, and propagates parameter derivatives. Values below `lloq` are
-#' censored via `pmax(value, lloq)`.
-#'
-#' @md
-#' @param data Data frame with columns `time`, `name`, `value`, `sigma`, `lloq`.
-#'   Rows with `sigma = NA` are filled from `err`.
-#' @param out Prediction matrix (first column = time, remaining = observables).
-#'   Optional `"deriv"` attribute: `[name, param, time]` array.
-#' @param err Optional error-model matrix (same layout as `out`).
-#'   Optional `"deriv"` attribute: `[name, param, time]` array.
-#'
-#' @details
-#' The returned `"deriv"` and `"deriv.err"` matrices have shape
-#' \eqn{n \times p}{n x p} (residuals x parameters), extracted from the
-#' `[name, param, time]` arrays on `out` and `err`.
-#'
-#' @return An [objframe()] with columns `time`, `name`, `value`, `prediction`,
-#'   `sigma`, `residual`, `weighted.residual`, `bloq`, `weighted.0` and
-#'   attributes `"deriv"` and `"deriv.err"`.
-#'
-#' @seealso [objframe()]
-#' @export
-res <- function(data, out, err = NULL) {
-  
-  data$name <- as.character(data$name)
-  n <- nrow(data)
-  times <- sort(unique(data$time))
-  names <- unique(data$name)
-  
-  ti <- match.num(times, out[, 1])[match.num(data$time, times)]
-  ni <- match(names, colnames(out))[match(data$name, names)]
-  if (anyNA(ni))
-    stop("Observable not found: ",
-         paste(setdiff(names, colnames(out)), collapse = ", "))
-  if (anyNA(ti)) stop("Some data$time not found in out[,1]")
-  
-  pred <- out[cbind(ti, ni)]
-  
-  deriv <- NULL
-  if (!is.null(d <- attr(out, "deriv"))) {
-    oi <- match(data$name, dimnames(d)[[2]])
-    np <- dim(d)[3]
-    deriv <- matrix(
-      d[cbind(rep(ti, np), rep(oi, np), rep(seq_len(np), each = n))],
-      n, np, dimnames = list(NULL, dimnames(d)[[3]]))
-  }
-
-  deriv2 <- NULL
-  if (!is.null(d2 <- attr(out, "deriv2"))) {
-    oi2 <- match(data$name, dimnames(d2)[[2]])
-    np2 <- dim(d2)[3]
-    # Build [n*np*np x 4] index matrix; outermost loop = k, then j, then i.
-    idx <- cbind(
-      rep(ti,  np2 * np2),
-      rep(oi2, np2 * np2),
-      rep(rep(seq_len(np2), each = n), np2),
-      rep(seq_len(np2), each = n * np2)
-    )
-    deriv2 <- array(d2[idx], c(n, np2, np2),
-                    dimnames = list(NULL, dimnames(d2)[[3]], dimnames(d2)[[4]]))
-  }
-
-  sig  <- data$sigma
-  sNA  <- is.na(sig)
-  derr <- NULL
-  derr2 <- NULL
-
-  if (any(sNA)) {
-    if (is.null(err)) stop("NA sigmas but no errmodel")
-    ti_e <- match.num(times, err[, 1])[match.num(data$time, times)]
-    ni_e <- match(names, colnames(err))[match(data$name, names)]
-    sig[sNA] <- err[cbind(ti_e, ni_e)][sNA]
-
-    if (!is.null(de <- attr(err, "deriv"))) {
-      oi <- match(data$name, dimnames(de)[[2]])
-      np <- dim(de)[3]
-      ns <- sum(sNA)
-      derr <- matrix(0, n, np, dimnames = list(NULL, dimnames(de)[[3]]))
-      derr[sNA, ] <- matrix(
-        de[cbind(rep(ti_e[sNA], np), rep(oi[sNA], np), rep(seq_len(np), each = ns))],
-        ns, np)
-    }
-
-    if (!is.null(de2 <- attr(err, "deriv2"))) {
-      oi <- match(data$name, dimnames(de2)[[2]])
-      np2 <- dim(de2)[3]
-      ns <- sum(sNA)
-      derr2 <- array(0, c(n, np2, np2),
-                     dimnames = list(NULL, dimnames(de2)[[3]], dimnames(de2)[[4]]))
-      idx <- cbind(
-        rep(ti_e[sNA],  np2 * np2),
-        rep(oi[sNA],    np2 * np2),
-        rep(rep(seq_len(np2), each = ns), np2),
-        rep(seq_len(np2), each = ns * np2)
-      )
-      derr2[sNA, , ] <- array(de2[idx], c(ns, np2, np2))
-    }
-  }
-
-  val  <- pmax(data$value, data$lloq)
-  resi <- pred - val
-  inv  <- 1 / sig
-
-  objframe(
-    data.table::data.table(
-      time = data$time, name = data$name, value = val,
-      prediction = pred, sigma = sig, residual = resi,
-      weighted.residual = resi * inv,
-      bloq = val <= data$lloq, weighted.0 = pred * inv),
-    deriv = deriv, deriv.err = derr,
-    deriv2 = deriv2, deriv2.err = derr2)
-}
-
-
-
 #' Time-course data for the JAK-STAT cell signaling pathway
 #'
 #' Phosphorylated Epo receptor (pEpoR), phosphorylated STAT in the
@@ -136,13 +18,205 @@ NULL
 NULL
 
 
-# Match with numeric tolerance 
-match.num <- function(x, y, tol = 1e-8) {
-  sapply(x, function(xi) {
-    d <- abs(y - xi)
-    if (min(d) > tol) return(NA_integer_)
-    which.min(d)
+
+## combine (moved from tools.R) ----------------------------------------------
+
+#' Combine several data.frames by rowbind
+#' 
+#' @param ... data.frames or matrices with not necessarily overlapping colnames
+#' @details This function is useful when separating models into independent csv model files,
+#' e.g.~a receptor model and several downstream pathways. Then, the models can be recombined 
+#' into one model by `combine()`.
+#' 
+#' @return A `data.frame`
+#' @export
+#' @examples
+#' data1 <- data.frame(Description = "reaction 1", Rate = "k1*A", A = -1, B = 1)
+#' data2 <- data.frame(Description = "reaction 2", Rate = "k2*B", B = -1, C = 1)
+#' combine(data1, data2)
+#' @export
+combine <- function(...) {
+  
+  # List of input data.frames
+  mylist <- list(...)
+  # Remove empty slots
+  is.empty <- sapply(mylist, is.null)
+  mylist <- mylist[!is.empty]
+  
+  mynames <- unique(unlist(lapply(mylist, function(S) colnames(S))))
+  
+  mylist <- lapply(mylist, function(l) {
+    
+    if(is.data.frame(l)) {
+      i <- sapply(l, is.factor)
+      l[i] <- lapply(l[i], as.character)
+      present.list <- as.list(l)
+      missing.names <- setdiff(mynames, names(present.list))
+      missing.list <- structure(as.list(rep(NA, length(missing.names))), names = missing.names)
+      combined.data <- do.call(function(...) cbind.data.frame(..., stringsAsFactors = FALSE), c(present.list, missing.list))
+      rownames(combined.data) <- rownames(l)
+    }
+    if(is.matrix(l)) {
+      present.matrix <- as.matrix(l)
+      missing.names <- setdiff(mynames, colnames(present.matrix))
+      missing.matrix <- matrix(0, nrow = nrow(present.matrix), ncol = length(missing.names), 
+                             dimnames = list(NULL, missing.names))
+      combined.data <- submatrix(cbind(present.matrix, missing.matrix), cols = mynames)
+      rownames(combined.data) <- rownames(l)
+    }
+    
+    return(combined.data)
   })
+  
+  out <- do.call(rbind, mylist)
+  
+  return(out)
+  
+  
 }
 
 
+
+
+## wide2long (moved from tools.R) --------------------------------------------
+
+#' Translate wide output format (e.g., from ODE solver) into long format
+#'
+#' Converts simulation output in wide format into a tidy long format suitable for
+#' plotting or further analysis (e.g., with \pkg{ggplot2}). The function assumes
+#' that the first column of \code{out} represents a time-like variable and the
+#' remaining columns contain values.
+#'
+#' @param out A \code{data.frame}, \code{matrix}, or a \code{list} of matrices in wide format.
+#' @param keep Integer vector specifying the column indices to keep (default is \code{1}).
+#' @param na.rm Logical. If \code{TRUE}, missing values are removed in the long-format output.
+#'
+#' @details
+#' If \code{out} is a list, the list names are added as an additional column named
+#' \code{"condition"}. This is particularly useful for plotting results from multiple
+#' simulation conditions with \pkg{ggplot2}.
+#'
+#' @return A \code{data.frame} in long format with the following columns:
+#' \itemize{
+#'   \item \code{"time"} -- values from \code{out[, 1]}.
+#'   \item \code{"name"} -- column names from \code{out[, -1]}.
+#'   \item \code{"value"} -- corresponding numeric values.
+#'   \item \code{"condition"} -- if \code{out} was a list, contains the list names.
+#' }
+#'
+#' @export
+wide2long <- function(out, keep = 1, na.rm = FALSE) {
+  
+  UseMethod("wide2long", out)
+  
+  
+}
+
+#' @rdname wide2long
+#' @export
+wide2long.data.frame <- function(out, keep = 1, na.rm = FALSE) {
+  
+  wide2long.matrix(out, keep = keep, na.rm = na.rm)
+  
+}
+
+#' @rdname wide2long
+#' @export
+wide2long.matrix <- function(out, keep = 1, na.rm = FALSE) {
+  
+  timenames <- colnames(out)[keep]
+  allnames <- colnames(out)[-keep]
+  if (any(duplicated(allnames))) warning("Found duplicated colnames in out. Duplicates were removed.")
+  times <- out[,keep]
+  ntimes <- nrow(out)
+  values <- unlist(out[,allnames])
+  outlong <- data.frame(times, 
+                        name = factor(rep(allnames, each = ntimes), levels = allnames), 
+                        value = as.numeric(values))
+  colnames(outlong)[1:length(keep)] <- timenames
+  
+  if (na.rm) outlong <- outlong[!is.na(outlong$value),]
+  
+  return(outlong)
+  
+}
+
+#' @rdname wide2long
+#' @export
+wide2long.list <- function(out, keep = 1, na.rm = FALSE) {
+  
+  conditions <- names(out)
+  
+  outlong <- do.call(rbind, lapply(1:max(c(length(conditions), 1)), function(cond) {
+    
+    cbind(wide2long.matrix(out[[cond]]), condition = conditions[cond])
+    
+  }))
+  
+  
+  
+  return(outlong)
+  
+}
+
+
+
+
+## long2wide (moved from tools.R) --------------------------------------------
+
+#' Translate long to wide format (inverse of wide2long.matrix) 
+#' 
+#' @param out data.frame in long format 
+#' @return data.frame in wide format 
+#' @export
+long2wide <- function(out) {
+  
+  timename <- colnames(out)[1]
+  times <- unique(out[,1])
+  allnames <- unique(as.character(out[,2]))
+  M <- matrix(out[,3], nrow=length(times), ncol=length(allnames))
+  M <- cbind(times, M)
+  colnames(M) <- c(timename, allnames)
+  
+  return(M)
+  
+}
+
+
+
+
+## lbind (moved from tools.R) ------------------------------------------------
+
+#' Bind named list of data.frames into one data.frame
+#' 
+#' @param mylist A named list of data.frame. The data.frames are expected to have the same structure.
+#' @details Each data.frame ist augented by a "condition" column containing the name attributed of
+#' the list entry. Subsequently, the augmented data.frames are bound together by `rbind`.
+#' @return data.frame with the originial columns augmented by a "condition" column.
+#' @export
+lbind <- function(mylist) {
+  
+  conditions <- names(mylist)
+  #numconditions <- suppressWarnings(as.numeric(conditions))
+  #
+  # if(!any(is.na(numconditions))) 
+  #   numconditions <- as.numeric(numconditions) 
+  # else 
+  numconditions <- conditions
+
+  
+  outlong <- do.call(rbind, lapply(1:length(conditions), function(cond) {
+    
+    myout <- mylist[[cond]]
+    if (nrow(myout) > 0)
+      myout[["condition"]] <- numconditions[cond]
+    else
+      myout[["condition"]] <- character(0)
+    
+    return(myout)
+    
+  }))
+  
+  return(outlong)
+  
+}

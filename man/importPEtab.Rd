@@ -25,7 +25,7 @@ concurrency.}
 Defaults to the YAML basename.}
 }
 \value{
-A list with class \code{"PEtabProblem"} holding \code{dataList},
+A list with class \code{"petabproblem"} holding \code{dataList},
 \code{reactions}, \code{odemodel}, \code{g}, \code{x}, \code{p}, \code{e}, \code{prd} (the composite
 \code{g * x * p}), \code{obj}, \code{bestfit}, \code{parlower}, \code{parupper}. The \code{obj}
 closure has the PEtab fixed parameters baked in, so calling
@@ -45,7 +45,7 @@ metadata used by the exporter (\code{fixed}, \code{inits}, \code{modelID},
 Reads a PEtab YAML manifest plus the associated SBML model and TSV tables,
 and assembles a fully-composed dMod problem: prediction function,
 observation function, parameter transformation, datalist, and objective.
-The SBML side is delegated to \code{\link[=import_sbml]{import_sbml()}} (libsbml-based).
+The SBML side is delegated to \code{\link[=importSbml]{importSbml()}} (libsbml-based).
 }
 \details{
 Dispatch is on \code{format_version}. v2 manifests are translated to the

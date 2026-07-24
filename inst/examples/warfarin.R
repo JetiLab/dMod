@@ -9,8 +9,8 @@
 ##
 ##   1. Building a coupled 1-cmt-PK + indirect-response-PD model with TWO
 ##      observables in one dMod prdfn chain.
-##   2. Running FOCEI via the unified API: nlmeFit(method = "focei").
-##   3. Multi-start FOCEI via msnlmeFit() and the classic dMod multistart
+##   2. Running FOCEI via the unified API: EM(method = "focei").
+##   3. Multi-start FOCEI via msEM() and the classic dMod multistart
 ##      diagnostic: parlist -> as.parframe() -> plotValues() waterfall.
 ##   4. Multi-observable diagnostic plots from R/plots.R that switch to a
 ##      facet_grid(name ~ condition) layout automatically:
@@ -214,8 +214,8 @@ init[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## ----------------------------------------------------------------------------
 ## 4. Single FOCEI fit (reference run)
 ## ----------------------------------------------------------------------------
-cat("\n== nlmeFit(method = 'focei') ==\n")
-fit_focei <- nlmeFit(obj, init,
+cat("\n== EM(method = 'focei') ==\n")
+fit_focei <- EM(obj, init,
                      method  = "focei",
                      control = list(focei = list(
                        innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
@@ -225,15 +225,15 @@ print(fit_focei)
 ## ----------------------------------------------------------------------------
 ## 5. Multistart FOCEI + waterfall plot
 ##
-## msnlmeFit() forks workers via parallel::mclapply on Unix (PSOCK + foreach
+## msEM() forks workers via parallel::mclapply on Unix (PSOCK + foreach
 ## on Windows) and returns a parlist of fits. The classical dMod multistart
 ## workflow converts the parlist to a parframe and feeds it to plotValues()
 ## for the waterfall (OFV vs sorted-fit index). Plateaus / steps in the
 ## waterfall identify distinct local minima; a single flat plateau at the
 ## lowest OFV is the signature of a globally identified fit.
 ## ----------------------------------------------------------------------------
-cat("\n== msnlmeFit (20 starts, perturbed around init) ==\n")
-ms_fits <- msnlmeFit(obj, init,
+cat("\n== msEM (20 starts, perturbed around init) ==\n")
+ms_fits <- msEM(obj, init,
                      method = "focei",
                      control = list(focei = list(
                        innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
@@ -276,7 +276,7 @@ print(round(pop, 3))
 ## 7. Diagnostic plots (returned as ggplot objects)
 ##
 ## Two observables triggers the facet_grid(name ~ condition) layout in
-## plotIndivs and the name-as-row layout in plot.nlmeFit / plotResiduals.
+## plotIndivs and the name-as-row layout in plot.em / plotResiduals.
 ## Print any of these to view interactively, or wrap with ggplot2::ggsave()
 ## if you want to write them out. cowplot is optional; without it,
 ## plotHistIndivs() returns list(hist, qq) instead of one stacked panel.

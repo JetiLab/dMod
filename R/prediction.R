@@ -908,7 +908,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL,
   attr(X2Y, "parameters") <- parameters
   attr(X2Y, "states")     <- states
   attr(X2Y, "modelname")  <- modelname
-  attr(X2Y, "compileInfo") <- collectCompileInfo(gfun, gjac, ghess, gevaluate)
+  attr(X2Y, "compileInfo") <- .collectCompileInfo(gfun, gjac, ghess, gevaluate)
 
   obsfn(X2Y, parameters, condition)
 }

@@ -21,7 +21,7 @@
 #' @return list of eqnlist, parameters and inits
 #' @export
 #' @importFrom stringr str_replace_all
-import_sbml <- function(modelpath) {
+importSbml <- function(modelpath) {
 
   .require_ns("reticulate", "SBML import")
   .require_ns("rjson", "SBML import")
@@ -243,7 +243,7 @@ import_sbml <- function(modelpath) {
 #' SBML Level 3 Version 2. Each reaction's kinetic law is emitted as
 #' `V_home * rate_dMod` to restore SBML's extensive-flux convention
 #' (`K_SBML = rate_dMod * V`). Requires a Python environment with `libsbml`
-#' installed; the default location matches the one used by [import_sbml()].
+#' installed; the default location matches the one used by [importSbml()].
 #'
 #' @param eqnlist Object of class [eqnlist] to export.
 #' @param parameters Named numeric vector of parameter values (including any
@@ -259,7 +259,7 @@ import_sbml <- function(modelpath) {
 #' @param modelID SBML model identifier. Defaults to `"dMod_export"`.
 #' @return `filepath`, invisibly.
 #' @export
-export_sbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
+exportSbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
                          modelID = "dMod_export") {
 
   .require_ns("reticulate", "SBML export")
@@ -369,7 +369,7 @@ export_sbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
   # catches a wrong interpreter early; for the reticulate path it is a
   # cheap sanity check that the requirement actually resolved. Cached via
   # an env var so the ~30 ms python spawn does not repeat across
-  # import_sbml / export_sbml calls.
+  # importSbml / exportSbml calls.
   if (!identical(Sys.getenv("DMOD_LIBSBML_OK", unset = ""), "1")) {
     status <- suppressWarnings(
       system2(python, args = c("-c", shQuote("import libsbml")),

@@ -1,4 +1,4 @@
-context("SteadyStates")
+## Context: "SteadyStates"  (context() is deprecated in testthat 3e; kept as a note)
 test_that("steady_states_are_steady", {
 
   # Run inside tempdir so steadyStates() (writes reactions_for_Alyssa*) and

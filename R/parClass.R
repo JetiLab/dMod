@@ -15,6 +15,27 @@ as.parlist <- function(x = NULL) {
 }
 
 #' @export
+#' @rdname parlist
+print.parlist <- function(x, ...) {
+
+  if (length(x) == 0L) {
+    cat("Empty parlist (no fits).\n")
+    return(invisible(x))
+  }
+
+  m_stat <- .statParlist(x)
+
+  cat("Parameter list of", length(x), if (length(x) == 1L) "fit\n" else "fits\n")
+  cat("... converged:     ", sum(m_stat == "converged"), "\n")
+  cat("... not converged: ", sum(m_stat == "notconverged"), "\n")
+  cat("... aborted:       ", sum(m_stat == "error"), "\n")
+  cat("\nUse summary() for the best/worst fit, as.parframe() for a data frame.\n")
+
+  invisible(x)
+
+}
+
+#' @export
 #' @param object a parlist
 #' @rdname parlist
 summary.parlist <- function(object, ...) {
@@ -22,7 +43,7 @@ summary.parlist <- function(object, ...) {
   x <- object
   
   # Statistics
-  m_stat <- stat.parlist(x)
+  m_stat <- .statParlist(x)
   m_error <- sum(m_stat == "error")
   m_converged <- sum(m_stat == "converged")
   m_notConverged <- sum(m_stat == "notconverged")
@@ -46,9 +67,10 @@ summary.parlist <- function(object, ...) {
 
 
 
-#' Gather statistics of a fitlist
-#' @param x The fitlist
-stat.parlist <- function(x) {
+## Gather statistics of a fitlist: one row per fit, holding the convergence
+## status ("error" / "converged" / "notconverged"). Consumed by
+## summary.parlist() and as.parframe.parlist().
+.statParlist <- function(x) {
   status <- do.call(rbind, lapply(x, function(fit) {
     if (inherits(fit, "try-error") || any(names(fit) == "error") || any(is.null(fit))) {
       return("error")
@@ -120,7 +142,7 @@ plot.parlist <- function(x, path = FALSE, ...) {
 #' @param sort.by character indicating by which colum the returned parameter frame
 #' should be sorted. Defaults to `"value"`.
 as.parframe.parlist <- function(x, sort.by = "value", ...) {
-  m_stat <- stat.parlist(x)
+  m_stat <- .statParlist(x)
   m_metanames <- c("index", "value", "converged", "iterations")
   m_idx <- which("error" != m_stat)
   m_parframe <- data.frame(index = m_idx, 
@@ -227,7 +249,7 @@ plotPars.parframe <- function(x, tol = 1, ...){
   
   if (!missing(...)) x <- subset(x, ...)
   
-  jumps <- stepDetect(x$value, tol)
+  jumps <- .stepDetect(x$value, tol)
   jump.index <- approx(jumps, jumps, xout = 1:length(x$value), method = "constant", rule = 2)$y
   
   #values <- round(x$value/tol)
@@ -255,7 +277,7 @@ plotValues.parframe <- function(x, tol = 1, ...) {
   
   if (!missing(...)) x <- subset(x, ...)
   
-  jumps <- stepDetect(x$value, tol)
+  jumps <- .stepDetect(x$value, tol)
   y.range <- c(min(x$value), max(max(x$value), min(x$value) + tol))
   y.jumps <- seq(y.range[2], y.range[1], length.out = length(jumps))
   
@@ -839,6 +861,197 @@ summary.parfn <- function(object, ...) {
     
     cat("\nObject is composed. See original objects for more details.\n")
     
+  }
+}
+
+
+
+
+## parfn / parframe / parlist / parvec constructors (moved from classes.R) ----------------------------------------
+
+## Parameter classes --------------------------------------------------------
+
+#' Parameter transformation function
+#'
+#' Generate functions that transform one parameter vector into another
+#' by means of a transformation, pushing forward the jacobian matrix
+#' of the original parameter.
+#' Usually, this function is called internally, e.g. by \link{P}.
+#' However, you can use it to add your own specialized parameter
+#' transformations to the general framework.
+#' @param p2p a transformation function for one condition, i.e. a function
+#' \code{p2p(p, fixed, deriv)} which translates a parameter vector \code{p}
+#' and a vector of fixed parameter values \code{fixed} into a new parameter
+#' vector. If \code{deriv = TRUE}, the function should return an attribute
+#' \code{deriv} with the Jacobian matrix of the parameter transformation.
+#' @param parameters character vector, the parameters accepted by the function
+#' @param condition character, the condition for which the transformation is defined
+#' @return object of class \code{parfn}, i.e. a function \code{p(..., fixed, deriv,
+#'  conditions, env)}. The argument \code{pars} should be passed via the \code{...}
+#'  argument.
+#'
+#' Contains attributes "mappings", a list of \code{p2p}
+#' functions, "parameters", the union of parameters acceted by the mappings and
+#' "conditions", the total set of conditions.
+#' @seealso \link{sumfn}, \link{P}
+#' @example inst/examples/prediction.R
+#' @export
+parfn <- function(p2p, parameters = NULL, condition = NULL) {
+
+  force(condition)
+  mappings <- list()
+  mappings[[1]] <- p2p
+  names(mappings) <- condition
+
+  # p2p of warm-starting transformations (Pequil / Pimpl) accepts a `condition`
+  # argument so it can keep one warm-start cache per condition. Forward it only
+  # when present; Pexpl and other p2p's keep their original signature untouched.
+  p2p_has_cond <- "condition" %in% names(formals(p2p))
+
+  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = condition, env = NULL) {
+
+
+    arglist <- list(...)
+    arglist <- arglist[match.fnargs(arglist, "pars")]
+    pars <- arglist[[1]]
+
+    overlap <- test_conditions(conditions, condition)
+    # NULL if at least one argument is NULL
+    # character(0) if no overlap
+    # character if overlap
+
+    if (is.null(overlap)) conditions <- union(condition, conditions)
+
+    # Per-condition warm-start key: prefer this parfn's own condition, else the
+    # single condition it is currently being evaluated under (set by prodfn when
+    # a condition-less parfn is composed with a condition-specifying one).
+    cond_key <- if (!is.null(condition)) condition[[1]]
+                else if (length(conditions) == 1L) conditions
+                else NULL
+
+    if (is.null(overlap) | length(overlap) > 0)
+      result <- if (p2p_has_cond)
+        p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, condition = cond_key)
+      else
+        p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
+    else
+      result <- NULL
+    
+    # Initialize output object
+    length.out <- max(c(1, length(conditions)))
+    outlist <- structure(vector("list", length.out), names = conditions)
+    
+    if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
+    for (C in available[!is.na(available)]) outlist[[C]] <- result
+    
+    
+    return(outlist)
+    
+  }
+  attr(outfn, "mappings") <- mappings
+  attr(outfn, "parameters") <- parameters
+  attr(outfn, "conditions") <- condition
+  attr(outfn, "compileInfo") <- attr(p2p, "compileInfo")
+  attr(outfn, "resetWarmStart") <- attr(p2p, "resetWarmStart")
+  class(outfn) <- c("parfn", "fn")
+  return(outfn)
+
+
+}
+
+
+
+
+#' Generate a parameter frame
+#'
+#' @description A parameter frame is a data.frame where the rows correspond to different
+#' parameter specifications. The columns are divided into three parts. (1) the meta-information
+#' columns (e.g. index, value, constraint, etc.), (2) the attributes of an objective function
+#' (e.g. data contribution and prior contribution) and (3) the parameters.
+#' @seealso [profile], [mstrust]
+#' @param x data.frame.
+#' @param parameters character vector, the names of the parameter columns.
+#' @param metanames character vector, the names of the meta-information columns.
+#' @param obj.attributes character vector, the names of the objective function attributes.
+#' @return An object of class `parframe`, i.e. a data.frame with attributes for the
+#' different names. Inherits from data.frame.
+#' @details Parameter frames can be subsetted either by `[ , ]` or by `subset`. If
+#' `[ , index]` is used, the names of the removed columns will also be removed from
+#' the corresponding attributes, i.e. metanames, obj.attributes and parameters.
+#' @example inst/examples/parlist.R
+#' @export
+parframe <- function(x = NULL, parameters = colnames(x), metanames = NULL, obj.attributes = NULL) {
+
+  if (!is.null(x)) {
+    rownames(x) <- NULL
+    out <- as.data.frame(x)
+  } else {
+    out <- data.frame()
+  }
+
+  attr(out, "parameters") <- parameters
+  attr(out, "metanames") <- metanames
+  attr(out, "obj.attributes") <- obj.attributes
+  class(out) <- c("parframe", "data.frame")
+
+  return(out)
+
+}
+
+#' Parameter list
+#'
+#' @description The special use of a parameter list is to save
+#' the outcome of multiple optimization runs provided by [mstrust],
+#' into one list.
+#' @param ... Objects to be coerced to parameter list.
+#' @export
+#' @example inst/examples/parlist.R
+#' @seealso [load.parlist], [plot.parlist]
+parlist <- function(...) {
+
+  mylist <- list(...)
+  return(as.parlist(mylist))
+
+}
+
+
+
+#' Parameter vector
+#'
+#' @description 
+#' A parameter vector is a named numeric vector (the parameter values)
+#' together with derivative attributes describing how it was generated by
+#' a parameter transformation. The first derivative (Jacobian) is stored in 
+#' the `"deriv"` attribute.
+#'
+#' @param ... Objects to be concatenated.
+#' @param deriv Matrix with row names corresponding to the names of `...`
+#'   and column names corresponding to the parameters by which the vector
+#'   was generated (the Jacobian).
+#'
+#' @return 
+#' An object of class `"parvec"`, i.e. a named numeric vector with
+#' attributes:
+#' \itemize{
+#'   \item `attr(x, "deriv")` -- Jacobian matrix
+#' }
+#'
+#' @example inst/examples/parvec.R
+#' @export
+parvec <- function(..., deriv = NULL) {
+  
+  mylist <- list(...)
+  if (length(mylist) > 0) {
+    mynames <- paste0("par", seq_along(mylist))
+    is.available <- !is.null(names(mylist))
+    mynames[is.available] <- names(mylist)[is.available]
+    
+    out <- as.numeric(unlist(mylist))
+    names(out) <- mynames
+    
+    return(as.parvec(out, deriv = deriv))
+  } else {
+    return(NULL)
   }
 }
 

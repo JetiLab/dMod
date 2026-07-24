@@ -4,7 +4,7 @@
 ## SBML interface (R/SBMLinterface.R) and high-level APIs (Y, P, normL2, ...).
 ##
 ## Public API: importPEtab, exportPEtab, exportPEtabObject,
-##             read_petab_yaml, read_petab_tables.
+##             readPetabYaml, readPetabTables.
 ## Internal helpers prefixed `.petab_*` are unexported and may change shape.
 ##
 ## v2 strategy: the YAML reader dispatches on `format_version`. The v2 path
@@ -56,7 +56,7 @@
 #'   problems per file; the reader supports a single problem entry but any
 #'   number of v2 model_files inside it.
 #' @export
-read_petab_yaml <- function(yamlPath) {
+readPetabYaml <- function(yamlPath) {
 
   .require_ns("yaml", "PEtab import")
   yamlPath <- normalizePath(yamlPath, mustWork = TRUE)
@@ -175,9 +175,9 @@ read_petab_yaml <- function(yamlPath) {
 #'   (named character vector keyed by modelId; length 1 for single-model
 #'   problems), and `formatVersion` (integer).
 #' @export
-read_petab_tables <- function(yamlPath) {
+readPetabTables <- function(yamlPath) {
 
-  m  <- read_petab_yaml(yamlPath)
+  m  <- readPetabYaml(yamlPath)
   pr <- m$problems[[1]]
 
   list(
@@ -659,7 +659,7 @@ read_petab_tables <- function(yamlPath) {
 #
 # `sbml_states`        names of species in the imported eqnlist
 # `sbml_compartments`  names from reactions$compartments
-# `sbml_pars`          names of SBML parameters from import_sbml()$pars
+# `sbml_pars`          names of SBML parameters from importSbml()$pars
 .petab_parse_conditions <- function(df, sbml_states = character(),
                                     sbml_compartments = character(),
                                     sbml_pars = character(),
@@ -963,9 +963,9 @@ read_petab_tables <- function(yamlPath) {
 #   col_kind       named character from .petab_parse_conditions
 #   override_cols  character vector of override column names
 #   inits          named character; symbolic species initial expressions
-#                  from import_sbml()$inits
+#                  from importSbml()$inits
 #   sbml_pars      named numeric; SBML parameter defaults from
-#                  import_sbml()$pars
+#                  importSbml()$pars
 #   states         character vector of state names
 #   inner_pars     character vector of inner ODE parameters (kinetic rates,
 #                  compartment volumes, anything in the rates' getSymbols
@@ -1277,7 +1277,7 @@ read_petab_tables <- function(yamlPath) {
 # Build the underlying odemodel and the Xs() prediction function for the
 # chosen solver. `compile` is forwarded to cOde::funC / CppODE::CppODE so
 # the importer can defer linking until a single batched compile(). `events`
-# (an eventlist or NULL) is what `import_sbml()` reads from <event> blocks.
+# (an eventlist or NULL) is what `importSbml()` reads from <event> blocks.
 .petab_build_odemodel <- function(reactions, solver,
                                   modelname = "petab_model",
                                   compile = TRUE,
@@ -1519,7 +1519,7 @@ read_petab_tables <- function(yamlPath) {
 #' Reads a PEtab YAML manifest plus the associated SBML model and TSV tables,
 #' and assembles a fully-composed dMod problem: prediction function,
 #' observation function, parameter transformation, datalist, and objective.
-#' The SBML side is delegated to [import_sbml()] (libsbml-based).
+#' The SBML side is delegated to [importSbml()] (libsbml-based).
 #'
 #' Dispatch is on `format_version`. v2 manifests are translated to the
 #' internal v1 shapes so the trafo / observation / objective pipeline is
@@ -1558,7 +1558,7 @@ read_petab_tables <- function(yamlPath) {
 #'   concurrency.
 #' @param modelname Optional base modelname for the generated native files.
 #'   Defaults to the YAML basename.
-#' @return A list with class `"PEtabProblem"` holding `dataList`,
+#' @return A list with class `"petabproblem"` holding `dataList`,
 #'   `reactions`, `odemodel`, `g`, `x`, `p`, `e`, `prd` (the composite
 #'   `g * x * p`), `obj`, `bestfit`, `parlower`, `parupper`. The `obj`
 #'   closure has the PEtab fixed parameters baked in, so calling
@@ -1591,7 +1591,7 @@ importPEtab <- function(yamlPath, solver,
     modelname <- sub("\\.ya?ml$", "", basename(yamlPath), ignore.case = TRUE)
   modelname <- gsub("[^A-Za-z0-9_]", "_", modelname)
 
-  tables <- read_petab_tables(yamlPath)
+  tables <- readPetabTables(yamlPath)
   if (identical(tables$formatVersion, 2L))
     tables <- .petab_v2_normalize_tables(tables)
 
@@ -1638,7 +1638,7 @@ importPEtab <- function(yamlPath, solver,
       next
     }
     meas_m$modelId <- NULL
-    sbml_m <- import_sbml(unname(sbml_paths[mid]))
+    sbml_m <- importSbml(unname(sbml_paths[mid]))
     suffix <- if (length(sbml_paths) == 1L) ""
               else paste0("__", gsub("[^A-Za-z0-9_]", "_", mid))
     sc_prefix <- if (length(sbml_paths) == 1L) ""
@@ -1816,7 +1816,7 @@ importPEtab <- function(yamlPath, solver,
     # disaggregated view.
     models         = if (multi_model) per_model else NULL
   )
-  class(out) <- "PEtabProblem"
+  class(out) <- "petabproblem"
   out
 }
 
@@ -1825,7 +1825,7 @@ importPEtab <- function(yamlPath, solver,
 #' @param x A `PEtabProblem`.
 #' @param ... Unused.
 #' @export
-print.PEtabProblem <- function(x, ...) {
+print.petabproblem <- function(x, ...) {
   meta  <- attr(x, "petab_meta") %||% list()
   scm   <- meta$sub_cond_map
   obs   <- meta$obs_meta$obs
@@ -2476,7 +2476,7 @@ exportPEtab <- function(data, reactions, observables, p, pouter,
 #' which synthesises the missing PEtab metadata and dispatches here.
 #'
 #' Symbolic species initials (SBML `<initialAssignment>` elements) on
-#' `petab$inits` are written verbatim through [export_sbml()] into the
+#' `petab$inits` are written verbatim through [exportSbml()] into the
 #' new SBML model.
 #'
 #' Lossy steps documented:
@@ -2520,7 +2520,7 @@ exportPEtabObject <- function(petab, dir, modelID = NULL,
                               overwrite = FALSE) {
 
   .require_ns("yaml", "PEtab export")
-  stopifnot(inherits(petab, "PEtabProblem") || is.list(petab))
+  stopifnot(inherits(petab, "petabproblem") || is.list(petab))
   major <- .petab_major_version(formatVersion)
   if (!major %in% c(1L, 2L))
     stop("`formatVersion` must be '1' or '2.0.0' (got ", formatVersion, ").")
@@ -2868,7 +2868,7 @@ exportPEtabObject <- function(petab, dir, modelID = NULL,
   all_pars <- c(bestfit, fixed, sbml_only)
   inits <- inits_meta %||%
            setNames(rep(0, length(reactions$states)), reactions$states)
-  export_sbml(reactions, parameters = all_pars, inits = inits,
+  exportSbml(reactions, parameters = all_pars, inits = inits,
               filepath = paths$sbml, modelID = modelID)
 
   ## --- YAML manifest -----------------------------------------------------

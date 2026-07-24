@@ -1,17 +1,17 @@
 # ============================================================================
-# nlmeFit + msnlmeFit + diagnostic plots (the public NLME API).
+# EM + msEM + diagnostic plots (the public NLME API).
 #
 # Sections:
-#   * nlmeFit method dispatch     - focei / quadrature / foceiQuadrature
+#   * EM method dispatch     - focei / quadrature / foceiQuadrature
 #   * etaSE / shrinkage           - Laplace-inverse-Hessian diagnostics
-#   * msnlmeFit                   - multi-start wrapper around nlmeFit
-#   * predict.nlmeFit + plots     - data frame + ggplot diagnostic helpers
+#   * msEM                   - multi-start wrapper around EM
+#   * predict.em + plots     - data frame + ggplot diagnostic helpers
 #
 # The C++ FOCEI kernel itself is tested in test-focei.R; here we only
 # exercise the orchestrator and the public output shape.
 # ============================================================================
 
-context("nlmeFit + msnlmeFit + diagnostic plots")
+## Context: "EM + msEM + diagnostic plots"  (context() is deprecated in testthat 3e; kept as a note)
 
 
 # Shared one-eta NLME fixture builder.
@@ -44,13 +44,13 @@ context("nlmeFit + msnlmeFit + diagnostic plots")
 
 # ---- Method dispatch -----------------------------------------------------
 
-test_that("nlmeFit(method='foceiQuadrature') runs end-to-end on one-eta prdfn", {
+test_that("EM(method='foceiQuadrature') runs end-to-end on one-eta prdfn", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(1L, tag = "fq")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     s$obj, init,
     method = "foceiQuadrature",
     control = list(quadrature = list(level = 4L,
@@ -58,7 +58,7 @@ test_that("nlmeFit(method='foceiQuadrature') runs end-to-end on one-eta prdfn", 
                                      maxEcmPerStage = 3L)),
     verbose = FALSE))
 
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_equal(fit$method, "foceiQuadrature")
   expect_true(!is.null(fit$foceiStart))
   expect_true(!is.null(fit$stageTrace))
@@ -68,27 +68,27 @@ test_that("nlmeFit(method='foceiQuadrature') runs end-to-end on one-eta prdfn", 
 })
 
 
-test_that("nlmeFit(method='quadrature') runs cold without a FOCEI prelude", {
+test_that("EM(method='quadrature') runs cold without a FOCEI prelude", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(2L, tag = "qd")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     s$obj, init,
     method = "quadrature",
     control = list(quadrature = list(level = 4L,
                                      epsQuadLevels = c(3L, 4L),
                                      maxEcmPerStage = 3L)),
     verbose = FALSE))
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_equal(fit$method, "quadrature")
   expect_null(fit$foceiStart)
   expect_true(is.finite(fit$value))
 })
 
 
-test_that("nlmeFit(method='foceiQuadrature') polishes a FOCEI fit without OFV blow-up", {
+test_that("EM(method='foceiQuadrature') polishes a FOCEI fit without OFV blow-up", {
   # Loose invariant: starting from a FOCEI warmstart, the ECM final OFV
   # should sit within a small distance of the FOCEI OFV (polish either
   # improves or leaves it roughly unchanged on a well-resolved problem).
@@ -97,7 +97,7 @@ test_that("nlmeFit(method='foceiQuadrature') polishes a FOCEI fit without OFV bl
   s <- .build_one_eta(3L, N = 6L, tag = "polish")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     s$obj, init,
     method = "foceiQuadrature",
     control = list(quadrature = list(level = 4L,
@@ -109,15 +109,15 @@ test_that("nlmeFit(method='foceiQuadrature') polishes a FOCEI fit without OFV bl
 })
 
 
-# ---- M1 API: reconstruction, nlmeInit, validation, summary ---------------
+# ---- M1 API: reconstruction, emInit, validation, summary ---------------
 
-test_that("nlmeFit reconstructs model pieces from obj (slim signature)", {
+test_that("EM reconstructs model pieces from obj (slim signature)", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_one_eta(21L, tag = "recon")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
+  init <- emInit(c(mu_pop = 2.0), s$om)
   # Slim call: no om / prdfn / data / errfn arguments.
-  fit <- suppressMessages(nlmeFit(s$obj, init, method = "focei", verbose = FALSE))
-  expect_s3_class(fit, "nlmeFit")
+  fit <- suppressMessages(EM(s$obj, init, method = "focei", verbose = FALSE))
+  expect_s3_class(fit, "em")
   expect_true(is.finite(fit$value))
   # The composed objective self-describes via stamped attributes.
   expect_false(is.null(attr(s$obj, "prdfn")))
@@ -125,41 +125,41 @@ test_that("nlmeFit reconstructs model pieces from obj (slim signature)", {
   expect_false(is.null(attr(s$obj, "omegaSpec")))
 })
 
-test_that("nlmeInit assembles a complete, ordered start", {
+test_that("emInit assembles a complete, ordered start", {
   s <- .build_one_eta(22L, tag = "init")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om, sd = 0.3)
+  init <- emInit(c(mu_pop = 2.0), s$om, sd = 0.3)
   expect_true(all(s$om$cholPars %in% names(init)))
   expect_equal(unname(init[s$om$cholPars[s$om$isDiag]]),
                rep(log(0.3), sum(s$om$isDiag)))
   expect_equal(unname(init["mu_pop"]), 2.0)
 })
 
-test_that("nlmeFit errors on incomplete init and on removed arguments", {
+test_that("EM errors on incomplete init and on removed arguments", {
   s <- .build_one_eta(23L, tag = "valid")
-  expect_error(nlmeFit(s$obj, c(mu_pop = 2.0), method = "focei"), "Cholesky")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
+  expect_error(EM(s$obj, c(mu_pop = 2.0), method = "focei"), "Cholesky")
+  init <- emInit(c(mu_pop = 2.0), s$om)
   # Clean break: prdfn is no longer a formal.
-  expect_error(nlmeFit(s$obj, init, prdfn = s$prdfn, method = "focei"), "prdfn")
+  expect_error(EM(s$obj, init, prdfn = s$prdfn, method = "focei"), "prdfn")
 })
 
-test_that("nlmeFit warns on unrecognised control keys", {
+test_that("EM warns on unrecognised control keys", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_one_eta(24L, tag = "ctrl")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
+  init <- emInit(c(mu_pop = 2.0), s$om)
   expect_warning(
-    suppressMessages(nlmeFit(s$obj, init, method = "focei", verbose = FALSE,
+    suppressMessages(EM(s$obj, init, method = "focei", verbose = FALSE,
                              control = list(focei = list(
                                innerControl = list(rtol = 1e-7))))),
     "unrecognised")
 })
 
-test_that("summary.nlmeFit reports SE/RSE consistent with vcov()", {
+test_that("summary.em reports SE/RSE consistent with vcov()", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_one_eta(25L, N = 6L, tag = "summ")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
-  fit <- suppressMessages(nlmeFit(s$obj, init, method = "focei", verbose = FALSE))
+  init <- emInit(c(mu_pop = 2.0), s$om)
+  fit <- suppressMessages(EM(s$obj, init, method = "focei", verbose = FALSE))
   sm <- summary(fit)
-  expect_s3_class(sm, "summary.nlmeFit")
+  expect_s3_class(sm, "summary.em")
   expect_true(all(c("estimate", "se", "rse.pct") %in% names(sm$population)))
   V <- vcov(fit)
   d <- diag(V)[rownames(sm$population)]; d[d < 0] <- NA_real_
@@ -170,25 +170,25 @@ test_that("summary.nlmeFit reports SE/RSE consistent with vcov()", {
   expect_output(print(sm), "Population parameters")
 })
 
-test_that("nlmeFit exposes the plain-ML OFV convention + NONMEM-comparable value", {
+test_that("EM exposes the plain-ML OFV convention + NONMEM-comparable value", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_one_eta(26L, N = 5L, tag = "ofv")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
-  fit <- suppressMessages(nlmeFit(s$obj, init, method = "focei", verbose = FALSE))
+  init <- emInit(c(mu_pop = 2.0), s$om)
+  fit <- suppressMessages(EM(s$obj, init, method = "focei", verbose = FALSE))
   expect_identical(fit$ofvType, "-2LL")
   n_obs <- sum(vapply(s$data, nrow, integer(1)))
   expect_equal(fit$nObs, as.integer(n_obs))
   expect_equal(fit$value_nonmem, fit$value - n_obs * log(2 * pi), tolerance = 1e-9)
 })
 
-test_that("nlmeFit(method='laplaceEM') runs and applies the H^-1 Omega correction", {
+test_that("EM(method='laplaceEM') runs and applies the H^-1 Omega correction", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_one_eta(31L, N = 6L, tag = "lem")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
-  fit <- suppressMessages(nlmeFit(
+  init <- emInit(c(mu_pop = 2.0), s$om)
+  fit <- suppressMessages(EM(
     s$obj, init, method = "laplaceEM", verbose = FALSE,
     control = list(quadrature = list(maxEcm = 60L, epsEcm = 1e-3))))
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_equal(fit$method, "laplaceEM")
   expect_true(is.finite(fit$value))
   expect_true(fit$Omega[1, 1] > 0)              # positive-definite Omega
@@ -200,17 +200,17 @@ test_that("nlmeFit(method='laplaceEM') runs and applies the H^-1 Omega correctio
   expect_gt(fit$Omega[1, 1], mean(fit$etaModes[, 1]^2))
 })
 
-test_that("nlmeFit(method='saem') runs end-to-end and returns a sensible fit", {
+test_that("EM(method='saem') runs end-to-end and returns a sensible fit", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   set.seed(101)
   s <- .build_one_eta(41L, N = 6L, tag = "saem")
-  init <- nlmeInit(c(mu_pop = 2.0), s$om)
+  init <- emInit(c(mu_pop = 2.0), s$om)
   # Short schedule keeps the test fast; SAEM is stochastic so the assertions are
   # structural + a loose sanity band rather than tight numeric agreement.
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     s$obj, init, method = "saem", verbose = FALSE,
     control = list(saem = list(nBurnin = 30L, nEM = 30L, nMcmc = 5L))))
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_equal(fit$method, "saem")
   expect_true(is.finite(fit$value))
   expect_true(fit$Omega[1, 1] > 0)                 # positive-definite Omega
@@ -224,17 +224,17 @@ test_that("nlmeFit(method='saem') runs end-to-end and returns a sensible fit", {
 
 # ---- etaSE + shrinkage ---------------------------------------------------
 
-test_that("nlmeFit emits etaSE + shrinkage from Laplace inverse Hessian", {
+test_that("EM emits etaSE + shrinkage from Laplace inverse Hessian", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(7L, N = 5L, tag = "se")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     s$obj, init,
     method = "focei", verbose = FALSE))
 
-  expect_s3_class(fit, "nlmeFit")
+  expect_s3_class(fit, "em")
   expect_true(!is.null(fit$etaSE))
   expect_equal(dim(fit$etaSE), c(length(s$subjects), 1L))
   expect_true(all(is.finite(fit$etaSE)))
@@ -251,15 +251,15 @@ test_that("nlmeFit emits etaSE + shrinkage from Laplace inverse Hessian", {
 })
 
 
-# ---- msnlmeFit -----------------------------------------------------------
+# ---- msEM -----------------------------------------------------------
 
-test_that("msnlmeFit returns a parlist of nlmeFits and as.parframe works", {
+test_that("msEM returns a parlist of nlmeFits and as.parframe works", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(11L, tag = "ms_basic")
   center <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  pl <- suppressMessages(msnlmeFit(
+  pl <- suppressMessages(msEM(
     s$obj, center,
     method = "focei",
     fits = 3L, cores = 1L,
@@ -270,7 +270,7 @@ test_that("msnlmeFit returns a parlist of nlmeFits and as.parframe works", {
   expect_s3_class(pl, "parlist")
   expect_length(pl, 3L)
   for (fit in pl) {
-    expect_s3_class(fit, "nlmeFit")
+    expect_s3_class(fit, "em")
     expect_true(all(c("argument", "value", "converged", "iterations",
                       "parinit", "index") %in% names(fit)))
     # default keepFull = FALSE strips heavy state
@@ -290,7 +290,7 @@ test_that("msnlmeFit returns a parlist of nlmeFits and as.parframe works", {
 })
 
 
-test_that("msnlmeFit accepts a parframe as center (rows used directly)", {
+test_that("msEM accepts a parframe as center (rows used directly)", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(12L, tag = "ms_pf")
@@ -299,7 +299,7 @@ test_that("msnlmeFit accepts a parframe as center (rows used directly)", {
                           omega_eta_eta = c(log(0.3), log(0.5)))
   pf_in <- parframe(starts_df)
 
-  pl <- suppressMessages(msnlmeFit(
+  pl <- suppressMessages(msEM(
     s$obj, pf_in,
     method = "focei", cores = 1L, verbose = FALSE))
 
@@ -308,13 +308,13 @@ test_that("msnlmeFit accepts a parframe as center (rows used directly)", {
 })
 
 
-test_that("msnlmeFit keepFull = TRUE preserves emDiag / prdfn / data", {
+test_that("msEM keepFull = TRUE preserves emDiag / prdfn / data", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(13L, tag = "ms_keep")
   center <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  pl <- suppressMessages(msnlmeFit(
+  pl <- suppressMessages(msEM(
     s$obj, center,
     method = "focei", fits = 2L, cores = 1L,
     keepFull = TRUE, start1stfromCenter = TRUE,
@@ -327,7 +327,7 @@ test_that("msnlmeFit keepFull = TRUE preserves emDiag / prdfn / data", {
 })
 
 
-test_that("msnlmeFit handles per-fit failures without aborting the run", {
+test_that("msEM handles per-fit failures without aborting the run", {
   oldwd <- setwd(tempdir())
   on.exit(setwd(oldwd))
   s <- .build_one_eta(14L, tag = "ms_err")
@@ -336,7 +336,7 @@ test_that("msnlmeFit handles per-fit failures without aborting the run", {
                           omega_eta_eta = c(log(0.3), log(0.3)))
   pf_in <- parframe(starts_df)
 
-  pl <- suppressMessages(msnlmeFit(
+  pl <- suppressMessages(msEM(
     s$obj, pf_in,
     method = "focei", cores = 1L, verbose = FALSE))
 
@@ -347,7 +347,7 @@ test_that("msnlmeFit handles per-fit failures without aborting the run", {
 })
 
 
-# ---- predict.nlmeFit + plots --------------------------------------------
+# ---- predict.em + plots --------------------------------------------
 
 # Plots fixture: more times so plotIndivs has a curve to draw.
 .build_for_plots <- function(seed = 1L) {
@@ -377,11 +377,11 @@ test_that("msnlmeFit handles per-fit failures without aborting the run", {
 }
 
 .run_focei <- function(s, init = c(mu_pop = 2.0, omega_eta_eta = log(0.3)))
-  suppressMessages(nlmeFit(s$obj, init,
+  suppressMessages(EM(s$obj, init,
                             method = "focei", verbose = FALSE))
 
 
-test_that("predict.nlmeFit returns a long data.frame with IPRED/PRED/IWRES", {
+test_that("predict.em returns a long data.frame with IPRED/PRED/IWRES", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   fit <- .run_focei(.build_for_plots(1L))
   pf <- predict(fit, times = seq(0, 3, length.out = 10))
@@ -396,7 +396,7 @@ test_that("predict.nlmeFit returns a long data.frame with IPRED/PRED/IWRES", {
 })
 
 
-test_that("plot.nlmeFit, plotIndivs, plotResiduals return ggplots", {
+test_that("plot.em, plotIndivs, plotResiduals return ggplots", {
   skip_if_not_installed("ggplot2")
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   fit <- .run_focei(.build_for_plots(2L))
@@ -444,11 +444,11 @@ test_that("plotTrace errors on focei fit, works on foceiQuadrature fit", {
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
   s <- .build_for_plots(4L)
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
-  fit_lap <- suppressMessages(nlmeFit(s$obj, init,
+  fit_lap <- suppressMessages(EM(s$obj, init,
                                        method = "focei", verbose = FALSE))
   expect_error(plotTrace(fit_lap), "requires.*quadrature")
 
-  fit_qd <- suppressMessages(nlmeFit(s$obj, init,
+  fit_qd <- suppressMessages(EM(s$obj, init,
                                       method = "foceiQuadrature",
                                       control = list(quadrature = list(
                                         level = 4L,
@@ -461,9 +461,9 @@ test_that("plotTrace errors on focei fit, works on foceiQuadrature fit", {
 
 test_that("plotResiduals back-compat: parframe path still works", {
   # Smoke-test that the existing plotResiduals(parframe, x, data, ...) entry
-  # point isn't broken by the nlmeFit dispatch shim. Just confirm the
-  # nlmeFit branch is bypassed for a non-nlmeFit input.
+  # point isn't broken by the EM dispatch shim. Just confirm the
+  # EM branch is bypassed for a non-EM input.
   pf <- structure(data.frame(value = 1.0, index = 1L),
                   class = c("parframe", "data.frame"))
-  expect_false(inherits(pf, "nlmeFit"))
+  expect_false(inherits(pf, "em"))
 })

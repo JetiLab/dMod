@@ -109,7 +109,7 @@ cat(sprintf("[%s] starting FOCEI fit (Theoph, N=%d, init = log-scale)\n",
 
 Rprof(rprof_out, interval = 0.02, line.profiling = FALSE, memory.profiling = FALSE)
 t_focei <- system.time(
-  fit <- nlmeFit(joint, om, init,
+  fit <- EM(joint, om, init,
                  model    = model,
                  data     = dlist,
                  errmodel = err,

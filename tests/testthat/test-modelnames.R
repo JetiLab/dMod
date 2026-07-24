@@ -1,4 +1,4 @@
-context("Conflicting modelnames")
+## Context: "Conflicting modelnames"  (context() is deprecated in testthat 3e; kept as a note)
 test_that("modelnames behave as expected", {
   
   # What needs to be checked

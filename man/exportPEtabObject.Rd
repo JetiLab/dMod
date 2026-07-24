@@ -47,7 +47,7 @@ through \code{importPEtab()}, use the higher-level \code{\link[=exportPEtab]{exp
 which synthesises the missing PEtab metadata and dispatches here.
 
 Symbolic species initials (SBML \verb{<initialAssignment>} elements) on
-\code{petab$inits} are written verbatim through \code{\link[=export_sbml]{export_sbml()}} into the
+\code{petab$inits} are written verbatim through \code{\link[=exportSbml]{exportSbml()}} into the
 new SBML model.
 
 Lossy steps documented:

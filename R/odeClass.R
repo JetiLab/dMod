@@ -240,6 +240,6 @@ odemodel <- function(f, deriv = TRUE, deriv2 = FALSE, forcings=NULL, events = NU
       class(out) <- c("CppODE", "odemodel")
       }
   }
-  attr(out, "compileInfo") <- collectCompileInfo(out$func, out$extended, out$extended2)
+  attr(out, "compileInfo") <- .collectCompileInfo(out$func, out$extended, out$extended2)
   return(out)
 }

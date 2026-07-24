@@ -225,7 +225,7 @@ Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NU
   attr(p2p, "equations")   <- as.eqnvec(trafo)
   attr(p2p, "parameters")  <- parameters
   attr(p2p, "modelname")   <- modelname
-  attr(p2p, "compileInfo") <- collectCompileInfo(fun, jac, hess, evaluate)
+  attr(p2p, "compileInfo") <- .collectCompileInfo(fun, jac, hess, evaluate)
   parfn(p2p, parameters, condition)
 }
 
@@ -1153,7 +1153,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   attr(p2p, "equations")   <- as.eqnvec(all_exprs)
   attr(p2p, "parameters")  <- parameters
   attr(p2p, "modelname")   <- modelname
-  attr(p2p, "compileInfo") <- collectCompileInfo(PEval$func, PEval$jac, PEval$hess)
+  attr(p2p, "compileInfo") <- .collectCompileInfo(PEval$func, PEval$jac, PEval$hess)
   attr(p2p, "resetWarmStart") <- local({
     reg_ref <- reg; mn <- modelname; cond <- condition
     function() {
@@ -1420,7 +1420,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   attr(p2p, "equations")   <- as.eqnvec(f[dependent])
   attr(p2p, "parameters")  <- parameters
   attr(p2p, "modelname")   <- modelname
-  attr(p2p, "compileInfo") <- collectCompileInfo(model, model_s, model_s2)
+  attr(p2p, "compileInfo") <- .collectCompileInfo(model, model_s, model_s2)
   attr(p2p, "resetWarmStart") <- local({
     reg_ref <- reg; mn <- modelname; cond <- condition
     function() {
@@ -1727,7 +1727,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   attr(p2p, "equations")   <- as.eqnvec(f_red)
   attr(p2p, "parameters")  <- parameters
   attr(p2p, "modelname")   <- modelname
-  attr(p2p, "compileInfo") <- collectCompileInfo(model, model_s, model_s2)
+  attr(p2p, "compileInfo") <- .collectCompileInfo(model, model_s, model_s2)
   attr(p2p, "resetWarmStart") <- local({
     reg_ref <- reg; mn <- modelname; cond <- condition
     function() {

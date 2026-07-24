@@ -38,7 +38,7 @@ bayesNLMEJoint(
 }
 \value{
 An object of class
-\code{c("mcmcTarget", "bayesNLMEJoint", "list")}, consumed by \code{\link[=mcmc]{mcmc()}}.
+\code{c("mcmctarget", "bayesnlmejoint", "list")}, consumed by \code{\link[=mcmc]{mcmc()}}.
 }
 \description{
 MCMC target for the full hierarchical posterior

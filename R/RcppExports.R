@@ -45,6 +45,14 @@ focei_run <- function(model_cb, err_cb, joint_cb, init, subject_meta, fixed, con
     .Call(`_dMod_focei_run`, model_cb, err_cb, joint_cb, init, subject_meta, fixed, control, correction_mode, correction_cb)
 }
 
+normalLaplaceCpp <- function(a, m, lambda) {
+    .Call(`_dMod_normalLaplaceCpp`, a, m, lambda)
+}
+
+clusterMarginalCpp <- function(H, m, lambda, sizes, B, L, zc, U, logw, z2, sgn) {
+    .Call(`_dMod_clusterMarginalCpp`, H, m, lambda, sizes, B, L, zc, U, logw, z2, sgn)
+}
+
 mcmcChainRun <- function(objfun, parinit, n, warmup, moveType, control, bounds, parscale_, dG_cb_opt) {
     .Call(`_dMod_mcmc_chain_run`, objfun, parinit, n, warmup, moveType, control, bounds, parscale_, dG_cb_opt)
 }

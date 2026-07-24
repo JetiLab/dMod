@@ -9,7 +9,10 @@
 # ggplot2 / dplyr NSE column references; declared so R CMD check does not
 # flag them as undefined globals.
 utils::globalVariables(c("IPRED", "PRED", "predicted", "observed",
-                         "sd_est", "iter", "level"))
+                         "sd_est", "iter", "level",
+                         # plot.sparsify ggplot2 aes() variables
+                         "subject", "cluster", "centroid", "G", "score",
+                         "selected"))
 
 
 # Custom interface to ggplot2 ---
@@ -440,7 +443,7 @@ plotFluxes <- function(pouter, x, times, fluxEquations, nameFlux = "Fluxes:", ..
 }
 
 
-stepDetect <- function(x, tol) {
+.stepDetect <- function(x, tol) {
   
   jumps <- 1
   while (TRUE) {
@@ -523,10 +526,10 @@ plotPars <- function(x,...) {
 #' @importFrom rlang data_sym syms
 plotResiduals <- function(parframe, x, data, split = "condition", errmodel = NULL, ...) {
 
-  # Internal dispatch: NLME nlmeFit objects get their own residual diagnostic
-  # (IWRES vs IPRED + vs TIME, see plotResiduals.nlmeFit below). The classical
+  # Internal dispatch: NLME .fitNormal objects get their own residual diagnostic
+  # (IWRES vs IPRED + vs TIME, see plotResiduals..fitNormal below). The classical
   # parframe/x/data path below is preserved unchanged for back-compat.
-  if (inherits(parframe, "nlmeFit")) return(plotResiduals.nlmeFit(parframe))
+  if (inherits(parframe, "em")) return(plotResiduals.em(parframe))
 
   timesD <- sort(unique(c(0, unlist(lapply(data, function(d) d$time)))))
   
@@ -584,14 +587,14 @@ plotResiduals <- function(parframe, x, data, split = "condition", errmodel = NUL
 
 # NLME plot helpers ---------------------------------------------------------
 
-#' Predictions from an nlmeFit object
+#' Predictions from an EM object
 #'
 #' @description
 #' Returns a long-format `data.frame` of observed values vs population (`PRED`,
 #' eta = 0) and individual (`IPRED`, eta at posterior modes) predictions per
 #' condition, plus residuals. Used directly by the diagnostic plot helpers.
 #'
-#' @param object An [nlmeFit] (from [nlmeFit]).
+#' @param object An [EM] (from [EM]).
 #' @param times Optional numeric vector of additional times for the smooth
 #'   IPRED/PRED curves. Defaults to the union of observed times.
 #' @param ... Ignored.
@@ -602,10 +605,11 @@ plotResiduals <- function(parframe, x, data, split = "condition", errmodel = NUL
 #'   observations and `source = "grid"` for the dense IPRED/PRED smooth grid
 #'   (observed/sigma NA for grid rows).
 #' @export
-predict.nlmeFit <- function(object, times = NULL, ...) {
+predict.em <- function(object, times = NULL, ...) {
+  .emRequireOmega(object, "predict")
   if (is.null(object$prdfn) || is.null(object$data) || is.null(object$omega))
-    stop("predict.nlmeFit: fit is missing `prdfn`, `data`, or `omega` ",
-         "(was the fit built by nlmeFit()?).")
+    stop("predict..fitNormal: fit is missing `prdfn`, `data`, or `omega` ",
+         "(was the fit built by EM()?).")
 
   prdfn <- object$prdfn
   data  <- object$data
@@ -708,22 +712,22 @@ predict.nlmeFit <- function(object, times = NULL, ...) {
 plotIndivs <- function(x, ...) UseMethod("plotIndivs", x)
 
 
-#' Per-subject individual fits for an nlmeFit
+#' Per-subject individual fits for an EM
 #'
-#' @description Per-subject IPRED curve with an IPRED ± sigma ribbon derived
+#' @description Per-subject IPRED curve with an IPRED +/- sigma ribbon derived
 #'   from the fit's attached errfn, optional population PRED overlay dashed,
 #'   and observed values as points. When the fit has a single observable the
 #'   layout is `facet_wrap(~ condition)`; with multiple observables it switches
 #'   to `facet_grid(name ~ condition)` (observables in rows, subjects in
 #'   columns). Use `subjectsPerPage` to split very large cohorts into several
 #'   plots.
-#' @param x An [nlmeFit].
+#' @param x An [EM].
 #' @param times Optional grid of additional times for the smooth IPRED/PRED.
 #' @param ncol Facet column count for the single-observable
 #'   `facet_wrap(~ condition)` layout (default 4). Ignored in
 #'   `facet_grid(name ~ condition)` mode.
 #' @param showPred Logical; overlay population PRED dashed (default TRUE).
-#' @param showBand Logical; draw the IPRED ± sigma ribbon if the fit carries
+#' @param showBand Logical; draw the IPRED +/- sigma ribbon if the fit carries
 #'   an errfn (default TRUE).
 #' @param subjectsPerPage Optional integer. If set, subjects are split into
 #'   pages of at most `subjectsPerPage` each and the function returns a list
@@ -732,16 +736,17 @@ plotIndivs <- function(x, ...) UseMethod("plotIndivs", x)
 #' @param ... Ignored.
 #' @return A ggplot, or a list of ggplots when `subjectsPerPage` is set.
 #' @export
-plotIndivs.nlmeFit <- function(x, times = NULL, ncol = 4L,
+plotIndivs.em <- function(x, times = NULL, ncol = 4L,
                               showPred = TRUE, showBand = TRUE,
                               subjectsPerPage = NULL, ...) {
+  .emRequireOmega(x, "plotIndivs")
   fit <- x
   obs_times <- sort(unique(unlist(lapply(fit$data, `[[`, "time"))))
   if (is.null(times))
     times <- seq(min(obs_times), max(obs_times), length.out = 200L)
 
   pf <- predict(fit, times = times)
-  # Trim grid rows to the observed time range. predict.nlmeFit prepends t=0 to
+  # Trim grid rows to the observed time range. predict..fitNormal prepends t=0 to
   # the dense grid for the ODE solver, but if no subject has an observation at
   # that time the grid IPRED/PRED there can be far outside the data range
   # (e.g. log(Cc + eps) at Cc(0)=0 sits at log(eps)), which would dominate the
@@ -825,15 +830,16 @@ plotIndivs.nlmeFit <- function(x, times = NULL, ncol = 4L,
 
 #' Observed vs predicted scatter (DV vs IPRED and DV vs PRED)
 #'
-#' @description S3 plot method for [nlmeFit]. Two-panel scatter: DV vs IPRED
+#' @description S3 plot method for [EM]. Two-panel scatter: DV vs IPRED
 #'   on the left, DV vs PRED on the right, identity line shown dashed. With a
 #'   multi-observable fit the observable becomes a faceting row
 #'   (`name ~ panel`); otherwise one row with `facet_wrap(~ panel)`.
-#' @param x An [nlmeFit].
+#' @param x An [EM].
 #' @param ... Ignored.
 #' @return A ggplot.
 #' @export
-plot.nlmeFit <- function(x, ...) {
+plot.em <- function(x, ...) {
+  .emRequireOmega(x, "plot")
   fit <- x
   pf <- predict(fit)
   pf <- pf[pf$source == "obs", , drop = FALSE]
@@ -871,17 +877,17 @@ plot.nlmeFit <- function(x, ...) {
 
 
 
-#' Weighted-residual diagnostics for an nlmeFit
+#' Weighted-residual diagnostics for an EM
 #'
 #' @description Two-panel scatter: IWRES vs IPRED and IWRES vs TIME with a
 #'   loess smoother. Sourced from `plotResiduals(fit, ...)` when the first
-#'   argument inherits from `nlmeFit` (internal type dispatch, see
+#'   argument inherits from `EM` (internal type dispatch, see
 #'   [plotResiduals]).
-#' @param fit An [nlmeFit].
+#' @param fit An [EM].
 #' @param ... Ignored.
 #' @return A ggplot.
 #' @keywords internal
-plotResiduals.nlmeFit <- function(fit, ...) {
+plotResiduals.em <- function(fit, ...) {
   pf <- predict(fit)
   pf <- pf[pf$source == "obs", , drop = FALSE]
   long <- rbind(
@@ -913,7 +919,7 @@ plotResiduals.nlmeFit <- function(fit, ...) {
 #' @description Per-eta histogram against the estimated `N(0, Omega_kk)`
 #'   density plus a QQ-plot against the estimated normal. Detects systematic
 #'   shrinkage, bimodality, or distributional misfit. Generic to leave room
-#'   for non-nlmeFit methods in the future.
+#'   for non-EM methods in the future.
 #' @param x Object to plot.
 #' @param ... Method-specific arguments.
 #' @return A ggplot (or a list of ggplots if `cowplot` is unavailable).
@@ -922,16 +928,17 @@ plotHistIndivs <- function(x, ...) UseMethod("plotHistIndivs", x)
 
 
 #' @rdname plotHistIndivs
-#' @param x An [nlmeFit].
+#' @param x An [EM].
 #' @param ... Ignored.
 #' @return A ggplot (or a list with `hist` and `qq` if cowplot is unavailable).
 #' @export
-plotHistIndivs.nlmeFit <- function(x, ...) {
+plotHistIndivs.em <- function(x, ...) {
+  .emRequireOmega(x, "plotHistIndivs")
   fit <- x
   etaModes <- fit$etaModes
   om <- fit$omega
   if (is.null(etaModes) || is.null(om))
-    stop("plotHistIndivs.nlmeFit: fit has no etaModes or omega.")
+    stop("plotHistIndivs..fitNormal: fit has no etaModes or omega.")
   Omega <- if (!is.null(fit$Omega)) fit$Omega else {
     L <- om$buildL(fit$argument[om$cholPars])
     tcrossprod(L)
@@ -990,7 +997,7 @@ plotHistIndivs.nlmeFit <- function(x, ...) {
 #'
 #' @description Four-panel trace of OFV, structural-parameter step
 #'   `|delta psi|`, max softmax weight, and minimum effective node count
-#'   across ECM iterations. Quadrature-method nlmeFit only.
+#'   across ECM iterations. Quadrature-method EM only.
 #' @param x Object to plot.
 #' @param ... Method-specific arguments.
 #' @return A ggplot.
@@ -999,15 +1006,16 @@ plotTrace <- function(x, ...) UseMethod("plotTrace", x)
 
 
 #' @rdname plotTrace
-#' @param x An [nlmeFit] with `method = "quadrature"`. Errors otherwise.
+#' @param x An [EM] with `method = "quadrature"`. Errors otherwise.
 #' @param ... Ignored.
 #' @return A ggplot.
 #' @export
-plotTrace.nlmeFit <- function(x, ...) {
+plotTrace.em <- function(x, ...) {
+  .emRequireOmega(x, "plotTrace")
   fit <- x
   if (!fit$method %in% c("quadrature", "foceiQuadrature") ||
       is.null(fit$stageTrace))
-    stop("plotTrace requires an nlmeFit fit with method 'quadrature' or 'foceiQuadrature'.")
+    stop("plotTrace requires an .fitNormal fit with method 'quadrature' or 'foceiQuadrature'.")
   tr <- fit$stageTrace
   tr$iter <- seq_len(nrow(tr))
   long <- rbind(
@@ -1061,7 +1069,7 @@ plotTrace.nlmeFit <- function(x, ...) {
 #'
 #' @return A ggplot.
 #' @export
-plot.mcmcResult <- function(x, parameters = NULL, bins = 30L, ...) {
+plot.mcmcresult <- function(x, parameters = NULL, bins = 30L, ...) {
   long <- .bayes_samples_long(x$samples)
   if (!is.null(parameters)) {
     bad <- setdiff(parameters, levels(long$parameter))
@@ -1095,7 +1103,7 @@ plot.mcmcResult <- function(x, parameters = NULL, bins = 30L, ...) {
 #' @param ... Ignored.
 #' @return A ggplot.
 #' @export
-plot.mcmcResultMulti <- function(x, parameters = NULL, bins = 30L, ...) {
+plot.mcmcresultmulti <- function(x, parameters = NULL, bins = 30L, ...) {
   S <- x$samples
   ch <- factor(x$chainId)
   if (!is.null(parameters)) S <- S[, parameters, drop = FALSE]
@@ -1130,7 +1138,7 @@ plot.mcmcResultMulti <- function(x, parameters = NULL, bins = 30L, ...) {
 #'   adaptive tempering schedule (beta vs level), the post-resample ESS,
 #'   and per-level acceptance.
 #' @export
-plotTrace.mcmcResultSequential <- function(x, ...) {
+plotTrace.mcmcresultsequential <- function(x, ...) {
   diag_df <- rbind(
     data.frame(level = seq_along(x$betaPath) - 1L, value = x$betaPath,
                panel = "beta"),
@@ -1158,7 +1166,7 @@ plotTrace.mcmcResultSequential <- function(x, ...) {
 #' @param parameters Optional character vector restricting which parameter
 #'   panels are drawn.
 #' @export
-plotTrace.mcmcResultSingle <- function(x, parameters = NULL, ...) {
+plotTrace.mcmcresultsingle <- function(x, parameters = NULL, ...) {
   S <- x$samples
   if (!is.null(parameters)) S <- S[, parameters, drop = FALSE]
   long <- .bayes_samples_long(S)
@@ -1173,8 +1181,8 @@ plotTrace.mcmcResultSingle <- function(x, parameters = NULL, ...) {
 
 #' @rdname plotTrace
 #' @export
-plotTrace.mcmcResultBlocked <- function(x, parameters = NULL, ...) {
-  plotTrace.mcmcResultSingle(x, parameters = parameters, ...)
+plotTrace.mcmcresultblocked <- function(x, parameters = NULL, ...) {
+  plotTrace.mcmcresultsingle(x, parameters = parameters, ...)
 }
 
 
@@ -1193,7 +1201,7 @@ plotPairs <- function(x, ...) UseMethod("plotPairs", x)
 
 #' @rdname plotPairs
 #' @export
-plotPairs.mcmcResult <- function(x, parameters = NULL, ...) {
+plotPairs.mcmcresult <- function(x, parameters = NULL, ...) {
   S <- x$samples
   if (!is.null(parameters)) S <- S[, parameters, drop = FALSE]
   par_names <- colnames(S)
@@ -1236,4 +1244,390 @@ plotPairs.mcmcResult <- function(x, parameters = NULL, ...) {
     theme_dMod(base_size = 10) +
     ggplot2::theme(strip.placement = "outside",
                    panel.spacing   = ggplot2::unit(0.1, "lines"))
+}
+
+
+## ---- profile / parameter-path plotting (moved from toolsSvenja.R) ---------
+#' Plot an array of trajectories along the profile of a parameter
+#' 
+#' @param par Character of parameter name for which the array should be generated.
+#' @param profs Lists of profiles as being returned by [profile]. 
+#' @param prd Named list of matrices or data.frames, usually the output of a prediction function
+#' as generated by [Xs].
+#' @param times Numeric vector of time points for the model prediction.
+#' @param direction Character "up" or "down" indicating the direction the value should be traced along the profile starting at the bestfit value.
+#' @param covtable Optional covariate table or condition.grid necessary if subsetting is required.
+#' @param ... Further arguments for subsetting the plot.
+#' @param nsimus Number of trajectories/ simulation to be calculated.
+#' 
+#' @return A plot object of class `ggplot`.
+#' @author Svenja Kemmer, \email{svenja.kemmer@@fdm.uni-freiburg.de}
+#' @examples
+#' \dontrun{
+#'  plotArray("myparameter", myprofiles, g*x*p, seq(0, 250, 1), 
+#'     "up", condition.grid, name == "ProteinA" & condition == "c1") 
+#' }
+#' @export
+#' @import data.table
+plotArray <- function (par, profs, prd, times, direction = c("up", "down"), covtable, ..., nsimus = 4) {
+  
+  # select subframe from profiles
+  mysub <- profs %>% as.data.table() %>% .[whichPar == par, ]
+  mysub[, ID := 1:nrow(mysub)]
+  
+  # get ID of bestfit (constraint is 0 for bestfit)
+  bestID <- mysub[constraint == 0.00]$ID
+  if(direction == "up") mysubF <- mysub[ID >= bestID]  
+  if(direction == "down") mysubF <- mysub[ID <= bestID]
+  
+  # select rows according to simulation number
+  partable <- mysubF[seq(1, nrow(mysubF), (round(nrow(mysubF)/nsimus)))]
+  
+  # remove non_parameter names
+  no_pars <- c("value", "constraint", "stepsize", "gamma", "whichPar", "data", "condition_obj", "AIC", "BIC", "prior", "ID", "chisquare")
+  partable %>% .[, (no_pars) := NULL]
+  
+  # make predictions
+  predictionDT <- .predictArray(prd, times, pars = partable, whichpar = par)
+  out_plot <- copy(predictionDT)
+  
+  # use covtable for subsetting of the plot
+  if(!is.null(covtable)) {
+    if(!"condition" %in% names(covtable)){
+      covtable <- as.data.table(covtable, keep.rownames = "condition")
+    } else covtable <- as.data.table(covtable)
+    out_plot <- merge(out_plot, covtable, by = "condition")
+    out_plot <- out_plot[...]
+  }
+  
+  # plot
+  P <- ggplot(out_plot , aes(x = time, y = value, group = ParValue, color = ParValue)) +
+    facet_grid(name~condition, scales = "free_y") +
+    geom_line(size = 1) + 
+    theme_dMod(base_size = 18) + scale_color_viridis_c() +
+    theme(legend.position = "top", legend.key.size = unit(0.6,"cm")) + 
+    theme(axis.line = element_line(colour = "black"), 
+          panel.grid.major = element_line(colour = "grey97"), 
+          panel.grid.minor = element_line(colour = "grey97"), 
+          panel.background = element_blank()) +
+    xlab("time") +
+    ylab(paste0("value"))
+  
+  return(P)
+}
+
+.predictArray <- function (prd, times, pars = partable, whichpar = par, keep_names = NULL, FLAGverbose = FALSE, FLAGverbose2 = FALSE, FLAGbrowser = FALSE, ...) {
+  .require_ns("purrr", ".predictArray()")
+  if (FLAGverbose2) cat("Simulating", "\n")
+  out <- lapply(1:nrow(pars), function(i) {
+    if (FLAGverbose) cat("Parameter set", i, "\n")
+    if (FLAGbrowser) browser()
+    mypar <- pars[i,] %>% as.numeric()
+    parval <- round(pars[i,][[whichpar]], digits = 2)
+    names(mypar) <- names(pars)
+    mypar <- as.parvec(mypar)
+    prediction <- try(prd(times, mypar, deriv = FALSE, ...))
+    if (inherits(prediction, "try-error")) {
+      warning("parameter set ", i, " failed\n")
+      return(NULL)
+    }
+    prediction <- purrr::imap(prediction, function(.x,.y){
+      .x <- data.table(.x)
+      if (!is.null(keep_names))
+        .x[, (setdiff(names(.x), c(keep_names, "time"))) := NULL]
+      .x[, `:=`(condition = .y, ParValue = parval)]
+      .x
+    })
+    melt(rbindlist(prediction), variable.name = "name", value.name = "value", id.vars = c("time", "condition", "ParValue"))
+  })
+  if (FLAGverbose2) cat("postprocessing", "\n")
+  out <- rbindlist(out[!is.null(out)])
+  out
+}
+
+
+.findEmptyCorner <- function(x, y) {
+  xmid <- (min(x, na.rm = TRUE) + max(x, na.rm = TRUE)) / 2
+  ymid <- (min(y, na.rm = TRUE) + max(y, na.rm = TRUE)) / 2
+  
+  corners <- list(
+    bottom_left  = c(0.05, 0.05),
+    bottom_right = c(0.95, 0.05),
+    top_left     = c(0.05, 0.95),
+    top_right    = c(0.95, 0.95)
+  )
+  
+  counts <- c(
+    bottom_left  = sum(x <= xmid & y <= ymid, na.rm = TRUE),
+    bottom_right = sum(x >  xmid & y <= ymid, na.rm = TRUE),
+    top_left     = sum(x <= xmid & y >  ymid, na.rm = TRUE),
+    top_right    = sum(x >  xmid & y >  ymid, na.rm = TRUE)
+  )
+  
+  corners[[which.min(counts)]]
+}
+
+#' @keywords internal
+#' @importFrom ggplot2 ggplot
+PlotPaths <- function(profs=myprofiles, ..., whichPar, sort = FALSE, relative = TRUE, scales = "fixed", multi = TRUE, n_pars = 5, normalizePaths = FALSE) {
+  
+  if ("parframe" %in% class(profs)) {
+    arglist <- list(profs)
+  } else {
+    arglist <- as.list(profs)
+  }
+  
+  if (is.null(names(arglist))) {
+    profnames <- 1:length(arglist)
+  } else {
+    profnames <- names(arglist)
+  }
+  
+  
+  data <- do.call(rbind, lapply(1:length(arglist), function(i) {
+    # choose a proflist
+    proflist <- as.data.frame(arglist[[i]])
+    parameters <- attr(arglist[[i]], "parameters")
+    
+    if (is.data.frame(proflist)) {
+      whichPars <- unique(proflist$whichPar)
+      proflist <- lapply(whichPars, function(n) {
+        with(proflist, proflist[whichPar == n, ])
+      })
+      names(proflist) <- whichPars
+    }
+    
+    if (is.null(whichPar)) whichPar <- names(proflist)
+    if (is.numeric(whichPar)) whichPar <- names(proflist)[whichPar]
+    
+    subdata <- do.call(rbind, lapply(whichPar, function(n) {
+      # matrix
+      paths <- as.matrix(proflist[[n]][, parameters])
+      values <- proflist[[n]][, "value"]
+      origin <- which.min(abs(proflist[[n]][, "constraint"]))
+      
+      # Save absolute values of profiled parameter before relativizing
+      abs_profiled <- as.numeric(paths[, n])
+      
+      if (relative) 
+        for(j in 1:ncol(paths)) paths[, j] <- as.numeric(paths[, j]) - as.numeric(paths[origin, j])
+      
+      # Restore absolute values for the profiled parameter (x-axis always absolute)
+      paths[, n] <- abs_profiled
+      
+      combinations <- expand.grid.alt(whichPar, colnames(paths))
+      if (sort) combinations <- apply(combinations, 1, sort) else combinations <- apply(combinations, 1, identity)
+      combinations <- submatrix(combinations, cols = -which(combinations[1,] == combinations[2,]))
+      combinations <- submatrix(combinations, cols = !duplicated(paste(combinations[1,], combinations[2,])))
+      
+      
+      
+      
+      path.data <- do.call(rbind, lapply(1:dim(combinations)[2], function(j) {
+        data.frame(chisquare = values, 
+                   name = n,
+                   proflist = profnames[i],
+                   combination = paste(combinations[,j], collapse = " - \n"),
+                   x = paths[, combinations[1,j]],
+                   y = paths[, combinations[2,j]])
+      }))
+      
+      if(multi) path.data <- path.data %>% as.data.table %>% .[, partner := tstrsplit(as.character(combination), "\n", fixed=TRUE, keep = 2)]
+      
+      
+      return(path.data)
+      
+    }))
+    
+    return(subdata)
+    
+  }))
+  
+  data$proflist <- as.factor(data$proflist)
+  
+  if (relative){
+    axis.labels <- c("parameter 1", expression(Delta ~ p[j]))
+  } else {
+    axis.labels <- c("parameter 1", "parameter 2")
+  }
+  
+  data <- droplevels(subset(data, ...))
+  removeBecauseNonsense <- c("value", "constraint", "stepsize", "chisquare", "data", "prior", "gamma", "whichPar")
+  data <- data[!(partner %in% removeBecauseNonsense)]
+  data$y <- as.numeric(data$y)
+  data$x <- as.numeric(data$x)
+  
+  if (normalizePaths == TRUE) {
+    data[, y := (ifelse(max(abs(y)) == 0, 0, y / abs(max(abs(y))))), by = combination] # if path is y, just return 0
+    # data[, y := (2 * (y - min(y)) / (max(y) - min(y))) - 1, by = combination]
+    removedCombinations <- unique(data[!is.finite(y), combination])
+    data <- data[is.finite(y)]
+    
+    if(length(removedCombinations)>0) {warning(paste0("The following combinations have been removed due to failed paths:\n\t",paste(str_remove_all(removedCombinations, "\n"), collapse = "\n\t")))}
+  }
+  
+  
+  if(multi){
+    
+    # determine strength of change
+    data[, max.dev := max(c(abs(max(as.numeric(y))), abs(min(as.numeric(y) )))), by = "partner"]
+    setorder(data, name, -max.dev)
+    # max.devis <- unique(data$max.dev)[1:n_pars]
+    
+    # create new column "label" only use to assign ploting colors
+    data[,label := ifelse(max.dev %in% unique(max.dev)[1:n_pars], partner, "Others")]
+    
+    # Define the plotting colors
+    species_colors <- c(
+      setNames(dMod_palette(n_pars + 1L)[-1L], unique(data$partner)[1:n_pars]),
+      "Others" = "gray"
+    )
+    
+    # Automatically find the corner with the least data density
+    legend_corner <- .findEmptyCorner(data$x, data$y)
+    
+    suppressMessages(
+      p <- ggplot2::ggplot(data, aes(x = x, y = y, color = label, group = partner)) + 
+        geom_line() +
+        xlab(whichPar) + ylab(expression(Delta ~ p[j])) +
+        scale_linetype_discrete(name = "profile\nlist") +
+        scale_color_manual(values = species_colors) + theme_dMod() +
+        theme(legend.position = "inside",
+              legend.position.inside = legend_corner,
+              legend.justification = legend_corner,
+              legend.title = element_blank(),
+              legend.background = element_rect(fill = alpha("white", 0.85), colour = "black", linewidth = 0.3),
+              legend.key.size = unit(0.4, "cm"),
+              legend.margin = margin(2, 4, 2, 4),
+              legend.text = element_text(size = 7))
+    )
+  } else {
+    suppressMessages(
+      p <- ggplot2::ggplot(data, aes(x = x, y = y, group = interaction(name, proflist), color = name, lty = proflist)) + 
+        facet_wrap(~combination, scales = scales) + 
+        geom_path() + #geom_point(aes=aes(size=1), alpha=1/3) +
+        xlab(axis.labels[1]) + ylab(axis.labels[2]) +
+        scale_linetype_discrete(name = "profile\nlist") +
+        scale_color_dMod(name = "profiled\nparameter")
+    )
+  }
+  
+  attr(p, "data") <- data
+  return(p)
+  
+}
+
+#' Profile likelihood: plot all parameter paths belonging to one profile in one plot
+#' 
+#' @param profs Lists of profiles as being returned by [profile]. 
+#' @param whichpars Character vector of parameter names for which the profile paths should be generated.
+#' @param npars Numeric vector of number of colored and named parameter paths.
+#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1. Default `FALSE`; `TRUE` only useful in corner cases when you know why to do so.
+#' 
+#' @return A plot object of class `ggplot` for length(whichpars) = 1 and otherwise an object of class `cowplot`.
+#' @author Svenja Kemmer, \email{svenja.kemmer@@fdm.uni-freiburg.de}
+#' @examples
+#' \dontrun{
+#'  plotPathsMulti(myprofiles, c("mypar1", "mypar2"), npars = 5) 
+#' }
+#' @export
+#' @import data.table
+plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) {
+  .require_ns("cowplot", "plotPathsMulti()")
+  if(length(whichpars) == 1){
+    p <- PlotPaths(profs=profs, whichPar = whichpars, n_pars = npars, normalizePaths = normalizePaths)
+    return(p)
+  } else {
+    PlotList <- NULL
+    for(i in 1:length(whichpars)){
+      par <- whichpars[i]
+      p <- PlotPaths(profs=profs, whichPar = par, n_pars = npars, normalizePaths = normalizePaths)
+      PlotList[[i]] <- p
+    }
+    pl <- cowplot::plot_grid(plotlist = PlotList)
+    return(pl)
+  }
+}
+
+
+
+#' Profile likelihood: plot profiles along with their parameter paths
+#' 
+#' Generates combined plots of profile likelihoods and their parameter paths without a shared legend.
+#' 
+#' @param profs List of profiles as returned by [profile()].
+#' @param whichpars Character vector of parameter names for which the profile paths should be generated.
+#' @param npars Numeric indicating number of colored and named parameter paths.
+#' @param ncols Number of columns in the resulting plot grid.
+#' @param normalizePaths Logical indicating whether the paths should be normalized to absolute values of 1.
+#'                       Default `FALSE`.
+#' @param modes Character vector of profile modes to display in the profile plot.
+#'              Default `c("data", "prior")`. Use e.g. `"data"` to show only the data contribution.
+#' @param ... Additional arguments passed to [cowplot::plot_grid()].
+#' 
+#' @return A combined `ggplot` object containing the profiles and paths (no shared legend).
+#' 
+#' @export
+plotProfilesAndPaths <- function(profs, whichpars, npars = 5, ncols = 3, normalizePaths = FALSE, modes = c("data", "prior"), ...) {
+  .require_ns("cowplot", "plotProfilesAndPaths()")
+
+  # Save original obj.attributes before any subsetting drops them
+  orig_oa <- attr(profs, "obj.attributes")
+  filtered_oa <- if (!is.null(orig_oa)) intersect(orig_oa, modes) else NULL
+  
+  profs <- profs[profs$whichPar %in% whichpars]
+  
+  cleanProfilePlot <- function(prof_sub) {
+    # Remove columns for modes we don't want, so plotProfile can't plot them
+    cols_to_drop <- setdiff(orig_oa, modes)
+    prof_sub <- prof_sub[, !(colnames(prof_sub) %in% cols_to_drop), drop = FALSE]
+    attr(prof_sub, "obj.attributes") <- filtered_oa
+    p <- plotProfile(prof_sub)
+    
+    # plotProfile always adds "total"; filter the underlying data to requested modes
+    pdata <- attr(p, "data")
+    pdata <- pdata[pdata$mode %in% modes, , drop = FALSE]
+    
+    threshold <- c(1, 2.7, 3.84)
+    p_new <- ggplot(pdata, aes(x = par, y = delta, group = interaction(proflist, mode), 
+                               color = proflist, linetype = mode)) +
+      facet_wrap(~name, scales = "free_x") +
+      geom_hline(yintercept = threshold, lty = 2, color = "gray") +
+      geom_line() +
+      geom_point(data = subset(pdata, is.zero)) +
+      ylab(expression(paste("CL /", Delta * chi^2))) +
+      scale_y_continuous(breaks = c(1, 2.7, 3.84), 
+                         labels = c("68% / 1   ", "90% / 2.71", "95% / 3.84"),
+                         limits = c(NA, 5)) +
+      xlab("parameter value") +
+      labs(title = NULL, x = NULL, linetype = "contrib") +
+      theme(
+        strip.text = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+      ) +
+      guides(color = "none", fill = "none") +
+      theme(legend.position = "none")
+  }
+  
+  stacked_list <- vector("list", length(whichpars))
+  
+  for (z in seq_along(whichpars)) {
+    prof_sub <- profs[profs$whichPar == whichpars[z]]
+    
+    p_prof_noleg <- cleanProfilePlot(prof_sub)
+    
+    p_paths <- plotPathsMulti(prof_sub, whichpars[z], npars, normalizePaths = normalizePaths) +
+      theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+    
+    aligned_pair <- cowplot::align_plots(p_prof_noleg, p_paths, align = "v", axis = "tb")
+    stacked_list[[z]] <- cowplot::plot_grid(aligned_pair[[1]], aligned_pair[[2]],
+                                            ncol = 1, rel_heights = c(1, 0.7), align = "v", axis = "tb")
+  }
+  
+  body <- cowplot::plot_grid(plotlist = stacked_list, ncol = ncols, ...)
+  
+  return(body)
 }

@@ -4,7 +4,7 @@
 ## Profiles mcmc(bayesNLMEMarginal(...), sequenceType = "sequential") with the
 ## "good defaults" recipe used in inst/examples/theophyllineBayes.R:
 ##
-##   1. Fit FOCEI MAP first (one nlmeFit(method = "focei") call), reuse its
+##   1. Fit FOCEI MAP first (one EM(method = "focei") call), reuse its
 ##      Hessian both as the fixed Langevin preconditioner and as the
 ##      covariance of the Laplace cloud (priorSample).
 ##   2. SMC moves: moveType = "langevin", metric = "fixed",
@@ -145,7 +145,7 @@ init_bayes <- c(init_bayes,
 cat(sprintf("[%s] fitting FOCEI MAP (warm-start for SMC)...\n",
             format(Sys.time(), "%H:%M:%S")))
 t_focei <- system.time(
-  focei_fit <- nlmeFit(joint, om, init_bayes,
+  focei_fit <- EM(joint, om, init_bayes,
                         prdfn = prdfn, data = dlist, errfn = err,
                         method = "focei",
                         control = list(focei = list(

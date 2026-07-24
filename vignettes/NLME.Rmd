@@ -1012,23 +1012,23 @@ obj <- normL2(dlist, g * x * p, errmodel = err) +
 
 The `init` vector must contain every structural parameter, every
 log-scale residual SD, and every Cholesky entry `om$cholPars`. Build a
-complete, correctly-ordered start with `nlmeInit(structural, om)`, which
+complete, correctly-ordered start with `emInit(structural, om)`, which
 appends default log-Cholesky diagonals (`log(sd)`) for you:
 
 ```{r init}
-init <- nlmeInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
+init <- emInit(c(tka = 0, tv = 3, tcl = 0.7, log_sigma_add = log(0.2)),
                  om, sd = 0.3)
 ```
 
 ## FOCEI
 
-`nlmeFit()` takes just the composed objective and a starting vector: the
+`EM()` takes just the composed objective and a starting vector: the
 prediction function, data, error model, and omega spec are recovered from
 `obj` (stamped at construction by `normL2` / `constraintL2`), so they are
 never passed a second time.
 
 ```{r focei-call}
-fit_focei <- nlmeFit(
+fit_focei <- EM(
   obj, init,
   method   = "focei",
   control  = list(focei = list(
@@ -1053,7 +1053,7 @@ estimator to converge on a parameter neighbourhood, then refines the
 estimate with the higher-accuracy quadrature ECM:
 
 ```{r quad-call}
-fit_quad <- nlmeFit(
+fit_quad <- EM(
   obj, init,
   method   = "foceiQuadrature",
   control  = list(
@@ -1102,7 +1102,7 @@ via [updateOmegaChol]. The $H_i^{-1}$ term is the per-subject posterior
 variance; dropping it recovers ITS, which under-estimates $\Omega$.
 
 ```{r laplaceem-call}
-fit_em <- nlmeFit(obj, init, method = "laplaceEM",
+fit_em <- EM(obj, init, method = "laplaceEM",
                   control = list(quadrature = list(maxEcm = 200L)))
 ```
 
@@ -1127,7 +1127,7 @@ structural `trust()`. It reads `control$saem`:
 * `cm1Control`, `cores`: structural `trust()` knobs and E-step parallelism.
 
 ```{r saem-call}
-fit_saem <- nlmeFit(obj, init, method = "saem",
+fit_saem <- EM(obj, init, method = "saem",
                     control = list(saem = list(nBurnin = 200L, nEM = 200L)))
 ```
 
@@ -1139,7 +1139,7 @@ evaluation at the converged point, not from the SAEM recursion itself.
 
 ## Inspecting the fit
 
-`fit_focei` and `fit_quad` are `nlmeFit` S3 objects with the same
+`fit_focei` and `fit_quad` are `EM` S3 objects with the same
 field layout (`argument`, `value`, `value_nonmem`, `ofvType`, `nObs`,
 `gradient`, `hessian`, `omega`, `etaModes`, `converged`, `iterations`,
 `emDiag`, `method`, ...). `value` is the plain-ML $-2\log L$ (both

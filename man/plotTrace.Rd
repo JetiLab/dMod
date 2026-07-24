@@ -2,24 +2,24 @@
 % Please edit documentation in R/plots.R
 \name{plotTrace}
 \alias{plotTrace}
-\alias{plotTrace.nlmeFit}
-\alias{plotTrace.mcmcResultSequential}
-\alias{plotTrace.mcmcResultSingle}
-\alias{plotTrace.mcmcResultBlocked}
+\alias{plotTrace.em}
+\alias{plotTrace.mcmcresultsequential}
+\alias{plotTrace.mcmcresultsingle}
+\alias{plotTrace.mcmcresultblocked}
 \title{ECM convergence trace (OFV, |delta-psi|) per stage}
 \usage{
 plotTrace(x, ...)
 
-\method{plotTrace}{nlmeFit}(x, ...)
+\method{plotTrace}{em}(x, ...)
 
-\method{plotTrace}{mcmcResultSequential}(x, ...)
+\method{plotTrace}{mcmcresultsequential}(x, ...)
 
-\method{plotTrace}{mcmcResultSingle}(x, parameters = NULL, ...)
+\method{plotTrace}{mcmcresultsingle}(x, parameters = NULL, ...)
 
-\method{plotTrace}{mcmcResultBlocked}(x, parameters = NULL, ...)
+\method{plotTrace}{mcmcresultblocked}(x, parameters = NULL, ...)
 }
 \arguments{
-\item{x}{An \link{nlmeFit} with \code{method = "quadrature"}. Errors otherwise.}
+\item{x}{An \link{EM} with \code{method = "quadrature"}. Errors otherwise.}
 
 \item{...}{Ignored.}
 
@@ -34,7 +34,7 @@ A ggplot.
 \description{
 Four-panel trace of OFV, structural-parameter step
 \verb{|delta psi|}, max softmax weight, and minimum effective node count
-across ECM iterations. Quadrature-method nlmeFit only.
+across ECM iterations. Quadrature-method EM only.
 
 Method for \code{\link[=mcmc]{mcmc()}} sequential / SMC outputs: shows the
 adaptive tempering schedule (beta vs level), the post-resample ESS,

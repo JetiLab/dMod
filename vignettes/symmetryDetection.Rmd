@@ -1104,9 +1104,14 @@ hill <- eqnlist() |>
 
 # the modular engine assesses the free exponent n through the recast, like any
 # parameter: n and the Michaelis constant K come out non-identifiable (dim 7)
-res <- symmetryDetection(hill, eqnvec(xobs = "scale * x"),
+reseq <- symmetryDetection(hill, eqnvec(xobs = "scale * x"),
                          method = "observability", equilibrate = TRUE,
-                         reduceCQ = FALSE)
+                         reconstruct = TRUE, reduceCQ = FALSE)
+
+res <- symmetryDetection(hill, eqnvec(xobs = "scale * x"),
+                         method = "observability", equilibrate = FALSE,
+                         reconstruct = TRUE, reduceCQ = FALSE)
+
 c(identifiable = res$identifiable, dim = res$dim,
   n_confounded = "n" %in% unlist(lapply(res$symmetries, function(d) d$support)))
 

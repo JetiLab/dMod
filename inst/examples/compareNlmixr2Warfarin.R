@@ -15,7 +15,7 @@
 ##   2. THROUGHPUT / ROBUSTNESS. Run N multistart fits (perturbed structural
 ##      starts) in each tool, in parallel over `cores`, and compare total
 ##      wall-clock, per-fit time, and the fraction of starts that reach the
-##      global optimum (Sections 5-6). dMod multistart is msnlmeFit(); nlmixr2
+##      global optimum (Sections 5-6). dMod multistart is msEM(); nlmixr2
 ##      has no native multistart, so N nlmixr2() calls are forked via
 ##      parallel::mclapply with rxode2 threads pinned to 1 per worker.
 ##
@@ -149,7 +149,7 @@ om  <- omega(eta = c("eta_V", "eta_Cl", "eta_pca0", "eta_kout"),
              subjects = subjects)
 obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
          constraintL2(mu = 0, Omega = om)
-init <- nlmeInit(c(tka = 0.0, tv = 2.0, tcl = -2.0, tpca0 = 4.6,
+init <- emInit(c(tka = 0.0, tv = 2.0, tcl = -2.0, tpca0 = 4.6,
                    tkout = -3.0, tic50 = 0.7,
                    log_sigma_cp = log(0.2), log_sigma_pca = log(7.4)),
                  om, sd = 0.3)
@@ -223,9 +223,9 @@ run_one_nlmixr <- function(theta) {
 ## ============================================================================
 ## 4. Single reference fit from each tool -> convergence table
 ## ============================================================================
-cat("\n== dMod nlmeFit(method='focei') reference ==\n")
+cat("\n== dMod EM(method='focei') reference ==\n")
 t_dmod1 <- system.time(
-  fit_dmod <- nlmeFit(obj, init, method = "focei", control = focei_ctrl,
+  fit_dmod <- EM(obj, init, method = "focei", control = focei_ctrl,
                       verbose = FALSE))[["elapsed"]]
 
 cat("== nlmixr2 FOCEI reference ==\n")
@@ -289,9 +289,9 @@ cat("  (OFVs on different scales; see header -- compare the estimates.)\n")
 cat(sprintf("\n== Multistart: %d fits x %d cores (perturb SD = %.2f) ==\n",
             N_FITS, CORES, PERT_SD))
 
-cat("-- dMod msnlmeFit --\n")
+cat("-- dMod msEM --\n")
 t_dmod_ms <- system.time(
-  ms_dmod <- msnlmeFit(obj, init, method = "focei", control = focei_ctrl,
+  ms_dmod <- msEM(obj, init, method = "focei", control = focei_ctrl,
                        fits = N_FITS, cores = CORES, sd = PERT_SD))[["elapsed"]]
 pf_dmod <- as.parframe(ms_dmod)
 

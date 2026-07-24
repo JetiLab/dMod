@@ -131,8 +131,8 @@ test_that("mcmc/langevin on linear-Gaussian toy recovers analytic posterior mome
                  moveType = "langevin", metric = "riemannFisher",
                  parinit  = mu + c(1, 1, 1),
                  nIter    = 4000L, warmup = 1500L)
-  expect_s3_class(chain, "mcmcResultSingle")
-  expect_s3_class(chain, "mcmcResult")
+  expect_s3_class(chain, "mcmcresultsingle")
+  expect_s3_class(chain, "mcmcresult")
 
   emp_mean <- colMeans(chain$samples)
   emp_cov  <- cov(chain$samples)
@@ -249,7 +249,7 @@ test_that("mcmc/langevin on ODE-based decay model runs end-to-end", {
                  metric = "fixed",
                  moveControl = langevinControl(GFixed = mapfit$hessian),
                  parinit = mapfit$argument, nIter = 200L, warmup = 200L)
-  expect_s3_class(chain, "mcmcResultSingle")
+  expect_s3_class(chain, "mcmcresultsingle")
   expect_equal(dim(chain$samples), c(200L, 2L))
   expect_true(all(is.finite(chain$samples)))
   expect_true(is.finite(chain$acceptRate))
@@ -329,8 +329,8 @@ test_that("mcmc/sequential recovers linear-Gaussian posterior moments and eviden
                  moveType         = "langevin",
                  sequenceControl  = smcControl(malaSteps = 6L))
 
-  expect_s3_class(chain, "mcmcResultSequential")
-  expect_s3_class(chain, "mcmcResult")
+  expect_s3_class(chain, "mcmcresultsequential")
+  expect_s3_class(chain, "mcmcresult")
   expect_equal(ncol(chain$samples), 2L)
   expect_equal(nrow(chain$samples), 800L)
 
@@ -458,8 +458,8 @@ test_that("mcmc(target, chains = N) returns expected shape and R-hat", {
                   chains           = 3L,
                   chainCores       = 1L)
 
-  expect_s3_class(chains, "mcmcResultMulti")
-  expect_s3_class(chains, "mcmcResultSequential")
+  expect_s3_class(chains, "mcmcresultmulti")
+  expect_s3_class(chains, "mcmcresultsequential")
   expect_equal(chains$nChains, 3L)
   expect_equal(ncol(chains$samples), 2L)
   expect_equal(length(unique(chains$chainId)), 3L)
@@ -484,7 +484,7 @@ test_that("mcmc(target, chains = N) returns expected shape and R-hat", {
     stepsizePath = c(0.1, 0.12, 0.15, 0.13, 0.11),
     nLevels      = 5L,
     call         = sys.call())
-  class(out) <- c("mcmcResultSequential", "mcmcResult", "list")
+  class(out) <- c("mcmcresultsequential", "mcmcresult", "list")
   out
 }
 
@@ -499,12 +499,12 @@ test_that("mcmc(target, chains = N) returns expected shape and R-hat", {
               moveType = "langevin", metric = "riemannFisher",
               sequenceType = "single",
               call = sys.call())
-  class(out) <- c("mcmcResultSingle", "mcmcResult", "list")
+  class(out) <- c("mcmcresultsingle", "mcmcresult", "list")
   out
 }
 
 
-test_that("plot.mcmcResult renders without error (SMC fixture)", {
+test_that("plot.mcmcresult renders without error (SMC fixture)", {
   smc <- .makeFakeSmc()
   p <- plot(smc)
   expect_s3_class(p, "ggplot")
@@ -514,7 +514,7 @@ test_that("plot.mcmcResult renders without error (SMC fixture)", {
 })
 
 
-test_that("plotTrace.mcmcResultSequential and plotTrace.mcmcResultSingle render", {
+test_that("plotTrace.mcmcresultsequential and plotTrace.mcmcresultsingle render", {
   smc <- .makeFakeSmc()
   expect_s3_class(plotTrace(smc), "ggplot")
 
@@ -529,14 +529,14 @@ test_that("plotPairs renders without error", {
 })
 
 
-test_that("plot.mcmcResult errors on unknown parameter name", {
+test_that("plot.mcmcresult errors on unknown parameter name", {
   smc <- .makeFakeSmc()
   expect_error(plot(smc, parameters = "nonexistent"),
                "Unknown parameter name")
 })
 
 
-test_that("plot.mcmcResultMulti returns a ggplot", {
+test_that("plot.mcmcresultmulti returns a ggplot", {
   S <- matrix(rnorm(60 * 2), 60, 2L, dimnames = list(NULL, c("a", "b")))
   chains <- list(
     samples     = S,
@@ -548,8 +548,8 @@ test_that("plot.mcmcResultMulti returns a ggplot", {
     method      = "sequential",
     chains      = list(),
     call        = sys.call())
-  class(chains) <- c("mcmcResultMulti", "mcmcResultSequential",
-                      "mcmcResult", "list")
+  class(chains) <- c("mcmcresultmulti", "mcmcresultsequential",
+                      "mcmcresult", "list")
   expect_s3_class(plot(chains), "ggplot")
 })
 
@@ -597,7 +597,7 @@ test_that("SMC init retries -Inf particles by redrawing from the prior", {
                                               verbose = FALSE),
                 retry = TRUE, nTries = 10L)
 
-  expect_s3_class(chain, "mcmcResultSequential")
+  expect_s3_class(chain, "mcmcresultsequential")
   expect_equal(nrow(chain$samples), pop)
   expect_true(is.finite(chain$logEvidence))
 })

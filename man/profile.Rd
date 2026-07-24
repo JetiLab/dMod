@@ -5,7 +5,7 @@
 \title{Profile-likelihood (PL) computation}
 \usage{
 profile(
-  obj,
+  objfun,
   pars,
   whichPar,
   alpha = 0.05,
@@ -18,11 +18,12 @@ profile(
   cores = 1,
   cautiousMode = FALSE,
   side = c("both", "left", "right"),
-  ...
+  ...,
+  obj
 )
 }
 \arguments{
-\item{obj}{Objective function \code{obj(pars, fixed, ...)} returning a list with "value",
+\item{objfun}{Objective function \code{objfun(pars, fixed, ...)} returning a list with "value",
 "gradient" and "hessian". If attribute "valueData" and/or "valuePrior are returned they are attached to the return value.}
 
 \item{pars}{Parameter vector corresponding to the log-liklihood optimum.}
@@ -57,13 +58,15 @@ parameters. Multiplies with the OpenMP threads each objective function uses
 
 \item{side}{either, "left", "right" or "both": determines the side of the profile which is calculated (usefeull for parallelization). default is "both"}
 
-\item{...}{Arguments going to obj()}
+\item{...}{Arguments going to objfun()}
+
+\item{obj}{Deprecated, use \code{objfun}. Only honored when spelled out in full.}
 }
 \value{
 Named list of length one. The name is the parameter name. The list enty is a
 matrix with columns "value" (the objective value), "constraint" (deviation of the profiled paramter from
 the original value), "stepsize" (the stepsize take for the iteration), "gamma" (the gamma value employed for the
-iteration), "valueData" and "valuePrior" (if specified in obj), one column per parameter (the profile paths).
+iteration), "valueData" and "valuePrior" (if specified in objfun), one column per parameter (the profile paths).
 }
 \description{
 Profile-likelihood (PL) computation

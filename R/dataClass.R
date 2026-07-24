@@ -308,3 +308,35 @@ covariates.data.frame <- function(x, ...) {
   return(out)
 
 }
+
+
+## datalist constructor (moved from classes.R) ----------------------------------------
+
+## Data classes ----------------------------------------------------------------
+
+#' Generate a datalist object
+#'
+#' @description The datalist object stores time-course data in a list of data.frames.
+#' The names of the list serve as identifiers, e.g. of an experimental condition, etc.
+#' @details Datalists can be plotted, see [plotData] and merged, see [sumdatalist].
+#' They are the basic structure when combining model prediction and data via the [normL2]
+#' objective function.
+#' 
+#' The standard columns of the datalist data frames are "name" (observable name), 
+#' "time" (time points), "value" (data value), "sigma" (uncertainty, can be NA), and
+#' "lloq" (lower limit of quantification, `-Inf` by default).
+#'
+#' Datalists carry the attribute `condition.grid` which contains additional information about different
+#' conditions, such as dosing information for the experiment. It can be conveniently accessed by the [covariates]-function.
+#' Reassigning names to a datalist also renames the rows of the `condition.grid`.
+#' @param ... data.frame objects to be coerced into a list and additional arguments
+#' @return Object of class `datalist`.
+#' @export
+datalist <- function(...) {
+  mylist <- list(...)
+  mynames <- names(mylist)
+  if (is.null(mynames)) mynames <- as.character(1:length(mylist))
+  as.datalist(mylist, mynames)
+}
+
+

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SBML -> JSON adapter for dMod's `import_sbml()`. Reads SBML directly via
+"""SBML -> JSON adapter for dMod's `importSbml()`. Reads SBML directly via
 libsbml and emits a compact JSON payload with everything dMod needs:
 stoichiometric matrix, kinetic-law strings, parameter values, species
 initial expressions, compartment metadata.
@@ -21,7 +21,7 @@ Output JSON keys (consumed unchanged by R/SBMLinterface.R):
 Limitations:
 - AssignmentRules are emitted in the JSON `assignmentRules` dict (LHS -> RHS
   formula text in L3 syntax). The R-side caller is expected to inline them
-  into rates / inits / observables (see import_sbml() in R/SBMLinterface.R).
+  into rates / inits / observables (see importSbml() in R/SBMLinterface.R).
 - RateRules (`<rateRule variable="X">`) are emitted in `rateRules` as
   {variable: rhs_formula}. The R-side adds a virtual reaction with
   stoichiometry +1 in row X, rate = rhs_formula, AFTER the kinetic-law
@@ -101,7 +101,7 @@ def parse_sbml(sbml_file):
     # --- species + initial-value resolution ---
     # Precedence: InitialAssignment > InitialConcentration > InitialAmount > 0.
     # We always emit a string so the R side gets a uniform character vector;
-    # `import_sbml()` consumes both numeric-strings and symbolic expressions
+    # `importSbml()` consumes both numeric-strings and symbolic expressions
     # via the parameter trafo.
     state_names = []
     species_compartments = {}

@@ -1,4 +1,4 @@
-context("Sumdatalist")
+## Context: "Sumdatalist"  (context() is deprecated in testthat 3e; kept as a note)
 test_that("Direct sum of datalists", {
   
   #-!Start example code

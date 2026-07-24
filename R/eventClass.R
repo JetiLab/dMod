@@ -54,6 +54,28 @@ eventlist <- function(var = NULL, time = NULL, value = NULL, root = NULL, method
   
 }
 
+#' @export
+print.eventlist <- function(x, ...) {
+
+  if (nrow(x) == 0L) {
+    cat("Empty eventlist (no events).\n")
+    return(invisible(x))
+  }
+
+  cat("Eventlist with", nrow(x), if (nrow(x) == 1L) "event:\n" else "events:\n")
+  # Strip the class so this dispatches to print.data.frame rather than recursing.
+  print.data.frame(as.data.frame(x, stringsAsFactors = FALSE), ...)
+
+  rooted <- !is.na(x$root) & nzchar(as.character(x$root))
+  if (any(rooted))
+    cat("... ", sum(rooted), " event(s) triggered by a root condition ",
+        "rather than a fixed time.\n", sep = "")
+
+  invisible(x)
+
+}
+
+
 #' Coerce to eventlist
 #'
 #' @param ... not used

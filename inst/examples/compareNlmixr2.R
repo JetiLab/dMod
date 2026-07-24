@@ -104,12 +104,12 @@ compile(prd, e, cores = 4)
 om  <- omega(eta = c("eta_Ka", "eta_V", "eta_Cl"), subjects = subjects)
 obj <- normL2(dlist, prd, errmodel = e, use.bessel = FALSE) +
          constraintL2(mu = 0, Omega = om)
-init <- nlmeInit(c(tka = 0.0, tv = 3.0, tcl = 0.7, log_sigma_add = log(0.2)),
+init <- emInit(c(tka = 0.0, tv = 3.0, tcl = 0.7, log_sigma_add = log(0.2)),
                  om, sd = 0.3)
 
-cat("\n== dMod nlmeFit(method = 'focei') ==\n")
+cat("\n== dMod EM(method = 'focei') ==\n")
 t_dmod <- system.time(
-  fit_dmod <- nlmeFit(obj, init, method = "focei",
+  fit_dmod <- EM(obj, init, method = "focei",
                       control = list(focei = list(
                         innerControl = list(iterlim = 30),
                         trustControl = list(iterlim = 100))),

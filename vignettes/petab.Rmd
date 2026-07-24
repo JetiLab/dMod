@@ -48,12 +48,12 @@ list.files(petab_dir)
 ```{r yaml}
 library(dMod)
 yamlPath <- file.path(petab_dir, "Boehm.yaml")
-manifest <- read_petab_yaml(yamlPath)
+manifest <- readPetabYaml(yamlPath)
 str(manifest, max.level = 2)
 ```
 
 ```{r tables}
-tables <- read_petab_tables(yamlPath)
+tables <- readPetabTables(yamlPath)
 head(tables$measurements)
 tables$observables
 tables$parameters[, c("parameterId", "parameterScale",

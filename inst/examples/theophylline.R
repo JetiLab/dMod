@@ -8,10 +8,10 @@
 ##   1. Building the dMod prediction chain (eqnlist -> odemodel -> Xs -> Y).
 ##   2. Per-subject parameter trafos with branch() + P(method = "explicit").
 ##   3. Assembling the marginal likelihood: normL2(...) + constraintL2(...).
-##   4. Fitting via the unified API: nlmeFit(method = "focei").
+##   4. Fitting via the unified API: EM(method = "focei").
 ##   5. Diagnostic plots from R/plots.R (camelCase S3 generics):
 ##        plotIndivs(fit)      per-subject IPRED/PRED curves + observed dots
-##        plot(fit)            DV vs IPRED + DV vs PRED scatter (plot.nlmeFit)
+##        plot(fit)            DV vs IPRED + DV vs PRED scatter (plot.em)
 ##        plotResiduals(fit)   IWRES vs IPRED + IWRES vs TIME
 ##        plotHistIndivs(fit)  eta histogram + QQ vs N(0, Omega_kk)
 ##
@@ -149,8 +149,8 @@ init[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## ----------------------------------------------------------------------------
 ## 4. FOCEI fit
 ## ----------------------------------------------------------------------------
-cat("\n== nlmeFit(method = 'focei') ==\n")
-fit_focei <- nlmeFit(obj, init,
+cat("\n== EM(method = 'focei') ==\n")
+fit_focei <- EM(obj, init,
                      method   = "focei",
                      control  = list(focei = list(
                        innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),

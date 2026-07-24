@@ -4,7 +4,7 @@
 ##
 ## Companion to inst/examples/theophylline.R. Same 1-compartment oral PK
 ## chemistry, same lognormal residual, same per-subject trafo. The frequentist
-## FOCEI fit (nlmeFit(method = "focei")) is the warm-start for the Bayesian
+## FOCEI fit (EM(method = "focei")) is the warm-start for the Bayesian
 ## run; on top of it we draw a posterior over
 ##
 ##     (tka, tv, tcl, log_sigma_add, omega_chol_*)
@@ -131,8 +131,8 @@ init_outer[om$cholPars] <- rep(log(0.3), length(om$cholPars))
 ## ----------------------------------------------------------------------------
 ## 3. FOCEI MAP -- warm-start for the Bayesian run
 ## ----------------------------------------------------------------------------
-cat("\n== nlmeFit(method = 'focei')  (MAP warm-start) ==\n")
-fit_focei <- nlmeFit(obj, init_outer,
+cat("\n== EM(method = 'focei')  (MAP warm-start) ==\n")
+fit_focei <- EM(obj, init_outer,
                      method  = "focei",
                      control = list(focei = list(
                        innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),

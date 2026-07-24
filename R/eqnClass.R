@@ -98,7 +98,7 @@ is.eqnlist <- function(x) {
 #'   aligned with `colnames(S)`. Only consulted when `weight = "volume"`.
 #' @return Data frame with conserved quantities carrying an attribute with the
 #'   number of conserved quantities.
-#' @author Malenke Mader, \email{Malenka.Mader@@fdm.uni-freiburg.de}
+#' @author Malenka Mader, \email{Malenka.Mader@@fdm.uni-freiburg.de}
 #'
 #' @example inst/examples/equations.R
 #' @export
@@ -1198,6 +1198,184 @@ getLinVars <- function(eqnvec) {
   variables[linear_vars]
 }
 
+
+
+
+
+
+## eqnvec / eqnlist constructors (moved from classes.R) ----------------------------------------
+
+## Equation classes -------------------------------------------------------
+
+#' Generate equation vector object
+#'
+#' @description The eqnvec object stores explicit algebraic equations, like the
+#' right-hand sides of an ODE, observation functions or parameter transformations
+#' as named character vectors.
+#' @param ... mathematical expressions as characters to be coerced,
+#' the right-hand sides of the equations
+#' @return object of class `eqnvec`, basically a named character.
+#' @example inst/examples/eqnvec.R
+#' @seealso [eqnlist]
+#' @export
+eqnvec <- function(...) {
+
+  mylist <- list(...)
+  if (length(mylist) > 0) {
+    mynames <- paste0("eqn", 1:length(mylist))
+    is.available <- !is.null(names(mylist))
+    mynames[is.available] <- names(mylist)[is.available]
+
+    names(mylist) <- mynames
+    out <- unlist(mylist)
+
+    return(as.eqnvec(out))
+
+  } else {
+
+    return(NULL)
+
+  }
+
+}
+
+#' Generate eqnlist object
+#'
+#' @description The eqnlist object stores an ODE as a stoichiometric matrix,
+#' rate expressions, state names, and compartment information.
+#' @export
+#' @param smatrix Numeric stoichiometric matrix; one row per reaction, one
+#'   column per state.
+#' @param states Character vector of state names.
+#' @param rates Character vector of rate expressions.
+#' @param volumes Named character of state volumes (kept for back-compat; when
+#'   supplied without `compartments`/`compartmentOf`, distinct expressions are
+#'   auto-assigned IDs `c1`, `c2`, ...).
+#' @param description Character vector describing each reaction.
+#' @param compartments Named list keyed by compartment ID; each entry is a
+#'   volume expression (character) or a list with fields `volume` and `rule`
+#'   (`rule` reserved for future dynamic-volume support, must be `NULL`).
+#' @param compartmentOf Named character vector mapping state → compartment ID.
+#'   States not listed default to compartment `"defaultComp"` with volume `"1"`.
+#' @param reactionCompartment Optional character vector of length
+#'   `nrow(smatrix)`. Per-reaction reference compartment ID; use `NA` to infer
+#'   from educts. Required when educts span multiple compartments.
+#' @param totals Optional named list of user-defined conservation-quantity
+#'   expressions, as produced by [customTotals]. `NULL` leaves the basis to be
+#'   auto-detected from the stoichiometric matrix.
+#' @return An object of class `eqnlist`, basically a list.
+#' @example inst/examples/eqnlist.R
+eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL,
+                    volumes = NULL, description = NULL,
+                    compartments = NULL, compartmentOf = NULL,
+                    reactionCompartment = NULL, totals = NULL) {
+
+  # Dimension checks and preparations for non-empty argument list.
+  if (all(!is.null(c(smatrix, states, rates)))) {
+    #Dimension checks
+    d1 <- dim(smatrix)
+    l2 <- length(states)
+    l3 <- length(rates)
+    if (l2 != d1[2]) stop("Number of states does not coincide with number of columns of stoichiometric matrix")
+    if (l3 != d1[1]) stop("Number of rates does not coincide with number of rows of stoichiometric matrix")
+
+    # Prepare variables
+    smatrix <- as.matrix(smatrix)
+    colnames(smatrix) <- states
+    if (is.null(description)) {
+      description <- 1:nrow(smatrix)
+    }
+  }
+
+  resolved <- .resolve_compartments(as.character(states), compartments, compartmentOf, volumes)
+
+  # Reaction-compartment annotation: optional per-reaction V_ref. NA means
+  # "infer from educts" in getFluxes(). Default NULL (no annotation anywhere).
+  if (!is.null(rates) && !is.null(reactionCompartment)) {
+    reactionCompartment <- as.character(reactionCompartment)
+    if (length(reactionCompartment) != length(rates))
+      stop("`reactionCompartment` must match the number of rates (", length(rates), ").")
+    bad <- setdiff(stats::na.omit(reactionCompartment), names(resolved$compartments))
+    if (length(bad) > 0L)
+      stop("`reactionCompartment` references undefined compartments: ", paste(bad, collapse = ", "))
+  }
+
+  out <- list(smatrix = smatrix,
+              states = as.character(states),
+              rates = as.character(rates),
+              volumes = resolved$volumes,
+              description = as.character(description),
+              compartments = resolved$compartments,
+              compartmentOf = resolved$compartmentOf,
+              reactionCompartment = reactionCompartment,
+              totals = totals)
+  class(out) <- c("eqnlist", "list")
+
+  return(out)
+}
+
+
+# Resolve compartment inputs into canonical (compartments, compartmentOf, volumes).
+# Returns a list with those three fields; all NULL when `states` is empty (the
+# empty-eqnlist case that `is.eqnlist()` validates).
+.resolve_compartments <- function(states, compartments, compartmentOf, volumes) {
+
+  if (length(states) == 0L) {
+    return(list(compartments = NULL, compartmentOf = NULL, volumes = NULL))
+  }
+
+  normalize_entry <- function(e) {
+    if (is.character(e) && length(e) == 1L) return(list(volume = unname(e), rule = NULL))
+    if (is.list(e) && !is.null(e$volume)) {
+      return(list(volume = as.character(e$volume), rule = e$rule))
+    }
+    stop("Each compartment entry must be a character volume expression or a list with `$volume`.")
+  }
+
+  if (!is.null(compartments) && !is.null(compartmentOf)) {
+    compartments <- lapply(compartments, normalize_entry)
+    compartmentOf <- setNames(as.character(compartmentOf), names(compartmentOf))
+    if (is.null(names(compartmentOf)) || any(!nzchar(names(compartmentOf))))
+      stop("`compartmentOf` must be a fully named character vector (names = state IDs).")
+    missing_states <- setdiff(states, names(compartmentOf))
+    if (length(missing_states) > 0L) {
+      if (!"defaultComp" %in% names(compartments))
+        compartments[["defaultComp"]] <- list(volume = "1", rule = NULL)
+      compartmentOf <- c(compartmentOf, setNames(rep("defaultComp", length(missing_states)), missing_states))
+    }
+    bad <- setdiff(compartmentOf, names(compartments))
+    if (length(bad) > 0L)
+      stop("compartmentOf references undefined compartments: ", paste(unique(bad), collapse = ", "))
+    compartmentOf <- compartmentOf[states]
+  } else if (!is.null(volumes)) {
+    v <- as.character(volumes)
+    nms <- names(volumes)
+    if (is.null(nms) || any(!nzchar(nms)))
+      stop("`volumes` must be a fully named character vector.")
+    names(v) <- nms
+    grouped <- split(names(v), v)
+    compartments <- list()
+    compartmentOf <- character(0)
+    for (i in seq_along(grouped)) {
+      cid <- paste0("c", i)
+      compartments[[cid]] <- list(volume = names(grouped)[i], rule = NULL)
+      compartmentOf[grouped[[i]]] <- cid
+    }
+    missing_states <- setdiff(states, names(compartmentOf))
+    if (length(missing_states) > 0L) {
+      compartments[["defaultComp"]] <- list(volume = "1", rule = NULL)
+      compartmentOf <- c(compartmentOf, setNames(rep("defaultComp", length(missing_states)), missing_states))
+    }
+    compartmentOf <- compartmentOf[states]
+  } else {
+    compartments <- list(defaultComp = list(volume = "1", rule = NULL))
+    compartmentOf <- setNames(rep("defaultComp", length(states)), states)
+  }
+
+  vols <- vapply(compartmentOf, function(id) compartments[[id]]$volume, character(1))
+  names(vols) <- names(compartmentOf)
+  list(compartments = compartments, compartmentOf = compartmentOf, volumes = vols)
+}
 
 
 

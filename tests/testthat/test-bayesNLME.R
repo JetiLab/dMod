@@ -55,7 +55,7 @@ test_that("bayesNLMEMarginal builds a likObj whose value at FOCEI MAP matches th
   fx <- .makeBayesNLMEFixture("bm")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
 
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     fx$obj, init,
     method = "focei",
     control = list(focei = list(
@@ -110,7 +110,7 @@ test_that("mcmc(bayesNLMEMarginal(...), sequenceType = 'sequential') smoke test"
 
   fx <- .makeBayesNLMEFixture("bm_smc")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     fx$obj, init, method = "focei"))
 
   priorTheta    <- constraintL2(c(mu_pop = 2.0), sigma = 5.0)
@@ -135,8 +135,8 @@ test_that("mcmc(bayesNLMEMarginal(...), sequenceType = 'sequential') smoke test"
                  sequenceControl  = smcControl(malaSteps = 2L,
                                                 essThreshold = 0.5))
 
-  expect_s3_class(chain, "mcmcResultSequential")
-  expect_s3_class(chain, "bayesNLMEMarginal")
+  expect_s3_class(chain, "mcmcresultsequential")
+  expect_s3_class(chain, "bayesnlmemarginal")
   expect_equal(ncol(chain$samples), 2L)
   expect_true(is.finite(chain$logEvidence))
 
@@ -153,7 +153,7 @@ test_that("mcmc(bayesNLMEJoint(...)) runs and returns expected shape", {
 
   fx <- .makeBayesNLMEFixture("bj")
   init <- c(mu_pop = 2.0, omega_eta_eta = log(0.3))
-  fit <- suppressMessages(nlmeFit(
+  fit <- suppressMessages(EM(
     fx$obj, init, method = "focei"))
 
   priorTheta    <- constraintL2(c(mu_pop = 2.0), sigma = 5.0)
@@ -177,8 +177,8 @@ test_that("mcmc(bayesNLMEJoint(...)) runs and returns expected shape", {
                  warmup          = 80L,
                  sequenceControl = smcControl(malaSteps = 3L))
 
-  expect_s3_class(chain, "mcmcResultBlocked")
-  expect_s3_class(chain, "bayesNLMEJoint")
+  expect_s3_class(chain, "mcmcresultblocked")
+  expect_s3_class(chain, "bayesnlmejoint")
   expect_equal(ncol(chain$samples), 2L)
   expect_equal(dim(chain$etaSamples)[2L], length(fx$subjects))
   expect_equal(dim(chain$etaSamples)[3L], 1L)

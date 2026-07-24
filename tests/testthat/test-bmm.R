@@ -1,4 +1,4 @@
-context("bmm (batched matrix multiplication, batch-first)")
+## Context: "bmm (batched matrix multiplication, batch-first)"  (context() is deprecated in testthat 3e; kept as a note)
 
 test_that("bmm_lb matches per-slice reference", {
   set.seed(1)

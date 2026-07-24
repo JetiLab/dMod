@@ -1,4 +1,4 @@
-context("compartments")
+## Context: "compartments"  (context() is deprecated in testthat 3e; kept as a note)
 
 test_that("back-compat flat volumes auto-translate to compartment IDs", {
   # Flat volumes c(A=V1, B=V1, C=V2) should produce two compartments c1, c2.
