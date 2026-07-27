@@ -16,6 +16,12 @@
 #include "residual_kernel.h"
 
 #include <Rcpp.h>
+// LAPACK / BLAS used here:
+//   dtrtrs: triangular solve, forward/backsolve
+//   dgemm:  matrix-matrix multiply
+#include <R_ext/RS.h>
+#include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
 #include <vector>
 #include <string>
 #include <cstddef>
@@ -25,19 +31,10 @@
 
 using namespace Rcpp;
 
-extern "C" {
-  // LAPACK / BLAS used here:
-  //   dtrtrs: triangular solve, forward/backsolve
-  //   dgemm:  matrix-matrix multiply
-  void dtrtrs_(const char* uplo, const char* trans, const char* diag,
-               const int* n, const int* nrhs, const double* a, const int* lda,
-               double* b, const int* ldb, int* info);
-  void dgemm_(const char* transa, const char* transb,
-              const int* m, const int* n, const int* k,
-              const double* alpha, const double* a, const int* lda,
-              const double* b, const int* ldb,
-              const double* beta, double* c, const int* ldc);
-}
+// R >= 3.6.2 appends hidden Fortran string lengths to BLAS/LAPACK char args.
+#ifndef FCONE
+#define FCONE
+#endif
 
 namespace {
 
@@ -84,14 +81,14 @@ void sandwich_hess(const double* dP, int n_inner, int n_theta,
   // tmp = H_inner * dP : (n_inner x n_theta)
   std::vector<double> tmp((std::size_t) n_inner * n_theta, 0.0);
   const double alpha = 1.0, beta = 0.0;
-  dgemm_("N", "N", &n_inner, &n_theta, &n_inner,
-         &alpha, H_inner_colmajor, &n_inner, dP, &n_inner,
-         &beta, tmp.data(), &n_inner);
+  F77_CALL(dgemm)("N", "N", &n_inner, &n_theta, &n_inner,
+                  &alpha, H_inner_colmajor, &n_inner, dP, &n_inner,
+                  &beta, tmp.data(), &n_inner FCONE FCONE);
   // H_theta += dP^T * tmp : (n_theta x n_theta)
   const double beta2 = 1.0;
-  dgemm_("T", "N", &n_theta, &n_theta, &n_inner,
-         &alpha, dP, &n_inner, tmp.data(), &n_inner,
-         &beta2, hess_theta_colmajor, &n_theta);
+  F77_CALL(dgemm)("T", "N", &n_theta, &n_theta, &n_inner,
+                  &alpha, dP, &n_inner, tmp.data(), &n_inner,
+                  &beta2, hess_theta_colmajor, &n_theta FCONE FCONE);
 }
 
 }  // namespace
@@ -496,14 +493,14 @@ List constraintL2_mvn_kernel(
     // Z = forwardsolve(L, R): L * Z = R, solve for Z; col-major
     std::vector<double> Z = R;  // overwritten in place by dtrtrs
     int nrhs = N, info = 0;
-    dtrtrs_("L", "N", "N", &K, &nrhs, &L_lower(0, 0), &K,
-            Z.data(), &K, &info);
+    F77_CALL(dtrtrs)("L", "N", "N", &K, &nrhs, &L_lower(0, 0), &K,
+                     Z.data(), &K, &info FCONE FCONE FCONE);
     if (info != 0) throw std::runtime_error("constraintL2_mvn: dtrtrs forward failed.");
 
     // W = backsolve(t(L), Z): L^T * W = Z; col-major
     std::vector<double> W = Z;
-    dtrtrs_("L", "T", "N", &K, &nrhs, &L_lower(0, 0), &K,
-            W.data(), &K, &info);
+    F77_CALL(dtrtrs)("L", "T", "N", &K, &nrhs, &L_lower(0, 0), &K,
+                     W.data(), &K, &info FCONE FCONE FCONE);
     if (info != 0) throw std::runtime_error("constraintL2_mvn: dtrtrs backsolve failed.");
 
     // quad = sum(Z * Z); logdetO = 2 * sum log diag(L); value = quad + N * logdetO
@@ -528,15 +525,15 @@ List constraintL2_mvn_kernel(
     std::vector<double> Linv((std::size_t) K * K, 0.0);
     for (int k = 0; k < K; ++k) Linv[k + (std::size_t) k * K] = 1.0;
     int K_int = K;
-    dtrtrs_("L", "N", "N", &K_int, &K_int, &L_lower(0, 0), &K,
-            Linv.data(), &K, &info);
+    F77_CALL(dtrtrs)("L", "N", "N", &K_int, &K_int, &L_lower(0, 0), &K,
+                     Linv.data(), &K, &info FCONE FCONE FCONE);
     // Now Linv = L^{-1} (lower tri).
     // Omega_inv = Linv^T * Linv : K x K, symmetric. Use dgemm.
     std::vector<double> Omega_inv((std::size_t) K * K, 0.0);
     const double alpha = 1.0, beta_init = 0.0;
-    dgemm_("T", "N", &K_int, &K_int, &K_int,
-           &alpha, Linv.data(), &K_int, Linv.data(), &K_int,
-           &beta_init, Omega_inv.data(), &K_int);
+    F77_CALL(dgemm)("T", "N", &K_int, &K_int, &K_int,
+                    &alpha, Linv.data(), &K_int, Linv.data(), &K_int,
+                    &beta_init, Omega_inv.data(), &K_int FCONE FCONE);
 
     // For each subject, add 2 * Omega_inv to the eta-block of Hi.
     for (int i = 0; i < N; ++i) {

@@ -4,6 +4,8 @@
 #include "residual_kernel.h"
 
 #include <Rcpp.h>     // brings in Rmath via R::dnorm / R::pnorm
+#include <R_ext/RS.h>
+#include <R_ext/BLAS.h>
 
 #include <cmath>
 #include <vector>
@@ -14,13 +16,10 @@
 #  define M_PI 3.14159265358979323846
 #endif
 
-extern "C" {
-  void dgemv_(const char* trans,
-              const int* m, const int* n, const double* alpha,
-              const double* a, const int* lda,
-              const double* x, const int* incx,
-              const double* beta, double* y, const int* incy);
-}
+// R >= 3.6.2 appends hidden Fortran string lengths to BLAS char arguments.
+#ifndef FCONE
+#define FCONE
+#endif
 
 namespace dmod {
 
@@ -57,8 +56,8 @@ void contract_d2_block(int n_obs, int n_par,
     // dgemv: y = alpha A x + beta y, A col-major [N2, n_obs], lda = N2.
     const int incx = 1;
     const double alpha = 1.0, beta = 0.0;
-    dgemv_("N", &N2, &n_obs, &alpha,
-           d2_block, &N2, W, &incx, &beta, scratch.data(), &incx);
+    F77_CALL(dgemv)("N", &N2, &n_obs, &alpha,
+                    d2_block, &N2, W, &incx, &beta, scratch.data(), &incx FCONE);
   } else {
     for (int i = 0; i < n_obs; ++i) {
       const double w = W[i];

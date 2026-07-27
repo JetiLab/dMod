@@ -43,7 +43,7 @@ the fitted error model is displayed.}
 \item{blather}{Logical. If \code{TRUE}, additional information is returned,
 including fitted parameter values, original \code{sigma} values, and confidence intervals.}
 
-\item{...}{Additional arguments passed to the optimizer \code{\link[optimx:optimr]{optimx::optimr()}}.}
+\item{...}{Additional arguments passed to the optimizer \code{optimx::optimr()}.}
 }
 \value{
 By default, a data frame is returned, containing the original data
@@ -73,7 +73,7 @@ The \option{errorModel} parameter defines this functional relationship.
 It should be expressed as a character string, using \kbd{x} to represent
 the mean.
 
-The optimization is performed using \code{\link[optimx:optimr]{optimx::optimr()}} with the
+The optimization is performed using \code{optimx::optimr()} with the
 \code{"L-BFGS-B"} method, which supports bound constraints. If \option{lower}
 and \option{upper} are not specified, the parameters are assumed to be
 unconstrained.

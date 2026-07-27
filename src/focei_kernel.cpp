@@ -19,33 +19,18 @@
 #include <limits>
 #include <cstddef>
 
+#include <R_ext/RS.h>
+#include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
+
 #include "residual_kernel.h"
 
 using namespace Rcpp;
 
-extern "C" {
-  void dsyevr_(const char* jobz, const char* range, const char* uplo,
-               const int* n, double* a, const int* lda,
-               const double* vl, const double* vu,
-               const int* il, const int* iu,
-               const double* abstol, int* m, double* w, double* z,
-               const int* ldz, int* isuppz,
-               double* work, const int* lwork,
-               int* iwork, const int* liwork, int* info);
-  // BLAS
-  void dgemm_(const char* transa, const char* transb,
-              const int* m, const int* n, const int* k,
-              const double* alpha, const double* a, const int* lda,
-              const double* b, const int* ldb,
-              const double* beta, double* c, const int* ldc);
-  void dgemv_(const char* trans,
-              const int* m, const int* n, const double* alpha,
-              const double* a, const int* lda,
-              const double* x, const int* incx,
-              const double* beta, double* y, const int* incy);
-  double ddot_(const int* n, const double* x, const int* incx,
-               const double* y, const int* incy);
-}
+// R >= 3.6.2 appends hidden Fortran string lengths to BLAS/LAPACK char args.
+#ifndef FCONE
+#define FCONE
+#endif
 
 
 // Smoke-test entry: one joint() call, returns OFV + ncalls for boundary
@@ -98,10 +83,10 @@ static void eigen_sym(double* A, int K, double* vals, double* vecs) {
   int    iwkopt;
   int    lwork  = -1;
   int    liwork = -1;
-  dsyevr_("V", "A", "U", &K, A_copy.data(), &K,
-          NULL, NULL, NULL, NULL, &abstol, &m_out,
-          vals, vecs, &K, isuppz.data(),
-          &wkopt, &lwork, &iwkopt, &liwork, &info);
+  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
+                   NULL, NULL, NULL, NULL, &abstol, &m_out,
+                   vals, vecs, &K, isuppz.data(),
+                   &wkopt, &lwork, &iwkopt, &liwork, &info FCONE FCONE FCONE);
   if (info != 0)
     throw std::runtime_error("eigen_sym: dsyevr workspace query failed.");
   lwork  = static_cast<int>(wkopt);
@@ -110,10 +95,10 @@ static void eigen_sym(double* A, int K, double* vals, double* vecs) {
   std::vector<int>    iwork(liwork);
   // Reload A_copy because dsyevr destroys it
   std::copy(A, A + K * K, A_copy.begin());
-  dsyevr_("V", "A", "U", &K, A_copy.data(), &K,
-          NULL, NULL, NULL, NULL, &abstol, &m_out,
-          vals, vecs, &K, isuppz.data(),
-          work.data(), &lwork, iwork.data(), &liwork, &info);
+  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
+                   NULL, NULL, NULL, NULL, &abstol, &m_out,
+                   vals, vecs, &K, isuppz.data(),
+                   work.data(), &lwork, iwork.data(), &liwork, &info FCONE FCONE FCONE);
   if (info != 0)
     throw std::runtime_error("eigen_sym: dsyevr failed.");
 }
@@ -868,15 +853,15 @@ List focei_outer_objfn(Function model_cb,
       for (int r = 0; r < n_outer; ++r)
         H_oi[r + k * n_outer] = H_full(outer_idx_hess[r], eta_idx_hess[i][k]);
     // tmp = H_oi * H_inv_i  (n_outer x K)
-    dgemm_("N", "N", &n_outer, &K, &K, &one,
-           H_oi.data(),     &n_outer,
-           H_inv_col.data(), &K,
-           &zero, tmp.data(), &n_outer);
+    F77_CALL(dgemm)("N", "N", &n_outer, &K, &K, &one,
+                    H_oi.data(),     &n_outer,
+                    H_inv_col.data(), &K,
+                    &zero, tmp.data(), &n_outer FCONE FCONE);
     // Hess -= tmp * H_oi^T  (n_outer x n_outer)
-    dgemm_("N", "T", &n_outer, &n_outer, &K, &m_one,
-           tmp.data(),  &n_outer,
-           H_oi.data(), &n_outer,
-           &one, Hess_col.data(), &n_outer);
+    F77_CALL(dgemm)("N", "T", &n_outer, &n_outer, &K, &m_one,
+                    tmp.data(),  &n_outer,
+                    H_oi.data(), &n_outer,
+                    &one, Hess_col.data(), &n_outer FCONE FCONE);
   }
   for (int c = 0; c < n_outer; ++c)
     for (int r = 0; r < n_outer; ++r) Hess(r, c) = Hess_col[r + c * n_outer];

@@ -22,6 +22,7 @@
 
 #include <R_ext/RS.h>
 #include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
 #include <vector>
 #include <cmath>
 #include <stdexcept>
@@ -32,16 +33,6 @@
 #define FCONE
 #endif
 
-extern "C" {
-  void dsyevr_(const char* jobz, const char* range, const char* uplo,
-               const int* n, double* a, const int* lda,
-               const double* vl, const double* vu,
-               const int* il, const int* iu,
-               const double* abstol, int* m, double* w, double* z,
-               const int* ldz, int* isuppz,
-               double* work, const int* lwork,
-               int* iwork, const int* liwork, int* info);
-}
 
 namespace dmod { namespace trust_internal {
 
@@ -56,20 +47,20 @@ inline void eigen_sym_local(const double* A, int K, double* vals, double* vecs) 
   int    iwkopt;
   int    lwork  = -1;
   int    liwork = -1;
-  dsyevr_("V", "A", "U", &K, A_copy.data(), &K,
-          NULL, NULL, NULL, NULL, &abstol, &m_out,
-          vals, vecs, &K, isuppz.data(),
-          &wkopt, &lwork, &iwkopt, &liwork, &info);
+  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
+                   NULL, NULL, NULL, NULL, &abstol, &m_out,
+                   vals, vecs, &K, isuppz.data(),
+                   &wkopt, &lwork, &iwkopt, &liwork, &info FCONE FCONE FCONE);
   if (info != 0) throw std::runtime_error("dsyevr workspace query failed");
   lwork  = static_cast<int>(wkopt);
   liwork = iwkopt;
   std::vector<double> work(lwork);
   std::vector<int>    iwork(liwork);
   std::copy(A, A + (std::size_t) K * K, A_copy.begin());
-  dsyevr_("V", "A", "U", &K, A_copy.data(), &K,
-          NULL, NULL, NULL, NULL, &abstol, &m_out,
-          vals, vecs, &K, isuppz.data(),
-          work.data(), &lwork, iwork.data(), &liwork, &info);
+  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
+                   NULL, NULL, NULL, NULL, &abstol, &m_out,
+                   vals, vecs, &K, isuppz.data(),
+                   work.data(), &lwork, iwork.data(), &liwork, &info FCONE FCONE FCONE);
   if (info != 0) throw std::runtime_error("dsyevr failed");
 }
 

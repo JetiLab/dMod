@@ -197,9 +197,9 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
     stop("Events should be passed to odemodel() when using solver = 'boost'")
   }
   
-  optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxWithoutProgress = 20L, maxsteps = 1e6L,
+  optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 50L, maxsteps = 1e6L,
                          hini = 0, roottol = 1e-6, maxroot = 1L,
-                         usePID = "none", onFailure = "stop", traceFile = NULL)
+                         usePID = "none", onFailure = "warn", traceFile = NULL)
   
   # Warn about unknown options
   warn_unknown <- function(user, defaults, label) {
@@ -262,7 +262,7 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
                               sens1ini = NULL, sens2ini = NULL, fixed = NULL,
                               forcings = forcings,
                               abstol = optionsOde$atol, reltol = optionsOde$rtol,
-                              maxprogress = optionsOde$maxWithoutProgress,
+                              maxattemps = optionsOde$maxattemps,
                               maxsteps = optionsOde$maxsteps,
                               hini = optionsOde$hini,
                               roottol = optionsOde$roottol,
@@ -300,7 +300,7 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
                                   fixed = NULL,
                                   forcings = forcings,
                                   abstol = optionsSens$atol, reltol = optionsSens$rtol,
-                                  maxprogress = optionsSens$maxWithoutProgress,
+                                  maxattemps = optionsSens$maxattemps,
                                   maxsteps = optionsSens$maxsteps,
                                   hini = optionsSens$hini,
                                   roottol = optionsSens$roottol,
@@ -439,7 +439,7 @@ Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL
   if (!is.null(events))
     stop("Events must be passed to odemodel() for solver = 'CppODE' / 'Sundials'.")
 
-  optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxWithoutProgress = 20L, maxsteps = 1e6L,
+  optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 50L, maxsteps = 1e6L,
                          hini = 0, roottol = 1e-6, maxroot = 1L,
                          usePID = "none", onFailure = "stop", traceFile = NULL)
   bad <- setdiff(names(optionsOde), names(optionsDefault))
@@ -465,7 +465,7 @@ Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL
                             sens1ini = NULL, sens2ini = NULL, fixed = NULL,
                             forcings = forcings,
                             abstol = optionsOde$atol, reltol = optionsOde$rtol,
-                            maxprogress = optionsOde$maxWithoutProgress,
+                            maxattemps = optionsOde$maxattemps,
                             maxsteps = optionsOde$maxsteps,
                             hini = optionsOde$hini,
                             roottol = optionsOde$roottol,

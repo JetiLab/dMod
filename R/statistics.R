@@ -1399,7 +1399,7 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #'   the fitted error model is displayed.
 #' @param blather Logical. If `TRUE`, additional information is returned, 
 #'   including fitted parameter values, original `sigma` values, and confidence intervals.
-#' @param ... Additional arguments passed to the optimizer [optimx::optimr()].
+#' @param ... Additional arguments passed to the optimizer `optimx::optimr()`.
 #'
 #' @details The model assumes that the sample variance of replicate measurements 
 #'   follows a chi-square distribution with \eqn{n-1} degrees of freedom. The 
@@ -1411,7 +1411,7 @@ reduceReplicates.character <- function(data, select = "condition", datatrans = N
 #'   It should be expressed as a character string, using \kbd{x} to represent 
 #'   the mean.
 #'
-#'   The optimization is performed using [optimx::optimr()] with the 
+#'   The optimization is performed using `optimx::optimr()` with the 
 #'   `"L-BFGS-B"` method, which supports bound constraints. If \option{lower} 
 #'   and \option{upper} are not specified, the parameters are assumed to be 
 #'   unconstrained.

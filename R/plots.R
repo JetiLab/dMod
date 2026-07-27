@@ -1563,7 +1563,7 @@ plotPathsMulti <- function(profs, whichpars, npars = 5, normalizePaths = FALSE) 
 #'                       Default `FALSE`.
 #' @param modes Character vector of profile modes to display in the profile plot.
 #'              Default `c("data", "prior")`. Use e.g. `"data"` to show only the data contribution.
-#' @param ... Additional arguments passed to [cowplot::plot_grid()].
+#' @param ... Additional arguments passed to `cowplot::plot_grid()`.
 #' 
 #' @return A combined `ggplot` object containing the profiles and paths (no shared legend).
 #' 

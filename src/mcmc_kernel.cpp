@@ -8,33 +8,15 @@
 #include <algorithm>
 #include <limits>
 
-extern "C" {
-  double norm_rand(void);
-  // LAPACK
-  void dpotrf_(const char* uplo, const int* n, double* a, const int* lda,
-               int* info);
-  void dpotrs_(const char* uplo, const int* n, const int* nrhs,
-               const double* a, const int* lda,
-               double* b, const int* ldb, int* info);
-  void dpotri_(const char* uplo, const int* n, double* a, const int* lda,
-               int* info);
-  // BLAS
-  void dtrsv_(const char* uplo, const char* trans, const char* diag,
-              const int* n, const double* a, const int* lda,
-              double* x, const int* incx);
-  void dtrmv_(const char* uplo, const char* trans, const char* diag,
-              const int* n, const double* a, const int* lda,
-              double* x, const int* incx);
-  void dsymv_(const char* uplo, const int* n,
-              const double* alpha, const double* a, const int* lda,
-              const double* x, const int* incx,
-              const double* beta, double* y, const int* incy);
-  void dgemm_(const char* transa, const char* transb,
-              const int* m, const int* n, const int* k,
-              const double* alpha, const double* a, const int* lda,
-              const double* b, const int* ldb,
-              const double* beta, double* c, const int* ldc);
-}
+// LAPACK: dpotrf / dpotrs / dpotri. BLAS: dtrsv / dtrmv / dsymv / dgemm.
+#include <R_ext/RS.h>
+#include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
+
+// R >= 3.6.2 appends hidden Fortran string lengths to BLAS/LAPACK char args.
+#ifndef FCONE
+#define FCONE
+#endif
 
 namespace dmod {
 
@@ -80,7 +62,7 @@ bool chol_with_ridge(const double* G, int K, double ridge0, int max_iter,
     }
     int info = 0;
     const char uplo = 'U';
-    dpotrf_(&uplo, &n, L_out, &n, &info);
+    F77_CALL(dpotrf)(&uplo, &n, L_out, &n, &info FCONE);
     if (info == 0) {
       // Zero the strictly lower triangle so downstream code can safely
       // touch the full matrix.
@@ -109,7 +91,7 @@ static void chol_solve(const double* L_upper, int K, double* b) {
   std::vector<double> Lcopy(static_cast<size_t>(n) * static_cast<size_t>(n));
   std::memcpy(Lcopy.data(), L_upper,
               sizeof(double) * static_cast<size_t>(n) * static_cast<size_t>(n));
-  dpotrs_(&uplo, &n, &nrhs, Lcopy.data(), &n, b, &n, &info);
+  F77_CALL(dpotrs)(&uplo, &n, &nrhs, Lcopy.data(), &n, b, &n, &info FCONE);
 }
 
 
@@ -120,7 +102,7 @@ static void utri_N_solve(const double* U_upper, int K, double* b) {
   const char trans = 'N';
   const char diag = 'N';
   const int incx = 1;
-  dtrsv_(&uplo, &trans, &diag, &n, U_upper, &n, b, &incx);
+  F77_CALL(dtrsv)(&uplo, &trans, &diag, &n, U_upper, &n, b, &incx FCONE FCONE FCONE);
 }
 
 
@@ -140,7 +122,7 @@ void mala_drift(const double* grad, const double* L_upper, int K,
   int info = 0;
   const char uplo = 'U';
   const int n = K;
-  dpotri_(&uplo, &n, Ginv.data(), &n, &info);
+  F77_CALL(dpotri)(&uplo, &n, Ginv.data(), &n, &info FCONE);
   // Symmetrise: dpotri writes only the upper triangle.
   for (int j = 0; j < K; ++j)
     for (int i = j + 1; i < K; ++i)
@@ -185,15 +167,15 @@ void mala_drift(const double* grad, const double* L_upper, int K,
         dGk[a + j * K] = dG_row_major[a * K * K + j * K + k];
 
     // tmp = Ginv * dG_k
-    dgemm_(&transN_, &transN_, &nK, &nK, &nK,
-           &one_, Ginv.data(), &nK,
-           dGk.data(), &nK,
-           &zero_, tmp.data(), &nK);
+    F77_CALL(dgemm)(&transN_, &transN_, &nK, &nK, &nK,
+                    &one_, Ginv.data(), &nK,
+                    dGk.data(), &nK,
+                    &zero_, tmp.data(), &nK FCONE FCONE);
     // M = tmp * Ginv
-    dgemm_(&transN_, &transN_, &nK, &nK, &nK,
-           &one_, tmp.data(), &nK,
-           Ginv.data(), &nK,
-           &zero_, M.data(), &nK);
+    F77_CALL(dgemm)(&transN_, &transN_, &nK, &nK, &nK,
+                    &one_, tmp.data(), &nK,
+                    Ginv.data(), &nK,
+                    &zero_, M.data(), &nK FCONE FCONE);
 
     double s = 0.0;
     for (int j = 0; j < K; ++j) s += M[j + k * K];
@@ -229,8 +211,8 @@ double mala_log_q(const double* theta_new, const double* theta_old,
   const char uplo_ = 'U';
   const int incx_ = 1, incy_ = 1;
   const int n = K;
-  dsymv_(&uplo_, &n, &alpha_, G_old, &n,
-         d.data(), &incx_, &beta_, Gd.data(), &incy_);
+  F77_CALL(dsymv)(&uplo_, &n, &alpha_, G_old, &n,
+                  d.data(), &incx_, &beta_, Gd.data(), &incy_ FCONE);
 
   double q = 0.0;
   for (int i = 0; i < K; ++i) q += d[i] * Gd[i];
@@ -254,7 +236,7 @@ double kinetic_energy(const double* p, const double* Minv_chol_upper, int K) {
   std::vector<double> Up(p, p + K);
   const int n = K, incx = 1;
   const char uplo = 'U', trans = 'N', diag = 'N';
-  dtrmv_(&uplo, &trans, &diag, &n, Minv_chol_upper, &n, Up.data(), &incx);
+  F77_CALL(dtrmv)(&uplo, &trans, &diag, &n, Minv_chol_upper, &n, Up.data(), &incx FCONE FCONE FCONE);
   double s = 0.0;
   for (int i = 0; i < K; ++i) s += Up[i] * Up[i];
   return 0.5 * s;
@@ -268,7 +250,7 @@ void sample_momentum(const double* LM_upper, int K, double* z_buf,
   for (int i = 0; i < K; ++i) p_out[i] = z_buf[i];
   const int n = K, incx = 1;
   const char uplo = 'U', trans = 'T', diag = 'N';
-  dtrmv_(&uplo, &trans, &diag, &n, LM_upper, &n, p_out, &incx);
+  F77_CALL(dtrmv)(&uplo, &trans, &diag, &n, LM_upper, &n, p_out, &incx FCONE FCONE FCONE);
 }
 
 
@@ -286,8 +268,8 @@ bool leapfrog(double* theta, double* p, double* grad_lp,
     const int n = K, incx = 1;
     const char uplo = 'U', diag = 'N';
     const char transN_ = 'N', transT_ = 'T';
-    dtrmv_(&uplo, &transN_, &diag, &n, Minv_chol_upper, &n, Mp.data(), &incx);
-    dtrmv_(&uplo, &transT_, &diag, &n, Minv_chol_upper, &n, Mp.data(), &incx);
+    F77_CALL(dtrmv)(&uplo, &transN_, &diag, &n, Minv_chol_upper, &n, Mp.data(), &incx FCONE FCONE FCONE);
+    F77_CALL(dtrmv)(&uplo, &transT_, &diag, &n, Minv_chol_upper, &n, Mp.data(), &incx FCONE FCONE FCONE);
     for (int i = 0; i < K; ++i) theta[i] += eps * Mp[i];
 
     // Refresh gradient at the new theta

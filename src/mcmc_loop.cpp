@@ -13,15 +13,15 @@
 #include <numeric>
 #include <vector>
 
-extern "C" {
-  void dpotri_(const char* uplo, const int* n, double* a, const int* lda,
-               int* info);
-  void dtrmv_(const char* uplo, const char* trans, const char* diag,
-              const int* n, const double* a, const int* lda,
-              double* x, const int* incx);
-  double unif_rand(void);
-  double norm_rand(void);
-}
+// LAPACK dpotri / BLAS dtrmv; unif_rand & norm_rand come from Rmath.h.
+#include <R_ext/RS.h>
+#include <R_ext/BLAS.h>
+#include <R_ext/Lapack.h>
+
+// R >= 3.6.2 appends hidden Fortran string lengths to BLAS/LAPACK char args.
+#ifndef FCONE
+#define FCONE
+#endif
 
 using namespace Rcpp;
 
@@ -258,10 +258,10 @@ static bool leapfrog_step(Function& objfun, NutsState& s,
   const int n = K, incx = 1;
   const char uplo = 'U', diag = 'N';
   const char transN = 'N', transT = 'T';
-  dtrmv_(&uplo, &transN, &diag, &n, Minv_chol_upper.data(), &n,
-         Mp.data(), &incx);
-  dtrmv_(&uplo, &transT, &diag, &n, Minv_chol_upper.data(), &n,
-         Mp.data(), &incx);
+  F77_CALL(dtrmv)(&uplo, &transN, &diag, &n, Minv_chol_upper.data(), &n,
+                  Mp.data(), &incx FCONE FCONE FCONE);
+  F77_CALL(dtrmv)(&uplo, &transT, &diag, &n, Minv_chol_upper.data(), &n,
+                  Mp.data(), &incx FCONE FCONE FCONE);
   for (int i = 0; i < K; ++i) s.theta[i] += eps * Mp[i];
 
   NumericVector th_nv(s.theta.begin(), s.theta.end());
