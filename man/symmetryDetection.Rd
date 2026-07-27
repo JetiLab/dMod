@@ -91,7 +91,10 @@ identifiability; they differ only in the moiety coordinate. If a state-named
 quantity, \code{reduceCQ} is forced to \code{FALSE} (with a warning): \code{TRUE} would
 otherwise eliminate a moiety species and silently discard the supplied
 steady-state relation, so the model would no longer start at the given steady
-state.}
+state. The \code{total} parameters exist only under \code{reduceCQ = TRUE} and are named
+after \code{\link[=getTotals]{getTotals()}}; they can be pinned like any other parameter, through
+\code{fixed} or a \code{trafo} entry (\code{total_x = "1"}), even though they are not among
+\code{\link[=getParameters]{getParameters()}} of the \link{eqnlist}.}
 
 \item{freeInitial}{Character vector of state names. Under the held-variable
 parameterisation (\code{equilibrate = TRUE}, \code{reduceCQ = FALSE}), \code{f = 0} pins every

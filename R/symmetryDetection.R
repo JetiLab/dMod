@@ -68,7 +68,10 @@
 #'   quantity, `reduceCQ` is forced to `FALSE` (with a warning): `TRUE` would
 #'   otherwise eliminate a moiety species and silently discard the supplied
 #'   steady-state relation, so the model would no longer start at the given steady
-#'   state.
+#'   state. The `total` parameters exist only under `reduceCQ = TRUE` and are named
+#'   after [getTotals()]; they can be pinned like any other parameter, through
+#'   `fixed` or a `trafo` entry (`total_x = "1"`), even though they are not among
+#'   [getParameters()] of the [eqnlist].
 #' @param freeInitial Character vector of state names. Under the held-variable
 #'   parameterisation (`equilibrate = TRUE`, `reduceCQ = FALSE`), `f = 0` pins every
 #'   moiety species but one, and that one (the pivot) keeps its free resting value as
@@ -261,6 +264,14 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   states <- names(fdyn)
 
   gobs <- if (is.null(g)) NULL else as.eqnvec(g)
+  # An observable named like a state is ambiguous -- the model lines handed to the
+  # engine would define that symbol twice -- and it used to surface only as a
+  # cryptic "Names must be unique" from c.eqnvec() further down, wherever f and g
+  # are pooled. Reject it here, where the name is still the user's own.
+  if (length(clashObs <- intersect(names(gobs), states)))
+    stop("symmetryDetection(): observable(s) ", paste(clashObs, collapse = ", "),
+         " in `g` carry the name of a state in `f`. Rename the observable(s) ",
+         "(e.g. ", clashObs[1], "_obs).", call. = FALSE)
   parameters <- parameters %||% character(0)
 
   # freeInitial names the moiety species that keep a free resting initial value (the
@@ -294,6 +305,8 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   condSubs <- NULL          # per-condition parameter substitutions (trafo list)
   condInitial <- NULL       # per-condition initial conditions (trafo list)
   trafoSyms <- character(0) # symbols the trafo introduces (substitution targets/params)
+  trafoSubs <- NULL         # single-trafo parameter substitutions, kept for the CQ pass
+  trafoHit <- character(0)  # substitution targets that actually occurred somewhere
   trafoList <- !is.null(trafo) && is.list(trafo) && !inherits(trafo, "eqnvec")
   if (trafoList) {
     trafos <- lapply(trafo, as.eqnvec)
@@ -319,6 +332,28 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
       if (is.null(e) || !length(e) || !length(subs)) return(e)
       e <- as.eqnvec(e)
       setNames(replaceSymbols(names(subs), subs, e), names(e))
+    }
+    # Record which targets are actually present, so an entry that substitutes
+    # into nothing can be reported instead of silently doing nothing. The
+    # conserved-quantity reduction below introduces further symbols (the
+    # `total`s), hence the second pass there. Identity entries (`x = "x"`, the
+    # `define("x~x", x = pars)` idiom) are no-ops by construction and are never
+    # reported; symbols that live only in event values or in the condition grid
+    # count as present, since those are resolved per condition later on.
+    trafoSubs <- subs[trimws(as.character(subs)) != names(subs)]
+    if (length(trafoSubs)) {
+      # as.character() per piece, never c() on the eqnvecs: an initial condition
+      # carries its state's name, which collides with the same name in `fdyn`
+      # and makes c.eqnvec() reject the duplicate.
+      knownSyms <- c(getSymbols(c(as.character(fdyn), as.character(gobs),
+                                  as.character(trafo[icEntries]))),
+                     if (!is.null(events) && nrow(as.data.frame(events)))
+                       getSymbols(as.character(as.data.frame(events)$value)),
+                     if (!is.null(conditions))
+                       c(names(as.data.frame(conditions)),
+                         unlist(lapply(as.data.frame(conditions),
+                                       function(cl) if (is.character(cl)) cl else NULL))))
+      trafoHit <- intersect(names(trafoSubs), knownSyms)
     }
     fdyn <- sub(fdyn)
     gobs <- sub(gobs)
@@ -361,6 +396,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   }
 
   # conserved-quantity reduction (eqnlist input only)
+  cqTotals <- character(0)  # `total` parameters the reduction introduces
   if (!is.null(feqnlist) && isTRUE(reduceCQ)) {
     totals <- getTotals(feqnlist)
     if (length(totals)) {
@@ -374,6 +410,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
       parameters <- cq$parameters
       states <- names(fdyn)
       if (length(cq$cq_info)) {
+        cqTotals <- vapply(cq$cq_info, function(ci) ci$total_name, character(1))
         keys <- vapply(cq$cq_info, function(ci) ci$elim_state, character(1))
         vals <- vapply(cq$cq_info, function(ci) unname(ci$recon_expr), character(1))
         recon <- function(e) {
@@ -388,6 +425,49 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
                                 function(x) if (is.null(x)) NULL else recon(x))
       }
     }
+  }
+
+  # The `total` parameters exist only after the reduction above, so a single
+  # `trafo` entry naming one of them (`total_x = "1"`) had nothing to substitute
+  # into when the trafo was applied. Apply those entries now, and drop the
+  # pinned totals from `parameters` so the reduction does not hand them back as
+  # free coordinates -- otherwise the fixed total keeps showing up in the
+  # reported non-identifiable directions. (A per-condition `trafo` list is
+  # substituted per condition further down, i.e. already after this point.)
+  if (length(trafoSubs) && length(cqTotals)) {
+    hitCQ <- intersect(names(trafoSubs), cqTotals)
+    if (length(hitCQ)) {
+      subsCQ <- trafoSubs[hitCQ]
+      subCQ <- function(e) {
+        if (is.null(e) || !length(e)) return(e)
+        e <- as.eqnvec(e)
+        setNames(replaceSymbols(names(subsCQ), subsCQ, e), names(e))
+      }
+      fdyn    <- subCQ(fdyn)
+      gobs    <- subCQ(gobs)
+      initial <- subCQ(initial)
+      if (!is.null(condInitial))
+        condInitial <- lapply(condInitial,
+                              function(x) if (is.null(x)) NULL else subCQ(x))
+      parameters <- setdiff(parameters, hitCQ)
+      trafoHit <- union(trafoHit, hitCQ)
+    }
+  }
+
+  # A substitution target that occurs nowhere -- neither in f/g/the initial
+  # conditions nor among the `total`s -- is a silent no-op, which reads as "the
+  # parameter was fixed" while it stays free in the analysis. Say so.
+  if (length(trafoSubs)) {
+    missTrafo <- setdiff(names(trafoSubs), trafoHit)
+    if (length(missTrafo))
+      warning("symmetryDetection(): `trafo` ",
+              if (length(missTrafo) == 1L) "entry " else "entries ",
+              paste(missTrafo, collapse = ", "),
+              if (length(missTrafo) == 1L) " does" else " do",
+              " not occur in the model and had no effect. ",
+              "Note that the `total` parameters of a conserved quantity only ",
+              "exist with reduceCQ = TRUE, and are named after getTotals(f).",
+              call. = FALSE)
   }
 
   toLines <- function(e) {

@@ -760,7 +760,7 @@ test_that("Pequil errors when the solver makes no progress", {
   pf <- Pequil(c(A = "k_in - k_out * A"),
                parameters = c("k_in", "k_out"),
                modelname = paste0("test_no_progress_", as.integer(Sys.time())),
-               controlsODE = list(maxsteps = 1L, maxprogress = 1L),
+               controlsODE = list(maxsteps = 1L, maxattemps = 1L),
                compile = TRUE, verbose = FALSE)
   expect_error(
     suppressWarnings(pf(c(k_in = 1, k_out = 1, A = 1))),

@@ -1263,7 +1263,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   if (length(kin_sens)) Tmat[cbind(kin_sens, kin_sens)] <- 1
 
   ode_ctrl <- modifyList(list(abstol = 1e-6, reltol = 1e-6, maxsteps = 1e6L,
-                              maxprogress = 100L, hini = 0, roottol = 1e-6, maxroot = 1L),
+                              maxattemps = 100L, hini = 0, roottol = 1e-6, maxroot = 1L),
                          controlsODE)
   controls <- c(list(keep.root = keep.root, attach.input = attach.input,
                      start.time = start.time, end.time = end.time), ode_ctrl)
@@ -1310,7 +1310,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
           sens2ini = if (deriv2) default_sens2 else NULL,
           roottol = controls$roottol, abstol = controls$abstol, reltol = controls$reltol,
           maxsteps = as.integer(controls$maxsteps),
-          maxprogress = as.integer(controls$maxprogress),
+          maxattemps = as.integer(controls$maxattemps),
           hini = controls$hini, maxroot = as.integer(controls$maxroot),
           onFailure = "silent"),
         error = function(e) NULL)
@@ -1534,7 +1534,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   all_sens <- if (emit_d1) attr(model_s, "dimNames")$sens else character(0)
 
   ode_ctrl <- modifyList(list(abstol = 1e-6, reltol = 1e-6, maxsteps = 1e6L,
-                              maxprogress = 100L, hini = 0, roottol = 1e-6, maxroot = 1L),
+                              maxattemps = 100L, hini = 0, roottol = 1e-6, maxroot = 1L),
                          controlsODE)
 
   reg <- .warmstart_registry()
@@ -1605,7 +1605,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
           fixed = if (deriv || deriv2) fixed_char,
           roottol = controls$roottol, abstol = controls$abstol, reltol = controls$reltol,
           maxsteps = as.integer(controls$maxsteps),
-          maxprogress = as.integer(controls$maxprogress),
+          maxattemps = as.integer(controls$maxattemps),
           hini = controls$hini, maxroot = as.integer(controls$maxroot),
           onFailure = "silent"),
         error = function(e) NULL)
@@ -1650,7 +1650,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
            format(max(ms$upper)), "], or the ODE is too stiff for the current ",
            "`controlsODE`. Increase `controlsMS$nStarts`, widen ",
            "`controlsMS$lower`/`upper`, or relax ",
-           "`controlsODE$abstol`/`reltol`/`maxprogress`.", call. = FALSE)
+           "`controlsODE$abstol`/`reltol`/`maxattemps`.", call. = FALSE)
     }
 
     last <- length(res$time)

@@ -87,12 +87,21 @@ deletes local result files.}
 
 \item{compile}{Logical; if \code{TRUE}, all C/C++ source files (\verb{*.c}, \verb{*.cpp})
 are transferred to the cluster and fully recompiled into shared objects (\code{.so}).
-If set to \code{TRUE}, this overrides \code{link = TRUE}.}
+If set to \code{TRUE}, this overrides \code{link = TRUE}. The build runs from a
+generated shell script that resolves all path-valued compiler flags
+(CppODE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
+sparse models) on the cluster, so \code{CppODE} has to be installed for the R
+that \verb{module load math/R} provides there. The job is only submitted if the
+build succeeds.}
 
 \item{link}{Logical; if \code{TRUE}, only existing object files (\verb{*.o}) are
 transferred to the cluster and linked into shared objects (\code{.so}),
 skipping compilation. If no \code{.o} files are found, an error is raised.
-This option is ignored if \code{compile = TRUE}.}
+This option is ignored if \code{compile = TRUE}. Object files are toolchain
+specific, so this only works when the cluster compiler is ABI-compatible
+with the local one -- in particular, \code{.o} files produced with link-time
+optimisation by a newer GCC cannot be read by an older one. Prefer
+\code{compile = TRUE} when the two machines run different compiler generations.}
 
 \item{custom_folders}{Named vector with exactly three elements: \code{"compiled"},
 \code{"output"}, and \code{"tmp"}. Each value is a relative path specifying where

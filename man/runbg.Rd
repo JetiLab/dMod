@@ -35,7 +35,10 @@ transferred to the remote machine and fully recompiled into a shared object
 \item{link}{Logical. If \code{TRUE}, only existing object files (\code{.o}) are
 transferred to the remote machine and linked into a shared object (\code{.so}),
 skipping compilation. If no \code{.o} files are found, an error is raised.
-This option is ignored if \code{compile = TRUE}.}
+This option is ignored if \code{compile = TRUE}. Object files are toolchain
+specific, so this only works when the remote compiler is ABI-compatible
+with the local one; prefer \code{compile = TRUE} when the two machines run
+different compiler generations.}
 
 \item{wait}{Logical. Wait until executed. If \code{TRUE}, the code checks if the
 result file is already present in which case it is loaded. If not present,
@@ -91,6 +94,14 @@ directly.
 When \code{compile} or \code{link} is \code{TRUE}, objects of class \code{obsfn}, \code{parfn}, or
 \code{prdfn} in the workspace automatically get their \code{modelname} updated to
 point to the newly built shared object.
+
+The remote build runs from a generated shell script that resolves all
+path-valued compiler flags (CppODE include directory, BLAS/LAPACK, and
+Sundials/KLU for CVODE and sparse models) \emph{on the remote machine}, since
+the local library paths do not carry over. The model-specific \code{-D} macros
+are read from the \code{"compileInfo"} attribute of the model objects in the
+workspace. \code{CppODE} therefore has to be installed for the R that is on
+\code{PATH} on the remote machine.
 }
 \examples{
 \dontrun{

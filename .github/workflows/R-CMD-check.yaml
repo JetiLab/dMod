@@ -28,6 +28,13 @@ jobs:
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
       R_KEEP_PKG_SOURCE: yes
+      # PEtabTests/ and BenchmarkModels/ are committed but .Rbuildignore'd, so
+      # they are checked out here yet absent from the tarball that R CMD check
+      # unpacks into a temp dir. The walk-up in tests/testthat/setup.R cannot
+      # bridge that gap -- nothing above the check dir is the repo -- so point
+      # the tests at the checkout explicitly, or they all skip.
+      DMOD_PETABTESTS: ${{ github.workspace }}/PEtabTests
+      DMOD_BENCHMARKMODELS: ${{ github.workspace }}/BenchmarkModels
 
     steps:
       - uses: actions/checkout@v4

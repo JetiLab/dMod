@@ -16,15 +16,22 @@
 
 # Skip integration tests that need importSbml() when the libsbml virtualenv
 # is missing.
+#
+# The probe file is a copy of PEtab case 0001's model -- a known-good SBML
+# document, so no libsbml-strictness quibbles over hand-written test XML -- but
+# it ships inside tests/, unlike PEtabTests/ which is .Rbuildignore'd. That
+# separation matters: probing through PEtabTests/ made every libsbml test skip
+# under `R CMD check` (which runs from an unpacked tarball, where the walk-up in
+# setup.R cannot reach the repo), including the export tests that build their
+# own models and never touch that directory. Resolved to an absolute path here,
+# at file load time, because the tests below switch to tempdir() before calling.
+.libsbml_probe_file <- normalizePath(file.path("fixtures", "petab_probe_model.xml"),
+                                     winslash = "/", mustWork = FALSE)
+
 .libsbml_works <- function() {
-  # Probe by importing case 0001 (the smallest of the bundled PEtab models).
-  # Cheaper than synthesising an SBML file and avoids libsbml-strictness
-  # quibbles on hand-written test XML.
-  petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) return(FALSE)
+  if (!file.exists(.libsbml_probe_file)) return(FALSE)
   isTRUE(tryCatch({
-    res <- suppressWarnings(
-      importSbml(file.path(petab_dir, "0001", "_model.xml")))
+    res <- suppressWarnings(importSbml(.libsbml_probe_file))
     !is.null(res$reactions)
   }, error = function(e) FALSE))
 }
@@ -149,7 +156,7 @@ test_that(".petab_parse_measurements unfolds per-row observableParameters", {
 test_that("readPetabYaml resolves manifest paths correctly", {
 
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
 
   y <- readPetabYaml(file.path(petab_dir, "0001", "_0001.yaml"))
   expect_equal(y$formatVersion, 1L)
@@ -160,7 +167,7 @@ test_that("readPetabYaml resolves manifest paths correctly", {
 
 test_that("readPetabTables returns the expected slots for v1", {
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
 
   tabs <- readPetabTables(file.path(petab_dir, "0001", "_0001.yaml"))
   expect_named(tabs, c("parameters", "conditions", "measurements",
@@ -246,7 +253,7 @@ test_that("PEtab test cases 0001-0006 import and produce solution-matching llh",
 
   withr::local_dir(tempdir())
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
   if (!.libsbml_works())   skip("libsbml virtualenv not available")
 
   for (id in sprintf("%04d", 1:6)) {
@@ -275,7 +282,7 @@ test_that("PEtab Stage-2 test cases 0007-0016 produce solution-matching llh", {
 
   withr::local_dir(tempdir())
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
   if (!.libsbml_works())   skip("libsbml virtualenv not available")
 
   # Cases 0007 (log10 trafo), 0008 (replicates), 0009/0010 (preequilibration --
@@ -309,7 +316,7 @@ test_that("two-condition roundtrip preserves objective value", {
 
   withr::local_dir(tempdir())
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
   if (!.libsbml_works())   skip("libsbml virtualenv not available")
 
   # Case 0002 has two conditions, an InitialAssignment binding A := a0 / B := b0
@@ -359,7 +366,7 @@ test_that("Boehm_JProteomeRes2014 benchmark imports and matches published optimu
 
   withr::local_dir(tempdir())
   bm_dir <- .benchmark_dir()
-  if (!nzchar(bm_dir))  skip("BenchmarkModels/ directory not found")
+  if (!nzchar(bm_dir))  skip("BenchmarkModels/ not found -- set DMOD_BENCHMARKMODELS to the repo directory")
   if (!.libsbml_works())  skip("libsbml virtualenv not available")
 
   yamlPath <- file.path(bm_dir, "Boehm_JProteomeRes2014",
@@ -986,7 +993,7 @@ test_that("readPetabYaml errors on non-SBML model language", {
 test_that("exportPEtabObject v2 writes nominalValue verbatim (no parameterScale linearisation)", {
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
 
   withr::local_dir(tempdir())
   pp <- importPEtab(file.path(petab_dir, "0001", "_0001.yaml"),
@@ -1017,7 +1024,7 @@ test_that("exportPEtabObject v2 writes nominalValue verbatim (no parameterScale 
 test_that("exportPEtabObject v2 writes long-format conditions and experiments", {
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
 
   withr::local_dir(tempdir())
   # 0001 has a single condition; trivial v2 export should produce one
@@ -1046,7 +1053,7 @@ test_that("exportPEtabObject v2 writes long-format conditions and experiments", 
 test_that("v2 export → v2 import roundtrips the objective on case 0001", {
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
 
   withr::local_dir(tempdir())
   pp1 <- importPEtab(file.path(petab_dir, "0001", "_0001.yaml"),
@@ -1071,7 +1078,7 @@ test_that("v2 PEtab test cases 0001/0002/0009 import and match published llh", {
   # `.petab_repo_dir()`'s `getwd()` calls don't error.
   withr::local_dir(tempdir())
   petab_dir <- .petab_repo_dir()
-  if (!nzchar(petab_dir)) skip("PEtabTests/ directory not found")
+  if (!nzchar(petab_dir)) skip("PEtabTests/ not found -- set DMOD_PETABTESTS to the repo directory")
   v2_dir <- file.path(petab_dir, "v2")
   if (!dir.exists(v2_dir)) skip("PEtabTests/v2/ not present")
   if (!.libsbml_works()) skip("libsbml virtualenv not available")
