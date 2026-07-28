@@ -25,6 +25,12 @@ README_files/
 *_cache/
 *_files/
 .cache/
+/notes/
+
+# knitr output in vignettes/; only the .Rmd sources are tracked
+vignettes/*.R
+vignettes/*.html
+vignettes/*.pdf
 
 # Compiled objects and scratch
 *.o
@@ -54,4 +60,5 @@ __pycache__/
 
 # Local tooling
 .positai
+.claude/
 CLAUDE.md

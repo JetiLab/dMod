@@ -1863,6 +1863,27 @@ branch <- function(trafo, table = NULL,
 
 
 
+## Split compound identifiers into single symbols: "_" -> ":" inside names
+## only, digit-leading parts prefixed to stay syntactic. Inverted by .decolonize.
+.numprefix <- "..dModnum.."
+
+.colonize <- function(x) {
+  m <- gregexpr("[A-Za-z.][A-Za-z0-9._]*", x)
+  regmatches(x, m) <- lapply(regmatches(x, m), function(ids) {
+    vapply(ids, function(id) {
+      parts <- strsplit(id, "_", fixed = TRUE)[[1]]
+      digit <- grepl("^[0-9]", parts)
+      parts[digit] <- paste0(.numprefix, parts[digit])
+      paste(parts, collapse = ":")
+    }, character(1), USE.NAMES = FALSE)
+  })
+  x
+}
+
+.decolonize <- function(x)
+  gsub(.numprefix, "", gsub(":", "_", x, fixed = TRUE), fixed = TRUE)
+
+
 #' Reparameterization
 #'
 #' Replaces symbols on either side of `"lhs ~ rhs"`. With `reset = TRUE`
@@ -1891,19 +1912,19 @@ branch <- function(trafo, table = NULL,
 #'                trafo, x = innerpars, condition = mycondition)
 repar <- function(expr, trafo = NULL, ..., reset = FALSE) {
   if (inherits(expr, "formula")) expr <- deparse(expr)
-  parsed <- as.character(stats::as.formula(gsub("_", ":", expr, fixed = TRUE)))
+  parsed <- as.character(stats::as.formula(.colonize(expr)))
   lhs <- parsed[2]; rhs <- parsed[3]
 
   args <- lapply(list(...), as.character)
   if (length(args)) {
     reps <- as.data.frame(args, stringsAsFactors = FALSE)
     apply_repl <- function(side) vapply(seq_len(nrow(reps)), function(i)
-      gsub(":", "_", replaceSymbols(colnames(reps), reps[i, ], side), fixed = TRUE),
+      .decolonize(replaceSymbols(colnames(reps), reps[i, ], side)),
       character(1))
     lhs <- apply_repl(lhs); rhs <- apply_repl(rhs)
   } else {
-    lhs <- gsub(":", "_", lhs, fixed = TRUE)
-    rhs <- gsub(":", "_", rhs, fixed = TRUE)
+    lhs <- .decolonize(lhs)
+    rhs <- .decolonize(rhs)
   }
 
   if (is.null(trafo))                           as.eqnvec(structure(lhs, names = lhs))
