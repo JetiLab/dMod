@@ -465,6 +465,8 @@ plotFluxes <- function(pouter, x, times, fluxEquations, nameFlux = "Fluxes:", ..
 #' @param ... arguments for subsetting of x
 #' @param tol maximal allowed difference between neighboring objective values
 #' to be recognized as one.
+#' @param showSteps logical, if `TRUE`, the detected steps are indicated by
+#' dashed vertical lines and labelled by their index. Defaults to `FALSE`.
 #' @export
 plotValues <- function(x,...) {
   UseMethod("plotValues", x)

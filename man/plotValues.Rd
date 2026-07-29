@@ -5,7 +5,7 @@
 \alias{plotValues}
 \title{Plotting objective values of a collection of fits}
 \usage{
-\method{plotValues}{parframe}(x, tol = 1, ...)
+\method{plotValues}{parframe}(x, tol = 1, ..., showSteps = FALSE)
 
 plotValues(x, ...)
 }
@@ -17,6 +17,9 @@ a \link{parframe}.}
 to be recognized as one.}
 
 \item{...}{arguments for subsetting of x}
+
+\item{showSteps}{logical, if \code{TRUE}, the detected steps are indicated by
+dashed vertical lines and labelled by their index. Defaults to \code{FALSE}.}
 }
 \description{
 Plotting objective values of a collection of fits

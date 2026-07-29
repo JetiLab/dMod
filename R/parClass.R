@@ -273,26 +273,32 @@ plotPars.parframe <- function(x, tol = 1, ...){
 
 #' @export
 #' @rdname plotValues
-plotValues.parframe <- function(x, tol = 1, ...) {
-  
+plotValues.parframe <- function(x, tol = 1, ..., showSteps = FALSE) {
+
   if (!missing(...)) x <- subset(x, ...)
-  
+
   jumps <- .stepDetect(x$value, tol)
   y.range <- c(min(x$value), max(max(x$value), min(x$value) + tol))
   y.jumps <- seq(y.range[2], y.range[1], length.out = length(jumps))
-  
-  
+
+
   pars <- x
   pars <- pars[order(pars$value),]
   pars[["index"]] <-  1:nrow(pars)
-  
-  
-  
-  P <- ggplot2::ggplot(pars, aes(x = index, y = value, pch = converged, color = iterations)) + 
-    geom_vline(xintercept = jumps, lty = 2) +
-    geom_point() + 
-    annotate("text", x = jumps + 1, y = y.jumps, label = jumps, hjust = 0, color = "firebrick", size = 3) +
-    xlab("index") + ylab("value") + 
+
+
+
+  stepLines <- stepLabels <- NULL
+  if (showSteps) {
+    stepLines <- geom_vline(xintercept = jumps, lty = 2)
+    stepLabels <- annotate("text", x = jumps + 1, y = y.jumps, label = jumps, hjust = 0, color = "firebrick", size = 3)
+  }
+
+  P <- ggplot2::ggplot(pars, aes(x = index, y = value, pch = converged, color = iterations)) +
+    stepLines +
+    geom_point() +
+    stepLabels +
+    xlab("index") + ylab("value") +
     scale_color_gradient(low = "dodgerblue", high = "orange") +
     coord_cartesian(ylim = y.range) +
     theme_dMod()
