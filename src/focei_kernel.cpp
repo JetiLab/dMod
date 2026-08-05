@@ -24,6 +24,7 @@
 #include <R_ext/Lapack.h>
 
 #include "residual_kernel.h"
+#include "trust_subproblem.h"
 
 using namespace Rcpp;
 
@@ -70,135 +71,22 @@ static inline double vecs_at(const std::vector<double>& V, int K,
 }
 
 
-// Symmetric K×K eigen via LAPACK dsyevr.
-// `vals` (size K) ascending, `vecs` (size K*K) column-major.
-static void eigen_sym(double* A, int K, double* vals, double* vecs) {
-  std::vector<double> A_copy(A, A + K * K);
-  std::vector<int>    isuppz(2 * K);
-  int    info  = 0;
-  int    m_out = 0;
-  double abstol = 0.0;  // use default
-  // Workspace query
-  double wkopt;
-  int    iwkopt;
-  int    lwork  = -1;
-  int    liwork = -1;
-  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
-                   NULL, NULL, NULL, NULL, &abstol, &m_out,
-                   vals, vecs, &K, isuppz.data(),
-                   &wkopt, &lwork, &iwkopt, &liwork, &info FCONE FCONE FCONE);
-  if (info != 0)
-    throw std::runtime_error("eigen_sym: dsyevr workspace query failed.");
-  lwork  = static_cast<int>(wkopt);
-  liwork = iwkopt;
-  std::vector<double> work(lwork);
-  std::vector<int>    iwork(liwork);
-  // Reload A_copy because dsyevr destroys it
-  std::copy(A, A + K * K, A_copy.begin());
-  F77_CALL(dsyevr)("V", "A", "U", &K, A_copy.data(), &K,
-                   NULL, NULL, NULL, NULL, &abstol, &m_out,
-                   vals, vecs, &K, isuppz.data(),
-                   work.data(), &lwork, iwork.data(), &liwork, &info FCONE FCONE FCONE);
-  if (info != 0)
-    throw std::runtime_error("eigen_sym: dsyevr failed.");
+// The Moré-Sorensen subproblem and its eigendecomposition are shared with
+// trust_kernel.cpp; see trust_subproblem.h. Local signatures are kept so the
+// call sites below read unchanged. The shared solver additionally handles the
+// hard case (gradient orthogonal to the min-eigenspace), which the private
+// version did not.
+static inline void eigen_sym(double* A, int K, double* vals, double* vecs) {
+  dmod::trust_internal::eigen_sym_local(A, K, vals, vecs);
 }
 
-
-// Trust-region subproblem solver (Moré-Sorensen, small K).
-// Solves: minimize  m(p) = g^T p + 1/2 p^T H p   subject to ||p|| <= r
-//
-// `g` is the gradient (K); `vals` (K, ascending) and `vecs` (K*K, column-major)
-// are the eigendecomposition of H; `r` is the trust-region radius. Outputs
-// `p` (step, K), `predicted_red` (>= 0), `is_newton` (whether the step is the
-// unconstrained Newton step).
-static void trust_subproblem(int K, const double* g,
-                             const double* vals, const double* vecs,
-                             double r, double* p, double* predicted_red,
-                             bool* is_newton) {
-  // q = V^T g, where V columns are eigenvectors
-  std::vector<double> q(K, 0.0);
-  for (int j = 0; j < K; ++j) {
-    double s = 0.0;
-    for (int i = 0; i < K; ++i) s += vecs[i + j * K] * g[i];
-    q[j] = s;
-  }
-
-  double lam_min = vals[0];
-  *is_newton = false;
-
-  // Try unconstrained Newton: p = -V * (q / lam), valid only if all lam > 0
-  if (lam_min > 1e-12) {
-    std::vector<double> y(K);
-    double pn2 = 0.0;
-    for (int j = 0; j < K; ++j) {
-      y[j] = -q[j] / vals[j];
-      pn2 += y[j] * y[j];
-    }
-    if (std::sqrt(pn2) <= r) {
-      // Newton step lies inside trust region, accept
-      for (int i = 0; i < K; ++i) {
-        double s = 0.0;
-        for (int j = 0; j < K; ++j) s += vecs[i + j * K] * y[j];
-        p[i] = s;
-      }
-      // predicted reduction = g^T p + 1/2 p^T H p = -1/2 q^T (q/lam)
-      double pred = 0.0;
-      for (int j = 0; j < K; ++j) pred += 0.5 * q[j] * q[j] / vals[j];
-      *predicted_red = pred;
-      *is_newton = true;
-      return;
-    }
-  }
-
-  // Constrained: find sigma >= max(-lam_min, 0) such that ||p(sigma)|| = r
-  // p(sigma) = -V (q / (lam + sigma))
-  // Bisection on phi(sigma) = ||p(sigma)|| - r
-  // phi is monotonically decreasing in sigma (when sigma > -lam_min)
-  double sigma_lo = std::max(-lam_min, 0.0) + 1e-12;
-  double sigma_hi = sigma_lo + 1.0;
-  // Expand sigma_hi until phi(sigma_hi) <= 0
-  for (int it = 0; it < 50; ++it) {
-    double pn2 = 0.0;
-    for (int j = 0; j < K; ++j) {
-      double d = vals[j] + sigma_hi;
-      pn2 += (q[j] / d) * (q[j] / d);
-    }
-    if (std::sqrt(pn2) <= r) break;
-    sigma_hi *= 2.0;
-  }
-
-  // Bisection
-  double sigma = 0.0;
-  for (int it = 0; it < 60; ++it) {
-    sigma = 0.5 * (sigma_lo + sigma_hi);
-    double pn2 = 0.0;
-    for (int j = 0; j < K; ++j) {
-      double d = vals[j] + sigma;
-      pn2 += (q[j] / d) * (q[j] / d);
-    }
-    double pn = std::sqrt(pn2);
-    if (std::fabs(pn - r) < 1e-10 * r) break;
-    if (pn > r) sigma_lo = sigma; else sigma_hi = sigma;
-  }
-
-  // Build p
-  std::vector<double> y(K);
-  for (int j = 0; j < K; ++j) y[j] = -q[j] / (vals[j] + sigma);
-  for (int i = 0; i < K; ++i) {
-    double s = 0.0;
-    for (int j = 0; j < K; ++j) s += vecs[i + j * K] * y[j];
-    p[i] = s;
-  }
-  // predicted_red = -(g^T p + 1/2 p^T H p)
-  // In eigenbasis: predicted_red = -(q^T y + 1/2 y^T diag(lam) y)
-  //              = sum_j (-q_j y_j - 0.5 lam_j y_j^2)
-  //              = sum_j (q_j^2 / (lam_j + sigma) - 0.5 lam_j q_j^2 / (lam_j + sigma)^2)
-  double pred = 0.0;
-  for (int j = 0; j < K; ++j) {
-    double d  = vals[j] + sigma;
-    pred += q[j] * q[j] / d - 0.5 * vals[j] * q[j] * q[j] / (d * d);
-  }
-  *predicted_red = pred;
+static inline void trust_subproblem(int K, const double* g,
+                                    const double* vals, const double* vecs,
+                                    double r, double* p, double* predicted_red,
+                                    bool* is_newton) {
+  bool is_hard = false, is_easy = false;
+  dmod::trust_internal::trust_sub(K, g, vals, vecs, r, p, predicted_red,
+                                  is_newton, &is_hard, &is_easy);
 }
 
 

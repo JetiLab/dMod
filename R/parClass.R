@@ -63,6 +63,14 @@ summary.parlist <- function(object, ...) {
       "\nFits not converged: ", m_notConverged,
       "\nFits converged:     ", m_converged,
       "\nFits total:         ", m_sumStatus, " [", m_total, "]", sep = "")
+
+  m_reasons <- .stopReasonTable(x)
+  if (!is.null(m_reasons)) {
+    cat("\n\nTermination reason\n")
+    for (nm in names(m_reasons))
+      cat(formatC(nm, width = -20), m_reasons[[nm]], "\n", sep = "")
+  }
+  invisible(object)
 }
 
 
@@ -85,8 +93,29 @@ summary.parlist <- function(object, ...) {
   
   rownames(status) <- 1:length(status)
   colnames(status) <- "fit status"
-  
+
   return(status)
+}
+
+
+## Termination reason per fit, as reported by trust()$stopReason. NA for fits
+## that errored or predate the field. "gradient" is the only certified stop;
+## "stagnation" and "iterlim" mean the run ran out of resolution or budget.
+.stopReasonParlist <- function(x) {
+  vapply(x, function(fit) {
+    if (inherits(fit, "try-error") || any(names(fit) == "error") || is.null(fit))
+      return(NA_character_)
+    if (is.null(fit$stopReason)) NA_character_ else as.character(fit$stopReason)
+  }, NA_character_, USE.NAMES = FALSE)
+}
+
+
+## Tabulate termination reasons for printing; empty when nothing reports one.
+.stopReasonTable <- function(x) {
+  reasons <- .stopReasonParlist(x)
+  reasons <- reasons[!is.na(reasons)]
+  if (!length(reasons)) return(NULL)
+  sort(table(reasons), decreasing = TRUE)
 }
 
 
@@ -145,11 +174,17 @@ as.parframe.parlist <- function(x, sort.by = "value", ...) {
   m_stat <- .statParlist(x)
   m_metanames <- c("index", "value", "converged", "iterations")
   m_idx <- which("error" != m_stat)
-  m_parframe <- data.frame(index = m_idx, 
+  m_parframe <- data.frame(index = m_idx,
                            value = vapply(x[m_idx], function(.x) .x$value, 1.0),
                            converged = vapply(x[m_idx], function(.x) .x$converged, TRUE),
                            iterations = vapply(x[m_idx], function(.x) as.integer(.x$iterations), 1L))
-  
+
+  m_reasons <- .stopReasonParlist(x)[m_idx]
+  if (any(!is.na(m_reasons))) {
+    m_parframe$stopReason <- m_reasons
+    m_metanames <- c(m_metanames, "stopReason")
+  }
+
   parameters <- lapply(x[m_idx], function(x) data.table::as.data.table(as.list(x$argument)))
   parameters <- data.table::rbindlist(parameters, use.names = TRUE)
   m_parframe <- cbind(m_parframe, parameters)

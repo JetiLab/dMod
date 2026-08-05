@@ -95,7 +95,9 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
   # Substitute user-set control parameters
   if (!is.null(stepControl)) sControl[match(names(stepControl), names(sControl))] <- stepControl
   if (!is.null(algoControl)) aControl[match(names(algoControl), names(aControl))] <- algoControl
-  if (!is.null(optControl )) oControl[match(names(optControl), names(oControl))] <- optControl
+  # Assign by name rather than by match(): any trust() argument is passable,
+  # not just the ones already carried in oControl.
+  if (!is.null(optControl )) oControl[names(optControl)] <- optControl
   
   
   # Create interRes folder for cautiousMode
@@ -696,21 +698,32 @@ vcov <- function(fit, parupper = NULL, parlower = NULL) {
     return(vcov__)
   }
   
+  # Which parameters are held by a bound rather than determined by the data.
+  # `trust(boundary = "reflective")` keeps iterates strictly inside the box, so
+  # an exact comparison against the bound never fires -- it reports the activity
+  # itself. The comparison below is the fallback for fits without that field,
+  # and is relaxed to a relative tolerance for the same reason.
   fixed <- NULL
+  atBound__ <- fit[["atBound"]]
+  if (!is.null(atBound__) && !is.null(names(atBound__)))
+    fixed <- union(fixed, names(atBound__)[which(as.logical(atBound__))])
+  reltol__ <- 1e-6
   if (!is.null(parupper)) {
     myarg__ <- arg__[names(parupper)]
-    fixed <- union(fixed, names(myarg__)[myarg__ >= parupper])
+    fixed <- union(fixed, names(myarg__)[
+      which(myarg__ >= parupper - reltol__ * pmax(1, abs(parupper)))])
   }
   if (!is.null(parlower)) {
     myarg__ <- arg__[names(parlower)]
-    fixed <- union(fixed, names(myarg__)[myarg__ <= parlower])
+    fixed <- union(fixed, names(myarg__)[
+      which(myarg__ <= parlower + reltol__ * pmax(1, abs(parlower)))])
   }
-  
+
   vcov__ <- 0*hessian__
   is_fixed__ <- colnames(hessian__) %in% fixed
   subhessian__ <- hessian__[!is_fixed__, !is_fixed__, drop = FALSE]
   subvcov__ <- try(solve(0.5*subhessian__), silent = TRUE)
-  if (inherits(subvcov__, "try-error")) subvcov__ <- MASS::ginv(subhessian__)
+  if (inherits(subvcov__, "try-error")) subvcov__ <- MASS::ginv(0.5*subhessian__)
   vcov__[!is_fixed__, !is_fixed__] <- subvcov__
   
   # This part should not be necessary due to regularization usually done
@@ -1086,6 +1099,7 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
   sum.fatal <- sum(idxStatus == m_trustFlags.fatal)
   sum.unconverged <- sum(idxStatus == m_trustFlags.unconverged)
   sum.converged <- sum(idxStatus == m_trustFlags.converged)
+  reasons <- .stopReasonTable(m_parlist)
   msg <- paste0("Multi start trust summary\n",
                 "Outcome     : Occurrence\n",
                 "Error       : ", sum.error, "\n",
@@ -1093,7 +1107,11 @@ mstrust <- function(objfun, center, studyname, rinit = .1, rmax = 10, fits = 20,
                 "Unconverged : ", sum.unconverged, "\n",
                 "Converged   : ", sum.converged, "\n",
                 "           -----------\n",
-                "Total       : ", sum.error + sum.fatal + sum.unconverged + sum.converged, paste0("[", fits, "]"), "\n")
+                "Total       : ", sum.error + sum.fatal + sum.unconverged + sum.converged, paste0("[", fits, "]"), "\n",
+                if (!is.null(reasons))
+                  paste0("\nTermination reason\n",
+                         paste0(formatC(names(reasons), width = -12), ": ",
+                                as.integer(reasons), collapse = "\n"), "\n"))
   logfile <- file(fileLog, open = "a")
   writeLines(msg, logfile)
   flush(logfile)

@@ -28,7 +28,7 @@ reactions <- eqnlist() %>%
 #             TCA_cell = "k_import * TCA_buffer - k_export_sinus * TCA_cell - k_export_cana * TCA_cell")
 
 # Translate reactions into ODE model object
-mymodel <- odemodel(reactions, modelname = "bamodel", compile = F)
+mymodel <- odemodel(reactions, modelname = "bamodel", compile = F, backend = "Sundials")
 x <- Xs(mymodel)
 
 # Define observables buffer and cellular
@@ -57,11 +57,11 @@ p <- P(trafo, condition = "closed", compile = F)
 
 
 # Compile the objects
-compile(g, x, p, output = "bamodel", cores = 6) # Compile C/C++ output of odemodel in parallel
+compile(g, x, p, output = "bamodel", cores = 4) # Compile C/C++ output of odemodel in parallel
 
 ## Use simulate data to calibrate outer model parameters ---
 outerpars <- getParameters(p)
-pouter <- structure(runif(length(outerpars), min = -1, max = 0), names = outerpars)
+pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 
 prd <- g*x*p
 # debugonce(x)
@@ -69,7 +69,7 @@ times <- seq(0, 45, len = 300)
 # debugonce(g)
 out <- prd(times, pouter)
 plot(out, data)
-plot(getDerivs(out))
+# plot(getDerivs(out))
 
 # Define objective function
 obj <- normL2(data, g * x * p)
@@ -77,7 +77,7 @@ obj <- normL2(data, g * x * p)
 obj(pouter)
 
 # Fit on time (starting from pouter)
-myfit <- trust(obj, pouter, rinit = 0.1, rmax = 10, iterlim = 500, printIter = T)
+myfit <- trust(obj, pouter, iterlim = 500, printIter = T)
 times <- seq(0, 45, len = 300)
 mypred <- (g * x * p)(times, myfit$argument)
 plot(mypred, data)
@@ -105,6 +105,7 @@ obj <- normL2(data, g * x * p) + constraintL2(pouter, sigma = 4)
 # # Fit 50 times, sample with sd=4 around pouter
 outms <- mstrust(obj, pouter, sd = 4, studyname = "bamodel", cores=detectFreeCores(), fits=50, iterlim = 5e3)
 
+outms |> summary()
 # ## Later: Fitting on Knecht machines
 # outknecht <- runbg({
 #   mstrust(obj, pouter, sd = 4, studyname = "bamodelms", cores=detectFreeCores(), fits=100, iterlim = 1e3)
@@ -148,7 +149,7 @@ plotPaths(profiles_optimize, whichPar = "K_REFLUX_OPEN")
 plotPaths(profiles_optimize, whichPar = "S") 
 
 # Tighten model assumptions with steady state constraint
-mysteadies <- steadyStates(reactions, forcings = "k_import")
+mysteadies <- c(TCA_cana = "TCA_cell*k_export_cana/k_reflux")
 
 trafo <- eqnvec() %>%
   define("x~x", x = innerpars) %>% # identity
@@ -165,13 +166,16 @@ p <- P(trafo, modelname = "bamodel_SS", compile = TRUE)
 outerpars <- getParameters(p)
 pouter <- structure(rep(-1, length(outerpars)), names = outerpars)
 p(pouter)
-plot((g*x*p)(times, pouter),data)
+plot((g*x*p)(times, pouter), data)
 
 # Objective function
-obj <- normL2(data, g * x * p, attr.name = "data") + constraintL2(pouter, sigma = 20, attr.name = "prior")
+obj <- normL2(data, g*x*p, attr.name = "data") + constraintL2(pouter, sigma = 20, attr.name = "prior")
 
 # Multistart fit
 outms <- mstrust(obj, pouter, sd = 4, iterlim = 1e3, studyname = "bamodel_ss", cores = detectFreeCores(), fits = 50)
+
+summary(outms)
+
 outframe <- as.parframe(outms)
 plotValues(outframe) # Show "Waterfall" plot
 plotPars(outframe) # Show parameter plot

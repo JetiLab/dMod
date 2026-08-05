@@ -1,82 +1,320 @@
-// trust-region optimiser (Moré-Sorensen subproblem on a working
-// reduced space with active-set treatment for box bounds).
+// trust-region optimiser.
+//
+// Two boundary schemes, selected by `boundary`:
+//
+//   "reflective"  Coleman-Li interior trust-region-reflective (see
+//                 trust_subproblem.h). Iterates stay strictly inside the box and
+//                 the bound acts as a change of metric rather than a projection,
+//                 so the predicted and the achieved reduction always describe
+//                 the same step.
+//   "clip"        Moré-Sorensen on a reduced working space that drops
+//                 coordinates pinned at a bound, followed by componentwise
+//                 clipping. Kept so fits made before the reflective scheme
+//                 remain reproducible; frozen, not developed further.
 
 #include <Rcpp.h>
 #include "trust_subproblem.h"
+#include "trust_driver.h"
 #include <vector>
 #include <cmath>
-#include <limits>
-#include <fstream>
-#include <iomanip>
 #include <string>
 #include <algorithm>
 
 using namespace Rcpp;
+using dmod::trust_internal::affine_scaling;
 using dmod::trust_internal::eigen_sym_local;
+using dmod::trust_internal::model_value;
+using dmod::trust_internal::stepback;
 using dmod::trust_internal::trust_sub;
+using dmod::trust_driver::Blather;
+using dmod::trust_driver::Reporter;
+using dmod::trust_driver::eval_objfun;
+using dmod::trust_driver::fill_bound;
+using dmod::trust_driver::fill_parscale;
+using dmod::trust_driver::kInf;
+using dmod::trust_driver::kStallLimit;
+using dmod::trust_driver::push_interior;
+using dmod::trust_driver::subproblem_label;
 
+namespace {
 
-// [[Rcpp::export]]
-List trust_impl(Function objfun,
-           NumericVector parinit,
-           double rinit,
-           double rmax,
-           Nullable<NumericVector> parscale = R_NilValue,
-           int    iterlim = 100,
-           double fterm   = 1e-6,
-           double mterm   = 1e-6,
-           bool   minimize = true,
-           bool   blather  = false,
-           Nullable<NumericVector>  parupper  = R_NilValue,
-           Nullable<NumericVector>  parlower  = R_NilValue,
-           bool   printIter = false,
-           Nullable<CharacterVector> traceFile = R_NilValue) {
+// -------------------------------------------------------------------------
+// Coleman-Li interior trust-region-reflective
+// -------------------------------------------------------------------------
+List trust_reflective(Function objfun, NumericVector parinit,
+                      double rinit, double rmax,
+                      Nullable<NumericVector> parscale,
+                      int iterlim,
+                      double ftol, double mtol,
+                      double gtol, double xtol,
+                      double rmin, double thetamax,
+                      bool minimize, bool blather_on,
+                      Nullable<NumericVector> parupper,
+                      Nullable<NumericVector> parlower,
+                      bool printIter, Nullable<CharacterVector> traceFile) {
 
   const int K = parinit.size();
-  if (K == 0) stop("trust: parinit must be non-empty");
-  if (!parinit.hasAttribute("names"))
-    stop("trust: parinit must be a named numeric vector");
   CharacterVector parnames = parinit.names();
+
+  std::vector<double> pl(K, -kInf), pu(K, kInf), ps(K, 1.0);
+  fill_bound(parupper, pu, parnames, K);
+  fill_bound(parlower, pl, parnames, K);
   for (int i = 0; i < K; ++i)
-    if (!std::isfinite(parinit[i])) stop("trust: parinit not all finite");
+    if (!(pl[i] < pu[i])) stop("trust: parlower must lie strictly below parupper");
+  fill_parscale(parscale, ps, K, "trust");
 
-  // ---- Build length-K parlower / parupper ----
-  std::vector<double> pl(K, -std::numeric_limits<double>::infinity());
-  std::vector<double> pu(K, +std::numeric_limits<double>::infinity());
-  auto fill_bound = [&](Nullable<NumericVector> nv, std::vector<double>& out) {
-    if (nv.isNull()) return;
-    NumericVector v(nv);
-    if (v.size() == 0) return;
-    if (v.hasAttribute("names")) {
-      CharacterVector vn = v.names();
-      for (int j = 0; j < v.size(); ++j) {
-        std::string nm = as<std::string>(vn[j]);
-        for (int i = 0; i < K; ++i) {
-          if (as<std::string>(parnames[i]) == nm) { out[i] = v[j]; break; }
-        }
-      }
+  // Work in the parscale frame z = parscale * theta, where the radius lives.
+  std::vector<double> lbz(K), ubz(K), z(K);
+  bool any_above = false, any_below = false;
+  for (int i = 0; i < K; ++i) {
+    lbz[i] = ps[i] * pl[i];
+    ubz[i] = ps[i] * pu[i];
+    double zi = ps[i] * parinit[i];
+    if (zi > ubz[i]) { any_above = true; zi = ubz[i]; }
+    if (zi < lbz[i]) { any_below = true; zi = lbz[i]; }
+    z[i] = zi;
+  }
+  if (any_above) Rf_warning("init above range");
+  if (any_below) Rf_warning("init below range");
+  push_interior(K, z, lbz, ubz);
+
+  Reporter report;
+  report.init(printIter, iterlim, traceFile, K, parnames);
+
+  NumericVector x_named(K);
+  x_named.names() = parnames;
+  for (int i = 0; i < K; ++i) x_named[i] = z[i] / ps[i];
+
+  List out_init;
+  if (!eval_objfun(objfun, x_named, out_init))
+    stop("parinit not feasible: objfun failed");
+  double val = as<double>(out_init["value"]);
+  if (!std::isfinite(val)) stop("parinit not feasible: value is not finite");
+  NumericVector grad0 = as<NumericVector>(out_init["gradient"]);
+  NumericMatrix Hmat0 = as<NumericMatrix>(out_init["hessian"]);
+
+  std::vector<double> grad_full(grad0.begin(), grad0.end());
+  std::vector<double> H_full((std::size_t) K * K);
+  for (int j = 0; j < K; ++j)
+    for (int i = 0; i < K; ++i)
+      H_full[i + (std::size_t) j * K] = Hmat0(i, j);
+
+  int neval = 1;
+  report(neval, val, x_named, /*head=*/true);
+
+  Blather trace;
+  std::vector<double> absv(K), jv(K), sqrtv(K), g_z(K), ghat(K);
+  std::vector<double> Bhat((std::size_t) K * K), eigvals(K), eigvecs((std::size_t) K * K);
+  std::vector<double> shat(K), shat_step(K), s_step(K), z_try(K);
+  std::vector<unsigned char> at_bound(K, 0);
+
+  double r = rinit;
+  double f_used = minimize ? val : -val;
+  double opt_measure = kInf;
+  bool   accept = true, converged = false, bail = false;
+  int    n_iter = 0, n_fail = 0, n_stall = 0;
+  std::string stop_reason = "iterlim";
+
+  for (int iter = 1; iter <= iterlim; ++iter) {
+    R_CheckUserInterrupt();
+
+    if (accept) {
+      f_used = minimize ? val : -val;
+      const double sgn = minimize ? 1.0 : -1.0;
+      for (int i = 0; i < K; ++i) g_z[i] = sgn * grad_full[i] / ps[i];
+
+      affine_scaling(K, z.data(), g_z.data(), lbz.data(), ubz.data(),
+                     absv.data(), jv.data());
+      for (int i = 0; i < K; ++i) sqrtv[i] = std::sqrt(absv[i]);
+
+      // First-order optimality for the box problem: |v| * |g| vanishes both at
+      // an interior stationary point and at a bound the gradient pushes into.
+      opt_measure = 0.0;
+      for (int i = 0; i < K; ++i)
+        opt_measure = std::max(opt_measure, std::fabs(absv[i] * g_z[i]));
+      // A coordinate counts as bound-active when only the scaling makes it
+      // stationary -- its own gradient is still well away from zero. Set before
+      // the convergence break, which is exactly when it matters.
+      const double btol = std::max(gtol, 1e-10);
+      for (int i = 0; i < K; ++i)
+        at_bound[i] = (jv[i] > 0.0 && std::fabs(absv[i] * g_z[i]) <= btol &&
+                       std::fabs(g_z[i]) > btol) ? 1 : 0;
+
+      if (opt_measure <= gtol) { converged = true; stop_reason = "gradient"; break; }
+
+      for (int i = 0; i < K; ++i) ghat[i] = sqrtv[i] * g_z[i];
+      for (int j = 0; j < K; ++j)
+        for (int i = 0; i < K; ++i)
+          Bhat[i + (std::size_t) j * K] =
+              sqrtv[i] * sqrtv[j] * sgn * H_full[i + (std::size_t) j * K] / (ps[i] * ps[j]);
+      for (int i = 0; i < K; ++i)
+        Bhat[i + (std::size_t) i * K] += std::fabs(g_z[i]) * jv[i];
+
+      eigen_sym_local(Bhat.data(), K, eigvals.data(), eigvecs.data());
+    }
+
+    if (blather_on) {
+      for (int i = 0; i < K; ++i) trace.argpath.push_back(z[i] / ps[i]);
+      trace.r.push_back(r);
+      trace.valpath.push_back(val);
+    }
+
+    bool is_newton = false, is_hard = false, is_easy = false;
+    double pred_unused = 0.0;
+    trust_sub(K, ghat.data(), eigvals.data(), eigvecs.data(), r,
+              shat.data(), &pred_unused, &is_newton, &is_hard, &is_easy);
+
+    // Let the iterate approach a face as the optimality measure falls, but
+    // never reach it -- |v| = 0 would freeze that coordinate for good.
+    const double theta_frac =
+        std::min(std::max(thetamax, 1.0 - opt_measure), 1.0 - 1e-12);
+
+    const char* sb_label = "full";
+    double m_value = 0.0;
+    stepback(K, z.data(), lbz.data(), ubz.data(), sqrtv.data(),
+             ghat.data(), Bhat.data(), shat.data(), r, theta_frac,
+             shat_step.data(), s_step.data(), &m_value, &sb_label);
+
+    double stepnorm = 0.0;
+    for (int i = 0; i < K; ++i) stepnorm += shat_step[i] * shat_step[i];
+    stepnorm = std::sqrt(stepnorm);
+
+    for (int i = 0; i < K; ++i) z_try[i] = z[i] + s_step[i];
+    // theta_frac keeps the step interior in exact arithmetic, but once |v| is
+    // small the remaining gap underflows and z_try rounds onto the bound,
+    // setting |v| = 0 and freezing the coordinate.
+    push_interior(K, z_try, lbz, ubz);
+
+    NumericVector x_try(K);
+    x_try.names() = parnames;
+    for (int i = 0; i < K; ++i) x_try[i] = z_try[i] / ps[i];
+
+    List out_try;
+    bool eval_ok = eval_objfun(objfun, x_try, out_try);
+    double val_try = kInf;
+    NumericVector grad_try;
+    NumericMatrix Htry_mat;
+    if (eval_ok) {
+      val_try  = as<double>(out_try["value"]);
+      grad_try = as<NumericVector>(out_try["gradient"]);
+      Htry_mat = as<NumericMatrix>(out_try["hessian"]);
+      if (!std::isfinite(val_try)) eval_ok = false;
+    }
+    neval++;
+    report(neval, val_try, x_try, /*head=*/false);
+
+    const double pred_pos  = -m_value;
+    const double ftry_used = minimize ? val_try : -val_try;
+    const double dval      = std::fabs(ftry_used - f_used);
+    const double rho = (eval_ok && pred_pos > 0.0)
+                         ? (f_used - ftry_used) / pred_pos : -kInf;
+
+    if (!eval_ok) {
+      n_fail++;
+      accept = false;
+      r *= 0.25;
+      if (n_fail >= 3) { bail = true; stop_reason = "objfun"; }
     } else {
-      std::fill(out.begin(), out.end(), v[0]);
+      n_fail = 0;
+      if (rho < 0.25) {
+        accept = false;
+        r = std::min(0.25 * r, 0.25 * stepnorm);
+      } else {
+        accept = true;
+        // Only grow when the solution actually pressed against the radius.
+        if (rho > 0.75 && stepnorm >= 0.9 * r) r = std::min(2.0 * r, rmax);
+      }
     }
-  };
-  fill_bound(parupper, pu);
-  fill_bound(parlower, pl);
 
-  // ---- Validate parscale ----
-  bool rescale = parscale.isNotNull();
-  std::vector<double> ps(K, 1.0);
-  if (rescale) {
-    NumericVector v(parscale);
-    if (v.size() != K) stop("trust: parscale and parinit not same length");
-    for (int i = 0; i < K; ++i) {
-      if (!(v[i] > 0))             stop("trust: parscale not all positive");
-      if (!std::isfinite(v[i]) || !std::isfinite(1.0 / v[i]))
-        stop("trust: parscale or 1/parscale not all finite");
-      ps[i] = v[i];
+    // Count rejected steps that also left the objective flat.
+    if (accept || !eval_ok || dval >= ftol) n_stall = 0;
+    else                                                              n_stall++;
+
+    if (accept && eval_ok) {
+      z = z_try;
+      val = val_try;
+      grad_full.assign(grad_try.begin(), grad_try.end());
+      for (int j = 0; j < K; ++j)
+        for (int i = 0; i < K; ++i)
+          H_full[i + (std::size_t) j * K] = Htry_mat(i, j);
     }
+
+    if (blather_on) {
+      for (int i = 0; i < K; ++i) trace.argtry.push_back(z_try[i] / ps[i]);
+      trace.valtry.push_back(val_try);
+      trace.accept.push_back(accept ? 1 : 0);
+      trace.preddiff.push_back(m_value);
+      trace.stepnorm.push_back(stepnorm);
+      trace.rho.push_back(rho);
+      trace.steptype.push_back(subproblem_label(is_newton, is_hard, is_easy));
+      trace.stepback.push_back(sb_label);
+    }
+    n_iter = iter;
+
+    if (bail) break;
+    if (accept && eval_ok) {
+      if (dval < ftol) { converged = true; stop_reason = "fvalue"; break; }
+      if (std::fabs(m_value) < mtol)             { converged = true; stop_reason = "preddiff";  break; }
+      if (xtol > 0.0 && stepnorm < xtol)         { converged = true; stop_reason = "step";   break; }
+    }
+    if (r < rmin) { stop_reason = "radius"; break; }
+    if (n_stall >= kStallLimit) { converged = true; stop_reason = "stagnation"; break; }
   }
 
-  // ---- Clip parinit to bounds with warning ----
+  if (stop_reason == "objfun")
+    Rf_warning("trust: objfun evaluation failed 3 times in a row");
+  else if (stop_reason == "radius")
+    Rf_warning("Trust radius fell below rmin. Fit is not converged.");
+  else if (!converged && n_iter >= iterlim)
+    Rf_warning("Maximum number of iterations exceeded. Fit is not converged.");
+
+  NumericVector arg_out(K), grad_out(grad_full.begin(), grad_full.end());
+  for (int i = 0; i < K; ++i) arg_out[i] = z[i] / ps[i];
+  arg_out.names()  = parnames;
+  grad_out.names() = parnames;
+  NumericMatrix Hess_out(K, K);
+  for (int j = 0; j < K; ++j)
+    for (int i = 0; i < K; ++i) Hess_out(i, j) = H_full[i + (std::size_t) j * K];
+  Hess_out.attr("dimnames") = List::create(parnames, parnames);
+  LogicalVector at_bound_out(K);
+  for (int i = 0; i < K; ++i) at_bound_out[i] = (at_bound[i] != 0);
+  at_bound_out.names() = parnames;
+
+  List result = List::create(
+      Named("argument")   = arg_out,
+      Named("value")      = val,
+      Named("gradient")   = grad_out,
+      Named("hessian")    = Hess_out,
+      Named("iterations") = n_iter,
+      Named("converged")  = converged,
+      Named("atBound")    = at_bound_out,
+      Named("stopReason") = stop_reason);
+
+  if (blather_on) trace.attach(result, n_iter, K, parnames, minimize);
+  return result;
+}
+
+// -------------------------------------------------------------------------
+// Legacy: active-set reduction plus componentwise clipping
+// -------------------------------------------------------------------------
+List trust_clip(Function objfun, NumericVector parinit,
+                double rinit, double rmax,
+                Nullable<NumericVector> parscale,
+                int iterlim, double fterm, double mterm,
+                bool minimize, bool blather_on,
+                Nullable<NumericVector> parupper,
+                Nullable<NumericVector> parlower,
+                bool printIter, Nullable<CharacterVector> traceFile) {
+
+  const int K = parinit.size();
+  CharacterVector parnames = parinit.names();
+
+  std::vector<double> pl(K, -kInf), pu(K, kInf), ps(K, 1.0);
+  fill_bound(parupper, pu, parnames, K);
+  fill_bound(parlower, pl, parnames, K);
+  const bool rescale = parscale.isNotNull();
+  fill_parscale(parscale, ps, K, "trust");
+
   std::vector<double> theta(K);
   bool any_above = false, any_below = false;
   for (int i = 0; i < K; ++i) {
@@ -87,21 +325,21 @@ List trust_impl(Function objfun,
   if (any_above) Rf_warning("init above range");
   if (any_below) Rf_warning("init below range");
 
-  // ---- Boundary indicator vectors (carry across iterations) ----
-  // Initial values reflect parinit after clipping.
   std::vector<unsigned char> at_upper(K, 0), at_lower(K, 0);
   for (int i = 0; i < K; ++i) {
     at_upper[i] = (theta[i] >= pu[i]) ? 1 : 0;
     at_lower[i] = (theta[i] <= pl[i]) ? 1 : 0;
   }
 
-  // ---- Initial evaluation ----
+  Reporter report;
+  report.init(printIter, iterlim, traceFile, K, parnames);
+
   NumericVector x_named(theta.begin(), theta.end());
   x_named.names() = parnames;
   List out_init = as<List>(objfun(x_named));
   double val = as<double>(out_init["value"]);
-  NumericVector grad0   = as<NumericVector>(out_init["gradient"]);
-  NumericMatrix Hmat0   = as<NumericMatrix>(out_init["hessian"]);
+  NumericVector grad0 = as<NumericVector>(out_init["gradient"]);
+  NumericMatrix Hmat0 = as<NumericMatrix>(out_init["hessian"]);
   if (!std::isfinite(val)) stop("parinit not feasible: value is not finite");
 
   std::vector<double> grad_full(grad0.begin(), grad0.end());
@@ -110,64 +348,27 @@ List trust_impl(Function objfun,
     for (int i = 0; i < K; ++i)
       H_full[i + (std::size_t) j * K] = Hmat0(i, j);
 
-  int neval = 1;  // evaluation counter (incl. initial)
+  int neval = 1;
+  report(neval, val, x_named, /*head=*/true);
 
-  // ---- printIter / traceFile setup ----
-  int iter_width = static_cast<int>(std::to_string(iterlim).size());
-  std::ofstream trace_ofs;
-  std::string trace_path;
-  if (traceFile.isNotNull()) {
-    CharacterVector tf(traceFile);
-    if (tf.size() > 0) trace_path = as<std::string>(tf[0]);
-  }
-  auto trace_write = [&](int it, double v, const NumericVector& x, bool head) {
-    if (trace_path.empty()) return;
-    if (head) {
-      trace_ofs.open(trace_path.c_str());
-      trace_ofs << "Iteration,Obj";
-      for (int i = 0; i < K; ++i)
-        trace_ofs << "," << as<std::string>(parnames[i]);
-      trace_ofs << "\n";
-    }
-    trace_ofs << std::setprecision(15) << it << "," << v;
-    for (int i = 0; i < K; ++i) trace_ofs << "," << x[i];
-    trace_ofs << "\n";
-  };
-  if (printIter) {
-    Rcpp::Rcout << "Iteration: " << std::setw(iter_width) << neval
-                << "      Objective value: " << val << "\n";
-  }
-  if (!trace_path.empty()) trace_write(neval, val, x_named, /*head=*/true);
-
-  // ---- Blather buffers ----
-  std::vector<double> argpath_flat, argtry_flat;
-  std::vector<std::string> steptype_v;
-  std::vector<int>    accept_v;
-  std::vector<double> r_v, rho_v, valpath_v, valtry_v, preddiff_v, stepnorm_v;
-
-  // ---- Working reduced subproblem state (rebuilt on each accepted iter) ----
+  Blather trace;
   std::vector<int>    active;
   std::vector<double> g_red, H_red, eigvals_red, eigvecs_red;
   double f_used = val;
 
-  bool accept = true;
+  bool accept = true, converged = false, is_terminate = false;
   double r = rinit;
-  bool   converged = false;
-  bool   is_terminate = false;
-  int    iter = 0;
-  int    n_fail = 0;
-
+  int iter = 0, n_fail = 0;
   std::vector<double> theta_try(K), p_full(K), p_red;
 
   for (iter = 1; iter <= iterlim; ++iter) {
 
-    if (blather) {
-      argpath_flat.insert(argpath_flat.end(), theta.begin(), theta.end());
-      r_v.push_back(r);
-      valpath_v.push_back(val);
+    if (blather_on) {
+      trace.argpath.insert(trace.argpath.end(), theta.begin(), theta.end());
+      trace.r.push_back(r);
+      trace.valpath.push_back(val);
     }
 
-    // ---- Active-set / reduced subproblem build (only when accept) ----
     if (accept) {
       active.clear();
       for (int i = 0; i < K; ++i) {
@@ -209,29 +410,16 @@ List trust_impl(Function objfun,
 
     int Kred = static_cast<int>(active.size());
 
-    // ---- Solve subproblem on the reduced space ----
     p_red.assign(Kred, 0.0);
     bool is_newton = false, is_hard = false, is_easy = false;
-    double m_value = 0.0;        // g^T p + 0.5 p^T B p   (working frame)
-    double pred_pos = 0.0;       // -m_value (positive for descent)
+    double m_value = 0.0, pred_pos = 0.0;
     if (Kred > 0) {
       trust_sub(Kred, g_red.data(), eigvals_red.data(), eigvecs_red.data(), r,
                 p_red.data(), &pred_pos, &is_newton, &is_hard, &is_easy);
-      // Recompute m_value directly from p_red and B_red for consistency:
-      double gp = 0.0;
-      for (int ii = 0; ii < Kred; ++ii) gp += g_red[ii] * p_red[ii];
-      double pBp = 0.0;
-      for (int ii = 0; ii < Kred; ++ii) {
-        double s = 0.0;
-        for (int jj = 0; jj < Kred; ++jj)
-          s += H_red[ii + (std::size_t) jj * Kred] * p_red[jj];
-        pBp += p_red[ii] * s;
-      }
-      m_value  = gp + 0.5 * pBp;
+      m_value  = model_value(Kred, g_red.data(), H_red.data(), p_red.data());
       pred_pos = -m_value;
     }
 
-    // ---- Scatter step back to full K and apply parscale inverse ----
     std::fill(p_full.begin(), p_full.end(), 0.0);
     for (int ii = 0; ii < Kred; ++ii) {
       int i = active[ii];
@@ -243,7 +431,6 @@ List trust_impl(Function objfun,
     for (int i = 0; i < K; ++i) stepnorm += p_full[i] * p_full[i];
     stepnorm = std::sqrt(stepnorm);
 
-    // ---- Propose theta_try, refresh at_upper/at_lower, clip ----
     for (int i = 0; i < K; ++i) theta_try[i] = theta[i] + p_full[i];
     for (int i = 0; i < K; ++i) {
       at_upper[i] = !(theta_try[i] < pu[i]) ? 1 : 0;
@@ -252,17 +439,11 @@ List trust_impl(Function objfun,
       if (at_lower[i]) theta_try[i] = pl[i];
     }
 
-    // ---- Evaluate at theta_try ----
     NumericVector x_try(theta_try.begin(), theta_try.end());
     x_try.names() = parnames;
     List out_try;
-    bool eval_ok = true;
-    try {
-      out_try = as<List>(objfun(x_try));
-    } catch (...) {
-      eval_ok = false;
-    }
-    double val_try = std::numeric_limits<double>::infinity();
+    bool eval_ok = eval_objfun(objfun, x_try, out_try);
+    double val_try = kInf;
     NumericVector grad_try;
     NumericMatrix Htry_mat;
     if (eval_ok) {
@@ -272,25 +453,15 @@ List trust_impl(Function objfun,
       if (!std::isfinite(val_try)) eval_ok = false;
     }
     neval++;
-    if (printIter) {
-      Rcpp::Rcout << "Iteration: " << std::setw(iter_width) << neval
-                  << "      Objective value: " << val_try << "\n";
-    }
-    if (!trace_path.empty()) trace_write(neval, val_try, x_try, /*head=*/false);
+    report(neval, val_try, x_try, /*head=*/false);
 
-    // ---- Acceptance / radius update ----
     double ftry_used = minimize ? val_try : -val_try;
     double rho;
-    if (eval_ok && pred_pos > 0.0) {
-      double actual_red = f_used - ftry_used;
-      rho = actual_red / pred_pos;
-    } else {
-      rho = -std::numeric_limits<double>::infinity();
-    }
+    if (eval_ok && pred_pos > 0.0) rho = (f_used - ftry_used) / pred_pos;
+    else                           rho = -kInf;
 
-    is_terminate = eval_ok &&
-                   (std::fabs(ftry_used - f_used) < fterm ||
-                    std::fabs(m_value)            < mterm);
+    is_terminate = eval_ok && (std::fabs(ftry_used - f_used) < fterm ||
+                               std::fabs(m_value) < mterm);
 
     if (!eval_ok) {
       n_fail++;
@@ -313,7 +484,6 @@ List trust_impl(Function objfun,
       }
     }
 
-    // ---- Apply acceptance ----
     if (accept && eval_ok) {
       for (int i = 0; i < K; ++i) theta[i] = theta_try[i];
       val = val_try;
@@ -323,43 +493,35 @@ List trust_impl(Function objfun,
           H_full[i + (std::size_t) j * K] = Htry_mat(i, j);
     }
 
-    // ---- Blather record (post-step) ----
-    if (blather) {
-      argtry_flat.insert(argtry_flat.end(), theta_try.begin(), theta_try.end());
-      valtry_v.push_back(val_try);
-      accept_v.push_back(accept ? 1 : 0);
-      preddiff_v.push_back(m_value);   // sign-flipped below if !minimize
-      stepnorm_v.push_back(stepnorm);
-      rho_v.push_back(rho);
-      std::string type_str;
-      if (is_newton)               type_str = "Newton";
-      else if (is_hard && is_easy) type_str = "hard-easy";
-      else if (is_hard)            type_str = "hard-hard";
-      else                          type_str = "easy-easy";
-      steptype_v.push_back(type_str);
+    if (blather_on) {
+      trace.argtry.insert(trace.argtry.end(), theta_try.begin(), theta_try.end());
+      trace.valtry.push_back(val_try);
+      trace.accept.push_back(accept ? 1 : 0);
+      trace.preddiff.push_back(m_value);
+      trace.stepnorm.push_back(stepnorm);
+      trace.rho.push_back(rho);
+      trace.steptype.push_back(subproblem_label(is_newton, is_hard, is_easy));
+      trace.stepback.push_back("full");
     }
 
     if (is_terminate) { converged = true; break; }
   }
 
-  if (trace_ofs.is_open()) trace_ofs.close();
-
-  // Loop counter post-exit: iter is in {break_point, iterlim+1}.
   int final_iter = (iter <= iterlim) ? iter : iterlim;
-  if (!converged && final_iter == iterlim) {
+  if (!converged && final_iter == iterlim)
     Rf_warning("Maximum number of iterations exceeded. Fit is not converged.");
-  }
 
-  // ---- Build result ----
   NumericVector arg_out(theta.begin(), theta.end());
-  arg_out.names() = parnames;
   NumericVector grad_out(grad_full.begin(), grad_full.end());
+  arg_out.names()  = parnames;
   grad_out.names() = parnames;
   NumericMatrix Hess_out(K, K);
   for (int j = 0; j < K; ++j)
-    for (int i = 0; i < K; ++i)
-      Hess_out(i, j) = H_full[i + (std::size_t) j * K];
+    for (int i = 0; i < K; ++i) Hess_out(i, j) = H_full[i + (std::size_t) j * K];
   Hess_out.attr("dimnames") = List::create(parnames, parnames);
+  LogicalVector at_bound_out(K);
+  for (int i = 0; i < K; ++i) at_bound_out[i] = (at_upper[i] || at_lower[i]);
+  at_bound_out.names() = parnames;
 
   List result = List::create(
       Named("argument")   = arg_out,
@@ -367,44 +529,54 @@ List trust_impl(Function objfun,
       Named("gradient")   = grad_out,
       Named("hessian")    = Hess_out,
       Named("iterations") = final_iter,
-      Named("converged")  = converged);
+      Named("converged")  = converged,
+      Named("atBound")    = at_bound_out,
+      Named("stopReason") = std::string(converged ? "fvalue" : "iterlim"));
 
-  if (blather) {
-    int n_iters = final_iter;
-    NumericMatrix argpath_M(n_iters, K);
-    NumericMatrix argtry_M(n_iters, K);
-    for (int it = 0; it < n_iters; ++it) {
-      for (int c = 0; c < K; ++c) {
-        argpath_M(it, c) = argpath_flat[(std::size_t) it * K + c];
-        argtry_M (it, c) = argtry_flat [(std::size_t) it * K + c];
-      }
-    }
-    argpath_M.attr("dimnames") = List::create(R_NilValue, parnames);
-    argtry_M.attr("dimnames")  = List::create(R_NilValue, parnames);
-
-    CharacterVector steptype_out(steptype_v.size());
-    for (std::size_t i = 0; i < steptype_v.size(); ++i)
-      steptype_out[i] = steptype_v[i];
-
-    LogicalVector accept_out(accept_v.size());
-    for (std::size_t i = 0; i < accept_v.size(); ++i)
-      accept_out[i] = (accept_v[i] != 0);
-
-    NumericVector preddiff_out(preddiff_v.size());
-    for (std::size_t i = 0; i < preddiff_v.size(); ++i)
-      preddiff_out[i] = minimize ? preddiff_v[i] : -preddiff_v[i];
-
-    result["argpath"]  = argpath_M;
-    result["argtry"]   = argtry_M;
-    result["steptype"] = steptype_out;
-    result["accept"]   = accept_out;
-    result["r"]        = NumericVector(r_v.begin(), r_v.end());
-    result["rho"]      = NumericVector(rho_v.begin(), rho_v.end());
-    result["valpath"]  = NumericVector(valpath_v.begin(), valpath_v.end());
-    result["valtry"]   = NumericVector(valtry_v.begin(), valtry_v.end());
-    result["preddiff"] = preddiff_out;
-    result["stepnorm"] = NumericVector(stepnorm_v.begin(), stepnorm_v.end());
-  }
-
+  if (blather_on) trace.attach(result, final_iter, K, parnames, minimize);
   return result;
+}
+
+}  // namespace
+
+
+// [[Rcpp::export]]
+List trust_impl(Function objfun,
+                NumericVector parinit,
+                double rinit,
+                double rmax,
+                Nullable<NumericVector> parscale = R_NilValue,
+                int    iterlim   = 100,
+                double ftol      = 1e-6,
+                double mtol      = 1e-6,
+                double gtol      = 1e-6,
+                double xtol      = 0.0,
+                double rmin      = 0.0,
+                double thetamax  = 0.99995,
+                std::string boundary = "reflective",
+                bool   minimize  = true,
+                bool   blather   = false,
+                Nullable<NumericVector>  parupper  = R_NilValue,
+                Nullable<NumericVector>  parlower  = R_NilValue,
+                bool   printIter = false,
+                Nullable<CharacterVector> traceFile = R_NilValue) {
+
+  const int K = parinit.size();
+  if (K == 0) stop("trust: parinit must be non-empty");
+  if (!parinit.hasAttribute("names"))
+    stop("trust: parinit must be a named numeric vector");
+  for (int i = 0; i < K; ++i)
+    if (!std::isfinite(parinit[i])) stop("trust: parinit not all finite");
+
+  if (boundary == "clip")
+    return trust_clip(objfun, parinit, rinit, rmax, parscale, iterlim,
+                      ftol, mtol, minimize, blather,
+                      parupper, parlower, printIter, traceFile);
+  if (boundary != "reflective")
+    stop("trust: boundary must be one of \"reflective\", \"clip\"");
+
+  return trust_reflective(objfun, parinit, rinit, rmax, parscale, iterlim,
+                          ftol, mtol, gtol, xtol, rmin, thetamax,
+                          minimize, blather, parupper, parlower,
+                          printIter, traceFile);
 }

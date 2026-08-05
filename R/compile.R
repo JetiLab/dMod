@@ -91,7 +91,8 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
         info_fallback[[length(info_fallback) + 1]] <- list(
           srcfile     = normalizePath(s, winslash = "/", mustWork = TRUE),
           compileArgs = attr(o, "compileArgs") %||% "",
-          linkArgs    = attr(o, "linkArgs")    %||% "")
+          linkArgs    = attr(o, "linkArgs")    %||% "",
+          sparse      = isTRUE(attr(o, "sparse")))
     }
   }
 
@@ -102,7 +103,8 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   info <- unlist(lapply(info, function(e) {
     if (!length(e$srcfile)) return(list())
     if (length(e$srcfile) == 1L) return(list(e))
-    lapply(e$srcfile, function(s) list(srcfile = s, compileArgs = e$compileArgs, linkArgs = e$linkArgs))
+    lapply(e$srcfile, function(s) list(srcfile = s, compileArgs = e$compileArgs,
+                                       linkArgs = e$linkArgs, sparse = e$sparse))
   }), recursive = FALSE)
 
   info <- Filter(function(e) length(e$srcfile) == 1L && nzchar(e$srcfile) && file.exists(e$srcfile), info)
@@ -123,8 +125,14 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   pic  <- if (.Platform$OS.type == "windows") "" else "-fPIC"
   base <- paste("-O2 -DNDEBUG -w", pic)
 
-  ## KLU flags for sparse models, mirroring cppDE::compile().
-  uses_klu <- any(vapply(objs, function(o) isTRUE(attr(o, "sparse")), logical(1)))
+  ## KLU flags for sparse models, mirroring cppDE::compile(). The flag lives on
+  ## the cppDE object inside an odemodel, so a bare `attr(o, "sparse")` on the
+  ## dMod fn objects handed to compile() never sees it -- go through the
+  ## per-file info. The `-DKLU*` fallback covers objects whose compileInfo was
+  ## built before `sparse` was recorded there.
+  uses_klu <- any(vapply(objs, function(o) isTRUE(attr(o, "sparse")), logical(1))) ||
+    any(vapply(info, function(e) isTRUE(e$sparse) ||
+                 grepl("(^|\\s)-DKLU", e$compileArgs %||% ""), logical(1)))
   klu_flag <- ""; klu_lib <- ""
   if (uses_klu) {
     cfgCppDE <- .cppDE_config()
@@ -465,7 +473,10 @@ loadDLL <- function(...) {
     out[[length(out) + 1]] <- list(
       srcfile     = src,
       compileArgs = attr(o, "compileArgs") %||% "",
-      linkArgs    = attr(o, "linkArgs")    %||% ""
+      linkArgs    = attr(o, "linkArgs")    %||% "",
+      ## cppDE flags a sparse-Jacobian model here; the flag has to travel with
+      ## the file because `compile()` only ever sees the wrapping dMod fn.
+      sparse      = isTRUE(attr(o, "sparse"))
     )
   }
   out

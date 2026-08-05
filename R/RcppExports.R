@@ -169,11 +169,11 @@ symCauchyEval <- function(tnodes, rvals, dN, dD, pIn) {
     .Call(`_dMod_symCauchyEval`, tnodes, rvals, dN, dD, pIn)
 }
 
-trustL1_impl <- function(objfun, parinit, mu, lambda, one_sided, rinit, rmax, parscale = NULL, iterlim = 100L, fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, parupper = NULL, parlower = NULL, printIter = FALSE, traceFile = NULL) {
-    .Call(`_dMod_trustL1_impl`, objfun, parinit, mu, lambda, one_sided, rinit, rmax, parscale, iterlim, fterm, mterm, minimize, blather, parupper, parlower, printIter, traceFile)
+trustL1_impl <- function(objfun, parinit, mu, lambda, one_sided, rinit, rmax, parscale = NULL, iterlim = 100L, ftol = 1e-6, mtol = 1e-6, gtol = 1e-6, xtol = 0.0, rmin = 0.0, thetamax = 0.99995, boundary = "reflective", minimize = TRUE, blather = FALSE, parupper = NULL, parlower = NULL, printIter = FALSE, traceFile = NULL) {
+    .Call(`_dMod_trustL1_impl`, objfun, parinit, mu, lambda, one_sided, rinit, rmax, parscale, iterlim, ftol, mtol, gtol, xtol, rmin, thetamax, boundary, minimize, blather, parupper, parlower, printIter, traceFile)
 }
 
-trust_impl <- function(objfun, parinit, rinit, rmax, parscale = NULL, iterlim = 100L, fterm = 1e-6, mterm = 1e-6, minimize = TRUE, blather = FALSE, parupper = NULL, parlower = NULL, printIter = FALSE, traceFile = NULL) {
-    .Call(`_dMod_trust_impl`, objfun, parinit, rinit, rmax, parscale, iterlim, fterm, mterm, minimize, blather, parupper, parlower, printIter, traceFile)
+trust_impl <- function(objfun, parinit, rinit, rmax, parscale = NULL, iterlim = 100L, ftol = 1e-6, mtol = 1e-6, gtol = 1e-6, xtol = 0.0, rmin = 0.0, thetamax = 0.99995, boundary = "reflective", minimize = TRUE, blather = FALSE, parupper = NULL, parlower = NULL, printIter = FALSE, traceFile = NULL) {
+    .Call(`_dMod_trust_impl`, objfun, parinit, rinit, rmax, parscale, iterlim, ftol, mtol, gtol, xtol, rmin, thetamax, boundary, minimize, blather, parupper, parlower, printIter, traceFile)
 }
 

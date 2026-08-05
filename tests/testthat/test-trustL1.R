@@ -142,3 +142,51 @@ test_that("trustL1 one-sided penalty pins coords pushing below mu", {
   # b is above mu, penalty inactive, so b lands at the unpenalised min.
   expect_equal(unname(fit$argument[["b"]]), 0.5, tolerance = 1e-6)
 })
+
+
+## ---- Box bounds alongside the L1 kink ---------------------------------
+#
+# Coleman-Li handles parlower/parupper; the kink active set is independent of
+# it and must keep pinning coordinates to mu bit-exactly.
+
+test_that("trustL1 combines a box bound with an L1 kink", {
+  # a is pulled to 3 but capped at 1; b is pulled to 0.05, below the kink
+  # threshold lambda/2 = 0.5, so it stays pinned at mu = 0.
+  obj <- function(p, ...) {
+    d <- as.numeric(p - c(3, 0.05))
+    list(value = sum(d^2), gradient = 2 * d, hessian = 2 * diag(2))
+  }
+  fit <- trustL1(obj, c(a = 0.5, b = 1), mu = c(a = 0, b = 0), lambda = 1,
+                 rinit = 1, rmax = 10, iterlim = 100,
+                 parupper = c(a = 1, b = Inf))
+
+  expect_true(fit$converged)
+  expect_identical(unname(fit$argument[["b"]]), 0)
+  expect_equal(unname(fit$argument[["a"]]), 1, tolerance = 1e-6)
+  expect_lt(fit$argument[["a"]], 1)
+  expect_true(fit$atBound[["a"]])
+})
+
+
+test_that("trustL1 rejects a kink outside the box", {
+  obj <- function(p, ...) list(value = sum(p^2), gradient = 2 * p, hessian = 2 * diag(2))
+  expect_error(
+    trustL1(obj, c(a = 0.5, b = 0.5), mu = c(a = 2), lambda = 1,
+            rinit = 1, rmax = 10, parupper = c(a = 1, b = Inf)),
+    "mu must lie strictly inside")
+})
+
+
+test_that("trustL1 boundary = 'clip' reproduces the historical pinning", {
+  obj <- function(p, ...) {
+    d <- as.numeric(p - c(2, 0.05))
+    list(value = sum(d^2), gradient = 2 * d, hessian = 2 * diag(2))
+  }
+  refl <- trustL1(obj, c(a = 1, b = 1), mu = c(a = 0, b = 0), lambda = 1,
+                  rinit = 1, rmax = 10, boundary = "reflective")
+  clip <- trustL1(obj, c(a = 1, b = 1), mu = c(a = 0, b = 0), lambda = 1,
+                  rinit = 1, rmax = 10, boundary = "clip")
+  expect_identical(unname(refl$argument[["b"]]), 0)
+  expect_identical(unname(clip$argument[["b"]]), 0)
+  expect_equal(unname(refl$argument), unname(clip$argument), tolerance = 1e-8)
+})

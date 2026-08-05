@@ -104,6 +104,7 @@ detectFreeCores <- function(machine = NULL) {
       ## (Sundials, and KLU on top of it for sparse CVODE models); those have
       ## to be resolved from the remote cppDE installation.
       if (nzchar(trimws(e$linkArgs %||% ""))) needsCVODE <- TRUE
+      if (isTRUE(e$sparse)) needsKLU <- TRUE
       if (nzchar(ca)) compileArgs <- c(compileArgs, strsplit(ca, "\\s+")[[1]])
     }
   }

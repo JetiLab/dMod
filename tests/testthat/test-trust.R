@@ -196,3 +196,249 @@ test_that("trust(blather = TRUE) returns all trace fields with finite numbers", 
   expect_true(all(is.finite(fit$valpath)))
   expect_true(all(fit$r >= 0))
 })
+
+
+## ---- Coleman-Li boundary handling -------------------------------------
+#
+# The reflective scheme keeps iterates strictly inside the box, so the bound
+# is approached but never touched; `atBound` reports the activity instead.
+
+# General quadratic 0.5 * (p - target)' A (p - target), A positive definite.
+.quadratic_objfn_A <- function(target, A) {
+  function(p, ...) {
+    d <- as.numeric(p - target)
+    list(value    = as.numeric(0.5 * t(d) %*% A %*% d),
+         gradient = as.numeric(A %*% d),
+         hessian  = A)
+  }
+}
+
+# The Coleman-Li model value at step `s`: the plain quadratic model plus the
+# curvature term of the metric itself, 0.5 * shat' C shat with C = |g| * jv.
+.coleman_li_model <- function(theta, g, H, s, lb, ub) {
+  bnd  <- ifelse(g < 0, ub, lb)
+  absv <- ifelse(is.finite(bnd), abs(theta - bnd), 1)
+  jv   <- ifelse(is.finite(bnd), 1, 0)
+  shat <- s / sqrt(absv)
+  as.numeric(t(g) %*% s + 0.5 * t(s) %*% H %*% s + 0.5 * sum(abs(g) * jv * shat^2))
+}
+
+
+test_that("trust hits the analytic KKT point of a bound-active quadratic", {
+  # min 0.5 (p - 3)' A (p - 3) s.t. x <= 1, with A = [[2,1],[1,2]].
+  # Active bound at x = 1 leaves d2 = -d1/2, hence y = 4 and g = (-3, 0).
+  A      <- matrix(c(2, 1, 1, 2), 2, 2)
+  target <- c(x = 3, y = 3)
+  # Tolerances pinned: the assertions below measure KKT accuracy, which must
+  # not drift with the package defaults.
+  fit <- trust(.quadratic_objfn_A(target, A), c(x = 0, y = 0),
+               rinit = 1, rmax = 10, iterlim = 100,
+               gtol = 1e-10, ftol = 0, mtol = 0,
+               parupper = c(x = 1, y = Inf))
+
+  expect_true(fit$converged)
+  expect_equal(fit$stopReason, "gradient")
+  expect_equal(unname(fit$argument[["x"]]), 1, tolerance = 1e-6)
+  expect_equal(unname(fit$argument[["y"]]), 4, tolerance = 1e-6)
+  # Strictly interior: never exactly on the bound, always below it.
+  expect_lt(fit$argument[["x"]], 1)
+  expect_equal(unname(fit$atBound), c(TRUE, FALSE))
+  expect_equal(unname(fit$gradient), c(-3, 0), tolerance = 1e-5)
+  # The extra diagonal term is what buys fast convergence at a bound; without
+  # it this crawls in geometrically over dozens of iterations.
+  expect_lte(fit$iterations, 15L)
+
+  # The shipped defaults still end on the gradient test, at the accuracy
+  # gtol implies.
+  deflt <- trust(.quadratic_objfn_A(target, A), c(x = 0, y = 0),
+                 rinit = 1, rmax = 10, iterlim = 100,
+                 parupper = c(x = 1, y = Inf))
+  expect_equal(deflt$stopReason, "gradient")
+  expect_equal(unname(deflt$argument[["x"]]), 1, tolerance = 1e-4)
+  expect_true(deflt$atBound[["x"]])
+})
+
+
+test_that("preddiff describes the step actually taken, bound active or not", {
+  A      <- matrix(c(2, 1, 1, 2), 2, 2)
+  target <- c(x = 3, y = 3)
+  obj    <- .quadratic_objfn_A(target, A)
+  lb     <- c(-Inf, -Inf)
+  ub     <- c(1, Inf)
+
+  fit <- trust(obj, c(x = 0, y = 0), rinit = 0.3, rmax = 10, iterlim = 100,
+               parupper = c(x = 1, y = Inf), blather = TRUE)
+
+  for (k in seq_len(fit$iterations)) {
+    theta <- fit$argpath[k, ]
+    s     <- fit$argtry[k, ] - theta
+    o     <- obj(theta)
+    expect_equal(fit$preddiff[k],
+                 .coleman_li_model(theta, o$gradient, o$hessian, s, lb, ub),
+                 tolerance = 1e-9)
+  }
+  expect_true(all(fit$stepnorm <= fit$r + 1e-9))
+})
+
+
+test_that("truncated and reflected steps are taken when the box blocks", {
+  # A diagonal Hessian never needs stepback: the metric's curvature term C
+  # already keeps the scaled Newton step inside the box. It is off-diagonal
+  # coupling that pushes a coordinate out, so this is a correlated problem with
+  # the optimum far outside an asymmetric box.
+  A <- matrix(c(4.789636, 1.795686,  0.196845,
+                1.795686, 1.377690, -0.720839,
+                0.196845, -0.720839, 1.548688), 3, 3)
+  tg   <- c(a = -10.187971, b =  5.856299, c = 5.418100)
+  lb   <- c(a =  -0.895015, b = -0.548275, c = -1.473029)
+  ub   <- c(a =   0.530507, b =  0.821269, c = 0.988922)
+  init <- c(a =  -0.539109, b = -0.150667, c = -0.316588)
+
+  fit <- trust(.quadratic_objfn_A(tg, A), init, rinit = 1.014421, rmax = 20,
+               iterlim = 100, gtol = 1e-12,
+               parlower = lb, parupper = ub, blather = TRUE)
+
+  expect_true(fit$converged)
+  expect_true(all(c("truncated", "reflected") %in% fit$stepback))
+  # Strictly interior at every iterate, not just at the end.
+  for (nm in names(init)) {
+    expect_true(all(fit$argpath[, nm] > lb[[nm]]))
+    expect_true(all(fit$argpath[, nm] < ub[[nm]]))
+  }
+  expect_true(all(fit$argument > lb) && all(fit$argument < ub))
+})
+
+
+test_that("a collapsing trust radius reports failure, not convergence", {
+  # Gradient points uphill, so no step is ever accepted and the radius decays.
+  # Under the old fterm-only test this reported converged = TRUE on the very
+  # first flat rejected step.
+  misleading <- function(p, ...) {
+    list(value = sum(p^2), gradient = -2 * p, hessian = diag(length(p)))
+  }
+  expect_warning(
+    fit <- trust(misleading, c(a = 1, b = 1), rinit = 1, rmax = 10,
+                 iterlim = 200, rmin = 0.05),
+    "rmin")
+  expect_false(fit$converged)
+  expect_equal(fit$stopReason, "radius")
+})
+
+
+test_that("a flat objective under repeated rejection stops as stagnation", {
+  # Without an rmin floor the run ends once the radius has been cut far enough
+  # that the objective no longer moves. That is reported as "stagnation", never
+  # as "gradient" -- the distinction a caller needs, because the optimiser
+  # cannot tell a genuine noise floor from a bad model.
+  misleading <- function(p, ...) {
+    list(value = sum(p^2), gradient = -2 * p, hessian = diag(length(p)))
+  }
+  fit <- trust(misleading, c(a = 1, b = 1), rinit = 1, rmax = 10, iterlim = 500)
+  expect_equal(fit$stopReason, "stagnation")
+  expect_lt(fit$iterations, 500L)
+})
+
+
+test_that("a rank-deficient Gauss-Newton Hessian gives a minimum-norm step", {
+  # f = 0.5 (x + y - 2)^2. H = J'J is rank 1 with null space (1, -1), and
+  # g = J'r is orthogonal to it -- the exactly-degenerate hard case. Extending
+  # along the zero-curvature direction would drift along x - y for no gain.
+  obj <- function(p, ...) {
+    res <- as.numeric(p[1] + p[2] - 2)
+    J   <- matrix(c(1, 1), nrow = 1)
+    list(value = 0.5 * res^2, gradient = as.numeric(t(J) * res), hessian = t(J) %*% J)
+  }
+  fit <- trust(obj, c(x = 0, y = 0), rinit = 1, rmax = 10, iterlim = 100)
+
+  expect_true(all(is.finite(fit$argument)))
+  expect_equal(sum(fit$argument), 2, tolerance = 1e-6)
+  # Minimum-norm solution of x + y = 2 from (0, 0) is (1, 1): no null-space drift.
+  expect_equal(unname(fit$argument[["x"]] - fit$argument[["y"]]), 0, tolerance = 1e-6)
+})
+
+
+test_that("bounds compose with parscale, parinit on a bound, and minimize = FALSE", {
+  target <- c(x = 5, y = 5)
+
+  # parinit sitting exactly on the bound must be nudged inside, not frozen.
+  on_bound <- trust(.quadratic_objfn(target), c(x = 1, y = 0),
+                    rinit = 1, rmax = 10, parupper = c(x = 1, y = Inf))
+  expect_true(on_bound$converged)
+  expect_equal(unname(on_bound$argument[["y"]]), 5, tolerance = 1e-6)
+  expect_true(on_bound$atBound[["x"]])
+
+  # parscale must not move the optimum.
+  # Tight tolerances so both runs reach the optimum rather than stopping at
+  # their own frame-dependent distance from the bound.
+  scaled <- trust(.quadratic_objfn(target), c(x = 0, y = 0),
+                  rinit = 1, rmax = 10, parupper = c(x = 1, y = Inf),
+                  parscale = c(10, 0.1), iterlim = 200, gtol = 1e-12)
+  plain  <- trust(.quadratic_objfn(target), c(x = 0, y = 0),
+                  rinit = 1, rmax = 10, parupper = c(x = 1, y = Inf),
+                  iterlim = 200, gtol = 1e-12)
+  expect_equal(unname(scaled$argument), unname(plain$argument), tolerance = 1e-5)
+
+  # Maximising a concave objective under the same bound.
+  negobj <- function(p, ...) {
+    o <- .quadratic_objfn(target)(p)
+    list(value = -o$value, gradient = -o$gradient, hessian = -o$hessian)
+  }
+  mx <- trust(negobj, c(x = 0, y = 0), rinit = 1, rmax = 10,
+              parupper = c(x = 1, y = Inf), minimize = FALSE)
+  expect_true(mx$converged)
+  expect_equal(unname(mx$argument[["y"]]), 5, tolerance = 1e-6)
+  expect_true(mx$atBound[["x"]])
+})
+
+
+test_that("without bounds the two boundary schemes agree", {
+  # |v| == 1 and C == 0 there, so the reflective scheme reduces to the old one.
+  target <- c(a = 1.0, b = -0.5, c = 2.3)
+  init   <- c(a = 0, b = 0, c = 0)
+  refl <- trust(.quadratic_objfn(target), init, rinit = 0.5, rmax = 10,
+                boundary = "reflective")
+  clip <- trust(.quadratic_objfn(target), init, rinit = 0.5, rmax = 10,
+                boundary = "clip")
+  expect_equal(unname(refl$argument), unname(clip$argument), tolerance = 1e-10)
+})
+
+
+test_that("boundary = 'clip' keeps landing exactly on the bound", {
+  fit <- trust(.quadratic_objfn(c(a = 5, b = 1)), c(a = 0, b = 0),
+               rinit = 1, rmax = 10, parupper = c(a = 2, b = Inf),
+               boundary = "clip")
+  expect_identical(unname(fit$argument[["a"]]), 2)
+  expect_error(
+    trust(.quadratic_objfn(c(a = 1)), c(a = 0), rinit = 1, rmax = 10,
+          boundary = "nonsense"),
+    "should be one of")
+})
+
+
+test_that("fterm and mterm still work as deprecated aliases", {
+  fit <- trust(.quadratic_objfn(c(a = 1, b = 2)), c(a = 0, b = 0),
+               rinit = 1, rmax = 10, fterm = 1e-10, mterm = 1e-10)
+  expect_true(fit$converged)
+  expect_equal(unname(fit$argument), c(1, 2), tolerance = 1e-8)
+})
+
+
+test_that("a flat, high-value start makes progress instead of stopping at once", {
+  # Weak sensitivities with large residuals: |f| is huge while |g| is small, as
+  # when an ODE model's parameters run into a saturated regime. Any gradient
+  # criterion scaled by |f| declares this converged before the first step --
+  # |f| grows quadratically in the residuals, |g| only linearly -- which is why
+  # gtol has no relative counterpart.
+  obj <- function(p, ...) {
+    s <- 5e-4
+    r <- as.numeric(p * s - 100)
+    list(value = sum(r^2), gradient = 2 * s * r, hessian = 2 * s^2 * diag(length(p)))
+  }
+  init <- c(a = 0, b = 0)
+  f0 <- obj(init)
+  expect_lt(max(abs(f0$gradient)), 1e-5 * f0$value)   # the trap would be armed
+
+  fit <- suppressWarnings(trust(obj, init, iterlim = 50))
+  expect_gt(fit$iterations, 0L)
+  expect_lt(fit$value, f0$value)
+})
