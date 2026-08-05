@@ -23,7 +23,6 @@
 #' @param cautiousMode Logical, write every step to disk and don't delete intermediate results
 #' @param side either, "left", "right" or "both": determines the side of the profile which is calculated (usefeull for parallelization). default is "both"
 #' @param ... Arguments going to objfun()
-#' @param obj Deprecated, use `objfun`. Only honored when spelled out in full.
 #' @details Computation of the profile likelihood is based on the method of Lagrangian multipliers
 #' and Euler integration of the corresponding differential equation of the profile likelihood paths.
 #' 
@@ -61,15 +60,7 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                     cores = 1,
                     cautiousMode = FALSE,
                     side = c("both", "left", "right"),
-                    ...,
-                    obj) {
-  # `obj` sits behind `...` on purpose: R disables partial matching there, so
-  # it is only ever hit by an explicit, fully spelled obj = ... call.
-  if (!missing(obj)) {
-    .Deprecated(msg = paste0("profile(): argument 'obj' is deprecated, ",
-                             "use 'objfun' instead."))
-    if (missing(objfun)) objfun <- obj
-  }
+                    ...) {
 
   # Ensure that objfun is defined in this environment such that it is copied to the parallel workers
   force(objfun)

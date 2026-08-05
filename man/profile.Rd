@@ -18,8 +18,7 @@ profile(
   cores = 1,
   cautiousMode = FALSE,
   side = c("both", "left", "right"),
-  ...,
-  obj
+  ...
 )
 }
 \arguments{
@@ -59,8 +58,6 @@ parameters. Multiplies with the OpenMP threads each objective function uses
 \item{side}{either, "left", "right" or "both": determines the side of the profile which is calculated (usefeull for parallelization). default is "both"}
 
 \item{...}{Arguments going to objfun()}
-
-\item{obj}{Deprecated, use \code{objfun}. Only honored when spelled out in full.}
 }
 \value{
 Named list of length one. The name is the parameter name. The list enty is a
