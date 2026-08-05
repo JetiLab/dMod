@@ -13,7 +13,7 @@
 ^check.*\.log$
 ^.*\.tar\.gz$
 
-# Test-time build artefacts written into tests/testthat/ by cOde and CppODE.
+# Test-time build artefacts written into tests/testthat/ by cOde and cppDE.
 # Without these the source tarball ships .dll/.so/.o test outputs, which
 # triggers CRAN-style "executable files" / "object files" WARNINGs.
 ^tests/testthat/.*\.(dll|so|o|c)$

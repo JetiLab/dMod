@@ -12,7 +12,7 @@ odemodel(
   events = NULL,
   fixed = NULL,
   modelname = "odemodel",
-  solver = c("CppODE", "Sundials", "deSolve"),
+  backend = c("cppDE", "Sundials", "deSolve"),
   verbose = FALSE,
   outdir = getwd(),
   ...
@@ -26,7 +26,7 @@ specifying the right-hand sides of the ODE system.}
 Defaults to \code{TRUE}.}
 
 \item{deriv2}{Logical. If \code{TRUE}, also generate second-order sensitivities
-(requires \code{solver = "CppODE"}). Implies \code{deriv = TRUE}. Defaults to
+(requires \code{backend = "cppDE"}). Implies \code{deriv = TRUE}. Defaults to
 \code{FALSE}.}
 
 \item{forcings}{Character vector with the names of external forcings.}
@@ -40,31 +40,35 @@ for which no sensitivities are required (this speeds up integration).}
 
 \item{modelname}{Character. The base name of the generated C/C++ file.}
 
-\item{solver}{Character string specifying the solver backend.
-One of \code{"CppODE"}, \code{"Sundials"} or \code{"deSolve"}.}
+\item{backend}{Character string selecting the code-generation and integration
+backend. One of \code{"cppDE"}, \code{"Sundials"} or \code{"deSolve"}. The stepper itself
+is chosen separately (\code{method} for \code{"cppDE"}, \code{optionsOde$method} for
+\code{"deSolve"}).}
 
 \item{verbose}{Logical. If \code{TRUE}, print compiler output to the R console.}
 
 \item{outdir}{Character. Directory for the generated C/C++ sources and the
 compiled shared object. Defaults to the working directory. Only honoured
-for \code{solver = "CppODE"} / \code{"Sundials"}; the \code{deSolve} backend always
+for \code{backend = "cppDE"} / \code{"Sundials"}; the \code{deSolve} backend always
 writes to the working directory, so a non-default \code{outdir} errors there.}
 
-\item{...}{Additional arguments passed to \code{\link[CppODE:CppODE]{CppODE::CppODE()}} or \code{\link[cOde:funC]{cOde::funC()}}.}
+\item{...}{Additional arguments passed to \code{\link[cppDE:cppODE]{cppDE::cppODE()}}, \code{\link[cppDE:cvode]{cppDE::cvode()}}
+or \code{\link[cOde:funC]{cOde::funC()}}.}
 }
 \value{
 list with \code{func} (ODE object) and \code{extended} (ODE+Sensitivities object).
 Carries a \code{"compileInfo"} attribute listing source files and per-file
 compile/link flags collected from \code{func} and \code{extended}. This is
 consumed by \code{\link[=compile]{compile()}} when the model is later compiled via a prediction
-function, so solver-specific linker requirements (e.g. Sundials libraries
-for \code{solver = "Sundials"}) are applied to the right files only.
+function, so backend-specific linker requirements (e.g. Sundials libraries
+for \code{backend = "Sundials"}) are applied to the right files only.
 }
 \description{
 Creates and compiles model objects for systems of ordinary differential equations (ODEs)
-with optional first- and second-order sensitivities. Depending on the selected solver,
-the function interfaces either to \code{\link[cOde:funC]{cOde::funC()}} (for \code{solver = "deSolve"})
-or to \code{\link[CppODE:CppODE]{CppODE::CppODE()}} (for \code{solver = "CppODE"} or \code{solver = "Sundials"}).
+with optional first- and second-order sensitivities. Depending on the selected backend,
+the function interfaces either to \code{\link[cOde:funC]{cOde::funC()}} (for \code{backend = "deSolve"})
+or to \code{\link[cppDE:cppODE]{cppDE::cppODE()}} / \code{\link[cppDE:cvode]{cppDE::cvode()}} (for \code{backend = "cppDE"} or
+\code{backend = "Sundials"}).
 }
 \examples{
 
@@ -111,5 +115,5 @@ plot(pred)
 }
 }
 \seealso{
-\code{\link[cOde:funC]{cOde::funC()}}, \code{\link[CppODE:CppODE]{CppODE::CppODE()}}
+\code{\link[cOde:funC]{cOde::funC()}}, \code{\link[cppDE:cppODE]{cppDE::cppODE()}}, \code{\link[cppDE:cvode]{cppDE::cvode()}}
 }

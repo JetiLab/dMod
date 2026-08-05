@@ -10,7 +10,7 @@
 #' @param trafo An [eqnvec], named character, [eqnlist], or list thereof.
 #' @param parameters Outer-parameter names.
 #' @param condition Condition label.
-#' @param compile,modelname,verbose Forwarded to [CppODE::funCpp].
+#' @param compile,modelname,verbose Forwarded to [cppDE::funCpp].
 #' @param method One of `"explicit"`, `"implicit"`, `"equilibrate"`, or `NULL`.
 #' @param cores Per-condition `mclapply()` cores. `NULL` auto-detects via
 #'   [detectFreeCores]; capped at 1 on Windows.
@@ -99,7 +99,7 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 #' Parameter transformation (explicit, algebraic)
 #'
 #' Builds `p_inner = f(p_outer)` from symbolic expressions via
-#' [CppODE::funCpp], in forward-mode AD or SymPy mode. The returned
+#' [cppDE::funCpp], in forward-mode AD or SymPy mode. The returned
 #' [parfn] attaches the Jacobian and, optionally, the Hessian.
 #'
 #' @param trafo Named character / [eqnvec]; names are inner parameters,
@@ -107,7 +107,7 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 #' @param parameters Outer parameters; defaults to `getSymbols(trafo)`.
 #' @param attach.input Append outer inputs to the output.
 #' @param condition Condition label.
-#' @param compile,modelname,verbose Forwarded to [CppODE::funCpp].
+#' @param compile,modelname,verbose Forwarded to [cppDE::funCpp].
 #' @param deriv,deriv2 Attach `attr(., "deriv")` `[p, theta]` and/or
 #'   `attr(., "deriv2")` `[p, theta, theta]`. `deriv2` needs `deriv = TRUE`.
 #' @param derivMode `"dual"` (AD, needs `compile = TRUE`) or `"symbolic"`.
@@ -116,7 +116,7 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 #'
 #' @return A [parfn].
 #' @seealso [Pimpl], [Pequil], [P].
-#' @importFrom CppODE funCpp
+#' @importFrom cppDE funCpp
 #' @export
 Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NULL,
                   compile = FALSE, modelname = NULL, verbose = FALSE,
@@ -141,7 +141,7 @@ Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NU
   if (is.null(modelname)) modelname <- "expl_parfn"
   if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
 
-  PEval <- suppressWarnings(CppODE::funCpp(
+  PEval <- suppressWarnings(cppDE::funCpp(
     unclass(trafo), variables = NULL, parameters = parameters, fixed = NULL,
     compile = compile, modelname = modelname, outdir = outdir,
     verbose = verbose, convenient = FALSE, derivMode = derivMode,
@@ -796,7 +796,7 @@ resetWarmStarts <- function(fn, verbose = TRUE) {
 #'   conservation then holds to the solver tolerance (`controlsNleqslv$ftol`).
 #'   If `FALSE`, the pivot species per conserved quantity becomes a pass-through
 #'   parameter and its redundant equation is dropped.
-#' @param compile,modelname,verbose Forwarded to [CppODE::funCpp].
+#' @param compile,modelname,verbose Forwarded to [cppDE::funCpp].
 #' @param deriv,deriv2 Attach first/second-order IFT sensitivities.
 #'   `deriv2` requires `funCpp` to expose `hess()`.
 #' @param controlsMS Multistart controls. Recognised keys: `nStarts`
@@ -852,7 +852,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   n_dep <- length(dependent)
   parms_all <- intersect(parms_all, getSymbols(all_exprs))
 
-  PEval <- suppressWarnings(CppODE::funCpp(
+  PEval <- suppressWarnings(cppDE::funCpp(
     all_exprs, variables = dependent, parameters = parms_all, fixed = NULL,
     compile = compile, modelname = modelname, outdir = outdir,
     verbose = verbose, convenient = FALSE,
@@ -1182,7 +1182,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 #' @param emit_d1,emit_d2 Whether first/second-order sensitivities are built.
 #' @param attach.input,keep.root,controlsODE,compile,modelname,condition,verbose,start.time,end.time
 #'   As in [Pequil].
-#' @param dotArgs Extra arguments forwarded to [CppODE::CppODE].
+#' @param dotArgs Extra arguments forwarded to [cppDE::cppODE].
 #' @param outdir Directory for the generated source and shared object.
 #' @return A [parfn].
 #' @keywords internal
@@ -1241,16 +1241,16 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
   if (!is.null(condition)) modelname <- paste(modelname, sanitizeConditions(condition), sep = "_")
 
   base <- c(list(rhs = unclass(f[dependent]), rootfunc = "equilibrate", compile = compile,
-                 outdir = outdir, useDenseOutput = FALSE, verbose = verbose), dotArgs)
+                 outdir = outdir, verbose = verbose), dotArgs)
   fixed_states <- setdiff(dependent, pivots)
-  model    <- do.call(CppODE::CppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
+  model    <- do.call(cppDE::cppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
                                                    modelname = modelname)))
   model_s  <- if (emit_d1)
-    do.call(CppODE::CppODE, c(base, list(deriv = TRUE, deriv2 = FALSE,
+    do.call(cppDE::cppODE, c(base, list(deriv = TRUE, deriv2 = FALSE,
                                          modelname = paste0(modelname, "_s"),
                                          fixed = fixed_states))) else NULL
   model_s2 <- if (emit_d2)
-    do.call(CppODE::CppODE, c(base, list(deriv = TRUE, deriv2 = TRUE,
+    do.call(cppDE::cppODE, c(base, list(deriv = TRUE, deriv2 = TRUE,
                                          modelname = paste0(modelname, "_s2"),
                                          fixed = fixed_states))) else NULL
   all_sens <- if (emit_d1) attr(model_s, "dimNames")$sens else character(0)
@@ -1303,7 +1303,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
     sens_model <- if (deriv2) model_s2 else if (deriv) model_s else model
     run_attempt <- function(y0) {
       tryCatch(
-        CppODE::solveODE(
+        cppDE::solveODE(
           sens_model, times = c(controls$start.time, controls$end.time),
           parms = c(y0, p[model_params]),
           sens1ini = if (deriv) default_sens else NULL,
@@ -1438,7 +1438,7 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 #' the ODE from `start.time` to `end.time`, warm starting from the cached
 #' root when available and falling back to multistart on the initial
 #' conditions otherwise. The Jacobian (and Hessian when `deriv2 = TRUE`)
-#' come from CppODE's analytical sensitivity integration. Conserved
+#' come from cppDE's analytical sensitivity integration. Conserved
 #' quantities are detected; how they are parametrised is controlled by
 #' `expressInTotals`.
 #'
@@ -1470,16 +1470,16 @@ Pimpl <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 #'   bounds for the random sweep). Under `expressInTotals = TRUE` the sweep
 #'   covers the non-conserved states only; moiety species are restarted on
 #'   the conservation manifold fixed by the totals.
-#' @param compile,modelname,verbose Forwarded to [CppODE::CppODE].
+#' @param compile,modelname,verbose Forwarded to [cppDE::cppODE].
 #' @param outdir Directory for the generated source and shared object,
 #'   default the working directory.
 #' @param deriv,deriv2 Attach first/second-order sensitivities; `deriv2`
 #'   requires the model built with `deriv2 = TRUE`.
-#' @param ... Forwarded to [CppODE::CppODE].
+#' @param ... Forwarded to [cppDE::cppODE].
 #'
 #' @return A [parfn].
 #' @seealso [Pexpl], [Pimpl], [P].
-#' @import CppODE
+#' @import cppDE
 #' @importFrom digest digest
 #' @export
 Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
@@ -1520,15 +1520,15 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
 
   dotArgs <- list(...); dotArgs[["deriv2"]] <- NULL
   base <- c(list(rhs = unclass(f_red), rootfunc = "equilibrate", compile = compile,
-                 outdir = outdir, useDenseOutput = FALSE, verbose = verbose), dotArgs)
-  model    <- do.call(CppODE::CppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
+                 outdir = outdir, verbose = verbose), dotArgs)
+  model    <- do.call(cppDE::cppODE, c(base, list(deriv = FALSE, deriv2 = FALSE,
                                                    modelname = modelname)))
   model_s  <- if (emit_d1)
-    do.call(CppODE::CppODE, c(base, list(deriv = TRUE,  deriv2 = FALSE,
+    do.call(cppDE::cppODE, c(base, list(deriv = TRUE,  deriv2 = FALSE,
                                          modelname = paste0(modelname, "_s"),
                                          fixed = names(f)))) else NULL
   model_s2 <- if (emit_d2)
-    do.call(CppODE::CppODE, c(base, list(deriv = TRUE, deriv2 = TRUE,
+    do.call(cppDE::cppODE, c(base, list(deriv = TRUE, deriv2 = TRUE,
                                          modelname = paste0(modelname, "_s2"),
                                          fixed = names(f)))) else NULL
   all_sens <- if (emit_d1) attr(model_s, "dimNames")$sens else character(0)
@@ -1597,7 +1597,7 @@ Pequil <- function(trafo, parameters = NULL, forcings = NULL, condition = NULL,
             else if (deriv2)
               default_sens2[, active_sens, active_sens, drop = FALSE]
       tryCatch(
-        CppODE::solveODE(
+        cppDE::solveODE(
           sens_model,
           times = c(controls$start.time, controls$end.time),
           parms = c(y0_dep, p[parms_all]),

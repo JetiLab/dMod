@@ -66,7 +66,7 @@ build_theoph <- function() {
   reactions <- addReaction(reactions, "",   "Cc", "Ka * Ag / V", "appearance")
   reactions <- addReaction(reactions, "Cc", "",  "Cl/V * Cc",   "elimination")
   m <- odemodel(reactions, modelname = "bt_ode", compile = FALSE,
-                solver = "CppODE", deriv2 = TRUE)
+                backend = "cppDE", deriv2 = TRUE)
   x <- Xs(m)
   g <- Y(c(y = "log(Cc + 1e-9)"), x, modelname = "bt_obs",
          compile = FALSE, deriv2 = TRUE)
@@ -118,7 +118,7 @@ build_warfarin <- function() {
                            "PCA_synthesis")
   reactions <- addReaction(reactions, "PCA", "", "kout * PCA", "PCA_degradation")
   m <- odemodel(reactions, modelname = "bw_ode", compile = FALSE,
-                solver = "CppODE", deriv2 = TRUE)
+                backend = "cppDE", deriv2 = TRUE)
   x <- Xs(m, optionsSens = list(atol = 1e-4, rtol = 1e-4))
   g <- Y(c(y_cp = "log(Center/V + 1e-3)", y_pca = "PCA"), x,
          modelname = "bw_obs", compile = FALSE, deriv2 = TRUE)

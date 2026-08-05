@@ -28,7 +28,7 @@ values are expressions in the outer parameters.}
 
 \item{condition}{Condition label.}
 
-\item{compile, modelname, verbose}{Forwarded to \link[CppODE:funCpp]{CppODE::funCpp}.}
+\item{compile, modelname, verbose}{Forwarded to \link[cppDE:funCpp]{cppDE::funCpp}.}
 
 \item{deriv, deriv2}{Attach \code{attr(., "deriv")} \verb{[p, theta]} and/or
 \code{attr(., "deriv2")} \verb{[p, theta, theta]}. \code{deriv2} needs \code{deriv = TRUE}.}
@@ -43,7 +43,7 @@ A \link{parfn}.
 }
 \description{
 Builds \code{p_inner = f(p_outer)} from symbolic expressions via
-\link[CppODE:funCpp]{CppODE::funCpp}, in forward-mode AD or SymPy mode. The returned
+\link[cppDE:funCpp]{cppDE::funCpp}, in forward-mode AD or SymPy mode. The returned
 \link{parfn} attaches the Jacobian and, optionally, the Hessian.
 }
 \seealso{

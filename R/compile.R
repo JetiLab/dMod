@@ -27,7 +27,7 @@
 #' attribute that [odemodel()], [Xs()], [Xf()], [Y()] and [P()] attach to
 #' their return values. Each entry carries the source file together with the
 #' `compileArgs` and `linkArgs` reported by the backend that produced it
-#' (`cOde::funC`, `CppODE::CppODE`, `CppODE::CVODE`, ...), so solver-specific
+#' (`cOde::funC`, `cppDE::cppODE`, `cppDE::cvode`, ...), so solver-specific
 #' libraries reach only the files that need them. Objects without
 #' `compileInfo` fall back to modelname-based file discovery in the current
 #' working directory.
@@ -65,9 +65,9 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
 
   ## Collect per-file build info.
   ## Primary source is `attr(o, "compileInfo")` carrying
-  ## (srcfile, compileArgs, linkArgs) as reported by cOde/CppODE/CVODE.
+  ## (srcfile, compileArgs, linkArgs) as reported by cOde/cppDE/CVODE.
   ## Falls back to modelname-based file discovery for objects that lack
-  ## compileInfo, and to the bare `srcfile` attribute for raw CppODE objects.
+  ## compileInfo, and to the bare `srcfile` attribute for raw cppDE objects.
   info_from_compileInfo <- unlist(
     lapply(objs, function(o) attr(o, "compileInfo")),
     recursive = FALSE
@@ -123,13 +123,17 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
   pic  <- if (.Platform$OS.type == "windows") "" else "-fPIC"
   base <- paste("-O2 -DNDEBUG -w", pic)
 
-  ## KLU detection
+  ## KLU flags for sparse models, mirroring cppDE::compile().
   uses_klu <- any(vapply(objs, function(o) isTRUE(attr(o, "sparse")), logical(1)))
   klu_flag <- ""; klu_lib <- ""
   if (uses_klu) {
-    sd <- if (nzchar(.Platform$r_arch)) file.path("lib", .Platform$r_arch) else "lib"
-    lp <- system.file(sd, "libcppode_ss.a", package = "CppODE")
-    if (file.exists(lp)) { klu_flag <- "-DKLU"; klu_lib <- shQuote(lp) }
+    cfgCppDE <- .cppDE_config()
+    if (!isTRUE(cfgCppDE$klu_available))
+      stop("A sparse Jacobian was requested, but cppDE was installed without the ",
+           "KLU linear solver.\n  Install SuiteSparse/KLU and re-install cppDE -- ",
+           "see cppDE::install_libs(\"suitesparse\").", call. = FALSE)
+    klu_flag <- trimws(paste("-DKLU", cfgCppDE$klu_cflags))
+    klu_lib  <- cfgCppDE$klu_libs
   }
 
   ## shared pieces (compiler/linker) that apply to every file
@@ -157,7 +161,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
     blaslapack <- paste(cfg("LAPACK_LIBS"), cfg("BLAS_LIBS"))
   }
   base_libs <- paste(klu_lib, blaslapack)
-  cppflags  <- paste0("-I", system.file("include", package = "CppODE"))
+  cppflags  <- paste0("-I", system.file("include", package = "cppDE"))
 
   ## Compiler invocation bits cached up front so parallel forks don't each
   ## re-spawn R-CMD-config. Used by compile_one_obj() for the direct
@@ -415,7 +419,7 @@ loadDLL <- function(...) {
 ## ODE model class -------------------------------------------------------------------
 
 ## Collect per-sub-object build info from ODE model pieces.
-## Each backend (cOde::funC, CppODE::CppODE, CppODE::CVODE) may attach
+## Each backend (cOde::funC, cppDE::cppODE, cppDE::cvode) may attach
 ## `srcfile`, `compileArgs`, and `linkArgs` to its func/extended result. For
 ## backends that don't (cOde), we fall back to modelname-based file discovery
 ## in the current working directory. The resulting list is the single

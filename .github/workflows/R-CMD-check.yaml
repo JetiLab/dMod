@@ -54,7 +54,7 @@ jobs:
 
       - uses: r-lib/actions/check-r-package@v2
         with:
-          # --as-cran dropped: dMod depends on CppODE via Remotes (GitHub-only),
+          # --as-cran dropped: dMod depends on cppDE via Remotes (GitHub-only),
           # so CRAN-submission feasibility checks would always WARN.
           # --ignore-vignettes: vignettes/petab.Rmd needs the libsbml Python venv
           # which is not provisioned in CI; --no-build-vignettes alone leaves a

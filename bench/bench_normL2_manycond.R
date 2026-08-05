@@ -27,7 +27,7 @@ reactions <- eqnlist() |>
   addReaction("TCA_cana",   "TCA_buffer", rate = "k_reflux*TCA_cana")
 
 mymodel <- odemodel(reactions, modelname = "ba_manycond",
-                    solver = "CppODE", compile = FALSE)
+                    backend = "cppDE", compile = FALSE)
 x <- Xs(mymodel,
         optionsOde  = list(atol = 1e-8, rtol = 1e-8),
         optionsSens = list(atol = 1e-8, rtol = 1e-8))
@@ -138,7 +138,7 @@ total <- sum(prof$self.time)
 cat(sprintf("total: %.2fs\n", total))
 
 classify <- function(name) {
-  if (grepl("CppODE|solveODE|\\.Call", name)) return("ode_solve")
+  if (grepl("cppDE|solveODE|\\.Call", name)) return("ode_solve")
   if (grepl("res\\b|evalConditionResidual|objlist|constraintL2|normL2|Reduce|lapply|match\\.num|\\.bmm|data\\.table|objframe|parvec|prdframe|getDerivs|\\+\\.objfn|\\*\\.fn|\\+\\.objlist|\\+\\.fn", name))
     return("r_glue")
   "other"
@@ -156,7 +156,7 @@ top$fun <- rownames(top)
 print(top[, c("fun","self.time","self.pct","family")], row.names = FALSE)
 
 ## profvis: same Rprof samples, but flame-graph UI with explicit .Call time
-## attribution. Lets us see how much wall time goes into CppODE's .Call
+## attribution. Lets us see how much wall time goes into cppDE's .Call
 ## entries vs the per-condition R glue around it.
 if (requireNamespace("profvis", quietly = TRUE)) {
   cat("\n=== profvis: 200 obj_big() calls (N_cond = 64) ===\n")
@@ -181,7 +181,7 @@ if (requireNamespace("profvis", quietly = TRUE)) {
     by_sample <- split(prof_df, prof_df$time)
     classify_stack <- function(s) {
       labs <- s$label
-      if (any(grepl("\\.Call|CppODE::solveODE|CppODE_", labs))) return("cpp_call")
+      if (any(grepl("\\.Call|cppDE::solveODE|cppDE_", labs))) return("cpp_call")
       if (any(grepl("tryCatch", labs))) return("tryCatch_glue")
       if (any(grepl("intersect|setdiff|union|unique|\\.set_ops", labs))) return("set_ops")
       if (any(grepl("parvec|c\\.parvec|as\\.parvec|\\[\\.parvec", labs))) return("parvec")

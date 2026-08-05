@@ -94,7 +94,7 @@ test_that(".laplaceSubjectMarginal is GN-exact on a quadratic objfun", {
   reactions <- addReaction(NULL, from = "A", to = "", rate = "k * A",
                            description = "decay")
   m <- odemodel(reactions, modelname = paste0("regsmoke_", tag),
-                solver = "CppODE", compile = TRUE, deriv2 = TRUE)
+                backend = "cppDE", compile = TRUE, deriv2 = TRUE)
   x <- Xs(m, compile = TRUE)
   g <- Y(eqnvec(y = "log(A + 1)"), x, modelname = paste0("regsmoke_obs_", tag),
          compile = TRUE, deriv2 = TRUE, attach.input = FALSE)
@@ -309,7 +309,7 @@ test_that("solveFusedComplete matches exhaustive brute force + limits", {
   reactions <- addReaction(NULL, from = "A", to = "", rate = "k * A",
                            description = "decay")
   m <- odemodel(reactions, modelname = paste0("regcl_", tag),
-                solver = "CppODE", compile = TRUE, deriv2 = TRUE)
+                backend = "cppDE", compile = TRUE, deriv2 = TRUE)
   x <- Xs(m, compile = TRUE)
   g <- Y(eqnvec(y = "log(A + 1)"), x, modelname = paste0("regcl_obs_", tag),
          compile = TRUE, deriv2 = TRUE, attach.input = FALSE)
@@ -547,7 +547,7 @@ test_that("penalty machinery supports per-parameter and merged strengths", {
   reactions <- addReaction(NULL, from = "A", to = "", rate = "k * A",
                            description = "decay")
   m <- odemodel(reactions, modelname = paste0("regml_", tag),
-                solver = "CppODE", compile = TRUE, deriv2 = TRUE)
+                backend = "cppDE", compile = TRUE, deriv2 = TRUE)
   x <- Xs(m, compile = TRUE)
   g <- Y(eqnvec(y = "log(A + 1)"), x, modelname = paste0("regml_obs_", tag),
          compile = TRUE, deriv2 = TRUE, attach.input = FALSE)

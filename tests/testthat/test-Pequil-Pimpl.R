@@ -14,7 +14,7 @@
 # specific to Pequil/Pimpl, which are the only parfns that warm-start).
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 

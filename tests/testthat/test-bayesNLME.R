@@ -49,7 +49,7 @@
 # ---- bayesNLMEMarginal --------------------------------------------------
 
 test_that("bayesNLMEMarginal builds a likObj whose value at FOCEI MAP matches the converged OFV", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 
   fx <- .makeBayesNLMEFixture("bm")
@@ -81,7 +81,7 @@ test_that("bayesNLMEMarginal builds a likObj whose value at FOCEI MAP matches th
 
 
 test_that("bayesNLMEMarginal: Omega-gradient FD-check on a non-converged point", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 
   fx <- .makeBayesNLMEFixture("bm_fd")
@@ -105,7 +105,7 @@ test_that("bayesNLMEMarginal: Omega-gradient FD-check on a non-converged point",
 
 
 test_that("mcmc(bayesNLMEMarginal(...), sequenceType = 'sequential') smoke test", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 
   fx <- .makeBayesNLMEFixture("bm_smc")
@@ -148,7 +148,7 @@ test_that("mcmc(bayesNLMEMarginal(...), sequenceType = 'sequential') smoke test"
 # ---- bayesNLMEJoint -----------------------------------------------------
 
 test_that("mcmc(bayesNLMEJoint(...)) runs and returns expected shape", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 
   fx <- .makeBayesNLMEFixture("bj")
@@ -437,7 +437,7 @@ test_that("foceiOmegaGradient: K=1 reduces to closed-form", {
 # ---- .computeMetricDerivative -------------------------------------------
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 
@@ -448,7 +448,7 @@ skip_if_no_compile <- function() {
   f <- c(A = "-k*A")
   tag <- as.integer(Sys.time())
   m <- odemodel(f, modelname = paste0("md_decay_m_", tag),
-                solver = "CppODE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
   ode_opts <- list(atol = 1e-12, rtol = 1e-12)
   xfn <- Xs(m, condition = "C1",
             optionsOde = ode_opts, optionsSens = ode_opts)

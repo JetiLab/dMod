@@ -71,8 +71,8 @@ detectFreeCores <- function(machine = NULL) {
 ## Remote build helpers --------------------------------------------------------
 ##
 ## Rebuilding a dMod model on a remote machine takes more than a bare
-## `R CMD SHLIB`: the CppODE backend emits sources that `#include <cppode/...>`
-## from the CppODE package tree, and the shared object gets linked against
+## `R CMD SHLIB`: the cppDE backend emits sources that `#include <cppde/...>`
+## from the cppDE package tree, and the shared object gets linked against
 ## BLAS/LAPACK (plus Sundials/KLU for CVODE and sparse models). `compile()`
 ## assembles those flags from the `"compileInfo"` attribute that every model
 ## object carries -- but every path in there points into the *local* library
@@ -102,14 +102,14 @@ detectFreeCores <- function(machine = NULL) {
       ca <- trimws(e$compileArgs %||% "")
       ## Non-empty linkArgs mean the backend pulls external libraries
       ## (Sundials, and KLU on top of it for sparse CVODE models); those have
-      ## to be resolved from the remote CppODE installation.
+      ## to be resolved from the remote cppDE installation.
       if (nzchar(trimws(e$linkArgs %||% ""))) needsCVODE <- TRUE
       if (nzchar(ca)) compileArgs <- c(compileArgs, strsplit(ca, "\\s+")[[1]])
     }
   }
 
   compileArgs <- unique(compileArgs[nzchar(compileArgs)])
-  ## CppODE tags sparse models with -DKLUBTF/-DKLUAMD; compile() adds the
+  ## cppDE tags sparse models with -DKLUBTF/-DKLUAMD; compile() adds the
   ## -DKLU switch itself, so mirror that here.
   if (any(grepl("^-DKLU", compileArgs))) needsKLU <- TRUE
 
@@ -138,22 +138,29 @@ detectFreeCores <- function(machine = NULL) {
     ## LTO and the linker plugin off lets the link fall back to it.
     ldflags <- c(ldflags, "-fno-lto", "-fno-use-linker-plugin")
     ## With only .o inputs R CMD SHLIB links via the C driver, which would not
-    ## pull in the C++ runtime the CppODE-generated code needs.
+    ## pull in the C++ runtime the cppDE-generated code needs.
     if (cxx) ldflags <- c(ldflags, "-lstdc++")
   }
 
+  ## SUNDIALS/KLU flags come from the *remote* cppDE install, so they are
+  ## resolved by Rscript inside the generated script. Embedded in a
+  ## single-quoted shell string -- must contain no single quotes.
+  cfgExpr <- function(field) paste0(
+    "cfg <- get0(\"cvodeConfig\", envir = asNamespace(\"cppDE\"), inherits = FALSE); ",
+    "cat(if (is.environment(cfg)) paste(unlist(mget(c(", field, "), envir = cfg, ",
+    "ifnotfound = \"\")), collapse = \" \") else \"\")")
+
   extra_libs <- NULL
   if (needsKLU || needsCVODE) {
-    rcode <- paste(c(
-      'libs <- character(0)',
-      if (needsKLU)
-        'a <- .Platform$r_arch; p <- system.file(if (nzchar(a)) file.path("lib", a) else "lib", "libcppode_ss.a", package = "CppODE"); if (nzchar(p)) libs <- c(libs, p)',
-      if (needsCVODE)
-        'cfg <- try(CppODE::cvodeConfig(), silent = TRUE); if (!inherits(cfg, "try-error")) libs <- c(libs, cfg$libs)',
-      'cat(paste(libs, collapse = " "))'
-    ), collapse = "; ")
-    extra_libs <- paste0("PKG_LIBS=\"$PKG_LIBS $(Rscript -e '", rcode, "')\"")
+    fields <- paste0(c(if (needsKLU) "\"klu_libs\"", if (needsCVODE) "\"libs\""),
+                     collapse = ", ")
+    extra_libs <- paste0("PKG_LIBS=\"$PKG_LIBS $(Rscript -e '", cfgExpr(fields), "')\"")
   }
+
+  ## KLU needs its include path at compile time, not just -DKLU.
+  klu_cppflags <- if (needsKLU)
+    paste0("PKG_CPPFLAGS=\"$PKG_CPPFLAGS $(Rscript -e '",
+           cfgExpr("\"klu_cflags\""), "')\"")
 
   paste(c(
     "#!/bin/bash",
@@ -163,16 +170,17 @@ detectFreeCores <- function(machine = NULL) {
     "set -e",
     "",
     if (!is.null(workdir)) c(paste0("cd ", workdir), ""),
-    "CPPODE_INC=$(Rscript -e 'cat(system.file(\"include\", package = \"CppODE\"))')",
-    "if [ -z \"$CPPODE_INC\" ]; then",
-    "  echo \"dMod: package 'CppODE' is not installed for the R on PATH here,\" >&2",
+    "CPPDE_INC=$(Rscript -e 'cat(system.file(\"include\", package = \"cppDE\"))')",
+    "if [ -z \"$CPPDE_INC\" ]; then",
+    "  echo \"dMod: package 'cppDE' is not installed for the R on PATH here,\" >&2",
     "  echo \"      so the model sources cannot be rebuilt. Install it remotely\" >&2",
-    "  echo \"      (remotes::install_github('dkaschek/CppODE')) or submit with\" >&2",
+    "  echo \"      (remotes::install_github('simonbeyer1/cppDE')) or submit with\" >&2",
     "  echo \"      compile = FALSE and link = FALSE.\" >&2",
     "  exit 1",
     "fi",
     "",
-    "PKG_CPPFLAGS=\"-I$CPPODE_INC\"",
+    "PKG_CPPFLAGS=\"-I$CPPDE_INC\"",
+    klu_cppflags,
     paste0("PKG_CFLAGS=\"", cflags, "\""),
     paste0("PKG_CXXFLAGS=\"", cflags, "\""),
     "PKG_LIBS=\"$(R CMD config LAPACK_LIBS) $(R CMD config BLAS_LIBS)\"",
@@ -214,11 +222,11 @@ detectFreeCores <- function(machine = NULL) {
 #' point to the newly built shared object.
 #'
 #' The remote build runs from a generated shell script that resolves all
-#' path-valued compiler flags (CppODE include directory, BLAS/LAPACK, and
+#' path-valued compiler flags (cppDE include directory, BLAS/LAPACK, and
 #' Sundials/KLU for CVODE and sparse models) *on the remote machine*, since
 #' the local library paths do not carry over. The model-specific `-D` macros
 #' are read from the `"compileInfo"` attribute of the model objects in the
-#' workspace. `CppODE` therefore has to be installed for the R that is on
+#' workspace. `cppDE` therefore has to be installed for the R that is on
 #' `PATH` on the remote machine.
 #' @param ... Some R code.
 #' @param machine Character vector, e.g. `"localhost"` or `"knecht1.fdm.uni-freiburg.de"`
@@ -616,8 +624,8 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 #' are transferred to the cluster and fully recompiled into shared objects (`.so`).
 #' If set to `TRUE`, this overrides `link = TRUE`. The build runs from a
 #' generated shell script that resolves all path-valued compiler flags
-#' (CppODE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
-#' sparse models) on the cluster, so `CppODE` has to be installed for the R
+#' (cppDE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
+#' sparse models) on the cluster, so `cppDE` has to be installed for the R
 #' that `module load math/R` provides there. The job is only submitted if the
 #' build succeeds.
 #' @param link Logical; if `TRUE`, only existing object files (`*.o`) are
@@ -1082,7 +1090,7 @@ distributedComputing <- function(
   
   
   # The remote build reads its flags from a script that is shipped inside the
-  # job folder; a bare `R CMD SHLIB` misses the CppODE include path and the
+  # job folder; a bare `R CMD SHLIB` misses the cppDE include path and the
   # BLAS/LAPACK libraries. The script is chained with `&&` so a failed build
   # skips the sbatch instead of queueing a job that cannot run.
   build_script_file <- paste0(jobname, "_build.sh")

@@ -24,7 +24,7 @@ The dMod package is a framework that provides functions to generate ODEs of reac
 
 ## System requirements
 
-dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up ODE models as compiled C code (deSolve) or [CppODE](https://github.com/simonbeyer1/CppODE) to autogenerate C++ code (Boost.Odeint). This means that **C and C++ compilers** are required on the system. On Linux, the compilers are installed by default. Windows users need to install [RTools](https://cran.r-project.org/bin/windows/Rtools/).
+dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up ODE models as compiled C code (deSolve) or [cppDE](https://github.com/simonbeyer1/cppDE) to autogenerate C++ code (Boost.Odeint). This means that **C and C++ compilers** are required on the system. On Linux, the compilers are installed by default. Windows users need to install [RTools](https://cran.r-project.org/bin/windows/Rtools/).
 
 For **parallelization**, dMod uses `mclapply()` on Linux and macOS. On Windows, parallelization is implemented via the `foreach` package using `%dopar%`.
 

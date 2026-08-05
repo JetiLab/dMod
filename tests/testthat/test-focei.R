@@ -83,8 +83,8 @@ test_that("EM(method='focei') matches the pre-rewrite Theoph baseline", {
   fixture_path <- "fixtures/focei_theoph_reference.rds"
 
   skip_on_cran()
-  if (!requireNamespace("CppODE", quietly = TRUE))
-    skip("CppODE not installed")
+  if (!requireNamespace("cppDE", quietly = TRUE))
+    skip("cppDE not installed")
   if (!file.exists(fixture_path))
     skip(paste0("regression fixture not found at ", fixture_path))
 
@@ -113,7 +113,7 @@ test_that("EM(method='focei') matches the pre-rewrite Theoph baseline", {
   reactions <- addReaction(reactions, "",   "Cc", "Ka * Ag / V", "appearance")
   reactions <- addReaction(reactions, "Cc", "",  "Cl/V * Cc",   "elimination")
   m <- odemodel(reactions, modelname = "theoph_cppreg", compile = TRUE,
-                solver = "CppODE", deriv2 = TRUE)
+                backend = "cppDE", deriv2 = TRUE)
   x <- Xs(m)
   g <- Y(c(y = "Cc"), x, modelname = "theoph_cppreg_obs",
          compile = TRUE, deriv2 = TRUE)
@@ -163,8 +163,8 @@ test_that("fast inner: value/gradient/H_GN match R oracle for sigma(eta) (propor
   # on the OFV to validate the analytical gradient.
 
   skip_on_cran()
-  if (!requireNamespace("CppODE", quietly = TRUE))
-    skip("CppODE not installed")
+  if (!requireNamespace("cppDE", quietly = TRUE))
+    skip("cppDE not installed")
   if (!requireNamespace("numDeriv", quietly = TRUE))
     skip("numDeriv not installed")
 
@@ -194,7 +194,7 @@ test_that("fast inner: value/gradient/H_GN match R oracle for sigma(eta) (propor
   reactions <- eqnlist()
   reactions <- addReaction(reactions, "Cc", "", "Cl/V * Cc", "elimination")
   m <- odemodel(reactions, modelname = "sigeta_ode", compile = TRUE,
-                solver = "CppODE", deriv2 = FALSE)
+                backend = "cppDE", deriv2 = FALSE)
   x <- Xs(m)
   g <- Y(c(y = "Cc"), x, modelname = "sigeta_obs", compile = TRUE,
          deriv2 = FALSE)
@@ -343,8 +343,8 @@ test_that("fast inner: value/gradient/H_GN match R oracle for a 2-output model",
   # over time x observable.
 
   skip_on_cran()
-  if (!requireNamespace("CppODE", quietly = TRUE))
-    skip("CppODE not installed")
+  if (!requireNamespace("cppDE", quietly = TRUE))
+    skip("cppDE not installed")
 
   set.seed(11)
   oldwd <- setwd(tempdir()); on.exit(setwd(oldwd))
@@ -384,7 +384,7 @@ test_that("fast inner: value/gradient/H_GN match R oracle for a 2-output model",
   reactions <- addReaction(reactions, "A", "B", "ka * A", "absorption")
   reactions <- addReaction(reactions, "B", "",  "ke * B", "elimination")
   m <- odemodel(reactions, modelname = "mo_ode", compile = TRUE,
-                solver = "CppODE", deriv2 = FALSE)
+                backend = "cppDE", deriv2 = FALSE)
   x <- Xs(m)
   g <- Y(c(yA = "A", yB = "B"), x, modelname = "mo_obs", compile = TRUE,
          deriv2 = FALSE)

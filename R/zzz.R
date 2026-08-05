@@ -26,3 +26,15 @@
          "; install it with install.packages(\"", pkg, "\").", call. = FALSE)
   invisible(TRUE)
 }
+
+# cppDE's install-time SUNDIALS/KLU flags, read from its (unexported)
+# cvodeConfig environment. All-empty when unavailable.
+.cppDE_config <- function() {
+  empty <- list(available = FALSE, cflags = "", libs = "",
+                klu_available = FALSE, klu_cflags = "", klu_libs = "")
+  if (!requireNamespace("cppDE", quietly = TRUE)) return(empty)
+  cfg <- get0("cvodeConfig", envir = asNamespace("cppDE"), inherits = FALSE)
+  if (!is.environment(cfg)) return(empty)
+  utils::modifyList(empty, as.list(cfg)[names(empty)][
+    !vapply(as.list(cfg)[names(empty)], is.null, logical(1))])
+}

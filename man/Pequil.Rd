@@ -64,7 +64,7 @@ bounds for the random sweep). Under \code{expressInTotals = TRUE} the sweep
 covers the non-conserved states only; moiety species are restarted on
 the conservation manifold fixed by the totals.}
 
-\item{compile, modelname, verbose}{Forwarded to \link[CppODE:CppODE]{CppODE::CppODE}.}
+\item{compile, modelname, verbose}{Forwarded to \link[cppDE:cppODE]{cppDE::cppODE}.}
 
 \item{deriv, deriv2}{Attach first/second-order sensitivities; \code{deriv2}
 requires the model built with \code{deriv2 = TRUE}.}
@@ -72,7 +72,7 @@ requires the model built with \code{deriv2 = TRUE}.}
 \item{outdir}{Directory for the generated source and shared object,
 default the working directory.}
 
-\item{...}{Forwarded to \link[CppODE:CppODE]{CppODE::CppODE}.}
+\item{...}{Forwarded to \link[cppDE:cppODE]{cppDE::cppODE}.}
 }
 \value{
 A \link{parfn}.
@@ -82,7 +82,7 @@ Returns a \link{parfn} over the outer inputs. On call, the parfn integrates
 the ODE from \code{start.time} to \code{end.time}, warm starting from the cached
 root when available and falling back to multistart on the initial
 conditions otherwise. The Jacobian (and Hessian when \code{deriv2 = TRUE})
-come from CppODE's analytical sensitivity integration. Conserved
+come from cppDE's analytical sensitivity integration. Conserved
 quantities are detected; how they are parametrised is controlled by
 \code{expressInTotals}.
 }

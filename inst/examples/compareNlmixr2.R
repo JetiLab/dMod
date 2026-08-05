@@ -77,7 +77,7 @@ reactions <- addReaction(reactions, "Ag", "",  "Ka * Ag",      "absorption")
 reactions <- addReaction(reactions, "",  "Cc", "Ka * Ag / V",  "appearance")
 reactions <- addReaction(reactions, "Cc", "",  "Cl/V * Cc",    "elimination")
 m <- odemodel(reactions, modelname = "cmp_theoph_ode", compile = FALSE,
-              solver = "CppODE", deriv2 = TRUE)
+              backend = "cppDE", deriv2 = TRUE)
 x <- Xs(m)
 g <- Y(c(y = "log(Cc + 1e-9)"), x, modelname = "cmp_theoph_obs",
        compile = FALSE, deriv2 = TRUE)

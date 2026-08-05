@@ -5,8 +5,8 @@
 #' into one model function `x(times, pars, deriv = TRUE)` returning ODE output and sensitivities.
 #' @param odemodel object of class 'odemodel' or 'odemodel++', see [odemodel]
 #' @param forcings data.frame with columns name (factor), time (numeric) and value (numeric).
-#' The ODE forcings. Forcing support for the CppODE / Sundials backends depends
-#' on the chosen solver method; see [CppODE::CppODE()].
+#' The ODE forcings. Forcing support for the cppDE / Sundials backends depends
+#' on the chosen stepper method; see [cppDE::cppODE()].
 #' @param events An [eventlist] (or `data.frame` coercible via [as.eventlist]).
 #' Applied to the forward simulation only -- sensitivities are not corrected.
 #' Define events on [odemodel()] unless the prediction is used purely for
@@ -80,7 +80,7 @@ Xs.deSolve <- function(odemodel, forcings = NULL, events = NULL, names = NULL, c
   P2X <- function(times, pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE) {
 
     if (deriv2)
-      stop("Xs.deSolve: second-order sensitivities require solver = 'CppODE'.")
+      stop("Xs.deSolve: second-order sensitivities require backend = 'cppDE'.")
 
     fixedNames <- names(fixed)
     params <- c(unclass(pars), unclass(fixed))
@@ -169,7 +169,7 @@ Xs.deSolve <- function(odemodel, forcings = NULL, events = NULL, names = NULL, c
 
 #' @export
 #' @rdname Xs
-Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL,
+Xs.cppDE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, condition = NULL,
                       optionsOde = list(), optionsSens = list(), ...) {
   
   if (!is.null(forcings)) {
@@ -194,12 +194,12 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
   }
   
   if (!is.null(events)) {
-    stop("Events should be passed to odemodel() when using solver = 'boost'")
+    stop("Events should be passed to odemodel() when using backend = 'cppDE'")
   }
   
   optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 50L, maxsteps = 1e6L,
                          hini = 0, roottol = 1e-6, maxroot = 1L,
-                         usePID = "none", onFailure = "warn", traceFile = NULL)
+                         onFailure = "warn", traceFile = NULL)
   
   # Warn about unknown options
   warn_unknown <- function(user, defaults, label) {
@@ -243,7 +243,7 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
   P2X <- function(times, pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE) {
 
     if (deriv2 && !has_deriv2)
-      stop("Xs.CppODE: model was compiled without deriv2; rebuild via odemodel(..., deriv2 = TRUE).")
+      stop("Xs.cppDE: model was compiled without deriv2; rebuild via odemodel(..., deriv2 = TRUE).")
     if (deriv2 && !deriv) deriv <- TRUE
     # Pick the cheapest extension that satisfies the requested derivative order.
     sens_model <- if (deriv2) extended2 else extended
@@ -258,7 +258,7 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
     dX2 <- NULL
     if (!deriv) {
 
-      out <- CppODE::solveODE(func, times, params,
+      out <- cppDE::solveODE(func, times, params,
                               sens1ini = NULL, sens2ini = NULL, fixed = NULL,
                               forcings = forcings,
                               abstol = optionsOde$atol, reltol = optionsOde$rtol,
@@ -267,7 +267,6 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
                               hini = optionsOde$hini,
                               roottol = optionsOde$roottol,
                               maxroot = optionsOde$maxroot,
-                              usePID = optionsOde$usePID,
                               onFailure = optionsOde$onFailure,
                               traceFile = optionsOde$traceFile)
 
@@ -294,7 +293,7 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
         }
       }
 
-      outSens <- CppODE::solveODE(sens_model, times, params,
+      outSens <- cppDE::solveODE(sens_model, times, params,
                                   sens1ini = sens1ini,
                                   sens2ini = sens2ini,
                                   fixed = NULL,
@@ -305,7 +304,6 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
                                   hini = optionsSens$hini,
                                   roottol = optionsSens$roottol,
                                   maxroot = optionsSens$maxroot,
-                                  usePID = optionsSens$usePID,
                                   onFailure = optionsSens$onFailure,
                                   traceFile = optionsSens$traceFile)
 
@@ -337,15 +335,15 @@ Xs.CppODE <- function(odemodel, forcings = NULL, events = NULL, names = NULL, co
 #' Model prediction function for ODE models without sensitivities.
 #' @description Reduced version of [Xs] that returns the ODE output without
 #' first- or second-order sensitivities. Dispatches on the [odemodel] class:
-#' the `deSolve` method drives the cOde backend, the `CppODE` method drives
-#' the CppODE / Sundials backend.
+#' the `deSolve` method drives the cOde backend, the `cppDE` method drives
+#' the cppDE / Sundials backend.
 #' @param odemodel Object of class [odemodel].
 #' @param forcings see [Xs].
 #' @param events see [Xs].
 #' @param condition either NULL (generic prediction for any condition) or a
 #' character denoting the condition for which the function makes a prediction.
 #' @param optionsOde list with arguments passed to the ODE integrator (deSolve
-#' or [CppODE::solveODE]).
+#' or [cppDE::solveODE]).
 #' @param fcontrol list with additional fine-tuning arguments for the forcing
 #' interpolation (cOde backend only). See [approxfun][stats::approxfun].
 #' @param ... not used.
@@ -419,7 +417,7 @@ Xf.deSolve <- function(odemodel, forcings = NULL, events = NULL, condition = NUL
 
 #' @export
 #' @rdname Xf
-Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL,
+Xf.cppDE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL,
                       optionsOde = list(), ...) {
 
   if (!is.null(forcings)) {
@@ -437,11 +435,11 @@ Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL
   }
 
   if (!is.null(events))
-    stop("Events must be passed to odemodel() for solver = 'CppODE' / 'Sundials'.")
+    stop("Events must be passed to odemodel() for backend = 'cppDE' / 'Sundials'.")
 
   optionsDefault <- list(atol = 1e-6, rtol = 1e-6, maxattemps = 50L, maxsteps = 1e6L,
                          hini = 0, roottol = 1e-6, maxroot = 1L,
-                         usePID = "none", onFailure = "stop", traceFile = NULL)
+                         onFailure = "stop", traceFile = NULL)
   bad <- setdiff(names(optionsOde), names(optionsDefault))
   if (length(bad))
     warning(sprintf("optionsOde: Ignoring unknown option(s): %s", paste(bad, collapse = ", ")))
@@ -461,7 +459,7 @@ Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL
     forcings <- controls$forcings
     optionsOde <- controls$optionsOde
 
-    out <- CppODE::solveODE(func, times, params,
+    out <- cppDE::solveODE(func, times, params,
                             sens1ini = NULL, sens2ini = NULL, fixed = NULL,
                             forcings = forcings,
                             abstol = optionsOde$atol, reltol = optionsOde$rtol,
@@ -470,7 +468,6 @@ Xf.CppODE <- function(odemodel, forcings = NULL, events = NULL, condition = NULL
                             hini = optionsOde$hini,
                             roottol = optionsOde$roottol,
                             maxroot = optionsOde$maxroot,
-                            usePID = optionsOde$usePID,
                             onFailure = optionsOde$onFailure,
                             traceFile = optionsOde$traceFile)
 
@@ -642,7 +639,7 @@ Xd <- function(data, condition = NULL) {
 #' @param attach.input Logical, indicating whether the original model input
 #'   should be included in the output.
 #' @param compile Logical, if `TRUE`, the function is compiled (see
-#'   [CppODE::funCpp]).
+#'   [cppDE::funCpp]).
 #' @param modelname Character, used if `compile = TRUE`, specifies a fixed
 #'   filename for the generated C file.
 #' @param verbose Logical, print compiler output to the R console.
@@ -664,7 +661,7 @@ Xd <- function(data, condition = NULL) {
 #' 
 #' @example inst/examples/prediction.R
 #' 
-#' @importFrom CppODE funCpp
+#' @importFrom cppDE funCpp
 #' @importFrom abind abind
 #' @export
 Y <- function(g, f = NULL, states = NULL, parameters = NULL,
@@ -720,7 +717,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL,
 
   # Compile evaluator for g (value, Jacobian, Hessian, AD chain)
   gEval <- suppressWarnings(
-    CppODE::funCpp(
+    cppDE::funCpp(
       unclass(g),
       variables  = obsStates,
       parameters = obsParams,
@@ -868,7 +865,7 @@ Y <- function(g, f = NULL, states = NULL, parameters = NULL,
 
         # Second-order: delegate the full sandwich to ghess(), which applies
         # chain_hess_sym internally. We pass upstream seeds (dX, dP, dX2, dP2)
-        # and let CppODE produce d2y already aligned to theta.
+        # and let cppDE produce d2y already aligned to theta.
         if (deriv2) {
           if (is.null(ghess))
             stop("Y(deriv2 = TRUE) requires hess(); rebuild Y with deriv2 = TRUE.")

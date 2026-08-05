@@ -94,7 +94,7 @@ reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_i",
 reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_e",
                          "Epo_EpoR_i * kde", "extracellular degradation")
 
-m <- odemodel(reactions, modelname = "becker", solver = "CppODE",
+m <- odemodel(reactions, modelname = "becker", backend = "cppDE",
               compile = FALSE, deriv2 = TRUE, outdir = outdir)
 x <- Xs(m, compile = FALSE)
 g <- Y(eqnvec(y_ext = "log(Epo + dEpo_e + 1)",
@@ -282,7 +282,7 @@ reactions <- addReaction(reactions, "Cc", "",   "Cl/V * Cc",   "elimination")
 ## deriv2 = TRUE is required throughout: the NLME kernels need second-order
 ## sensitivities. The pieces are built with compile = FALSE and compiled
 ## together below, once the whole chain exists.
-m <- odemodel(reactions, modelname = "theoph_ode", solver = "CppODE",
+m <- odemodel(reactions, modelname = "theoph_ode", backend = "cppDE",
               compile = FALSE, deriv2 = TRUE, outdir = outdir)
 x <- Xs(m)
 g <- Y(c(y = "log(Cc + 1e-9)"), x, modelname = "theoph_obs",

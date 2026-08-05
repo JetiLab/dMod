@@ -111,7 +111,7 @@ test_that("res errors if an observable in data is missing from the prediction", 
 # It reads prediction from the shared `env` set by an upstream normL2.
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 

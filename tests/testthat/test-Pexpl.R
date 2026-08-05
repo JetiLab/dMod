@@ -10,7 +10,7 @@
 # Second-order chain rule is covered by test-deriv2-Pexpl.R.
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 
@@ -128,7 +128,7 @@ test_that("Full g*x*p chain with constant-only Pexpl evaluates", {
   withr::local_dir(tempdir())
   f <- as.eqnvec(c(A = "-k*A"))
   m <- odemodel(f, modelname = "noparam_full_ode", compile = TRUE,
-                solver = "CppODE")
+                backend = "cppDE")
   x <- Xs(m)
 
   trafo <- c(A = "1.0", k = "0.5")

@@ -43,7 +43,7 @@ string specifying the condition for which the function generates predictions.}
 should be included in the output.}
 
 \item{compile}{Logical, if \code{TRUE}, the function is compiled (see
-\link[CppODE:funCpp]{CppODE::funCpp}).}
+\link[cppDE:funCpp]{cppDE::funCpp}).}
 
 \item{modelname}{Character, used if \code{compile = TRUE}, specifies a fixed
 filename for the generated C file.}

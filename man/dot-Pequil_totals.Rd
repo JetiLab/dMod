@@ -31,7 +31,7 @@
 
 \item{attach.input, keep.root, controlsODE, compile, modelname, condition, verbose, start.time, end.time}{As in \link{Pequil}.}
 
-\item{dotArgs}{Extra arguments forwarded to \link[CppODE:CppODE]{CppODE::CppODE}.}
+\item{dotArgs}{Extra arguments forwarded to \link[cppDE:cppODE]{cppDE::cppODE}.}
 
 \item{outdir}{Directory for the generated source and shared object.}
 }

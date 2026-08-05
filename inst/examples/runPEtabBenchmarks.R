@@ -114,7 +114,7 @@ suppressPackageStartupMessages(library(dMod))
   modelname <- paste0("bench_", gsub("[^A-Za-z0-9_]", "_", model_id))
   t0 <- Sys.time()
   petab <- tryCatch(
-    importPEtab(yaml_path, solver = "deSolve", modelname = modelname),
+    importPEtab(yaml_path, backend = "deSolve", modelname = modelname),
     error = function(e) e)
   if (inherits(petab, "error")) {
     return(list(model = model_id, status = "import_failed",

@@ -10,7 +10,7 @@
 # Second-order chain rule is covered by test-deriv2-Y.R.
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 
@@ -142,7 +142,7 @@ test_that("Y with pure-numeric observable composes with an Xs prediction", {
   withr::local_dir(tempdir())
   f <- as.eqnvec(c(A = "-k*A"))
   m <- odemodel(f, modelname = "noparam_y_ode", compile = TRUE,
-                solver = "CppODE")
+                backend = "cppDE")
   x <- Xs(m)
 
   g <- Y(c(y1 = "1.0"), f = NULL, states = c("A"),

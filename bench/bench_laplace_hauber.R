@@ -44,7 +44,7 @@ reactions <- addReaction(reactions, "Epo_EpoR_i", "Epo + EpoR", "Epo_EpoR_i * ke
 reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_i", "Epo_EpoR_i * kdi", "intra degr.")
 reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_e", "Epo_EpoR_i * kde", "extra degr.")
 
-m <- odemodel(reactions, modelname = "beckerh", solver = "CppODE",
+m <- odemodel(reactions, modelname = "beckerh", backend = "cppDE",
               compile = FALSE, deriv2 = TRUE)
 x <- Xs(m, compile = FALSE)
 g <- Y(eqnvec(y_ext = "log(Epo + dEpo_e + 1)", y_mem = "log(Epo_EpoR + 1)",

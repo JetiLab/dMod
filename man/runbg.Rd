@@ -96,11 +96,11 @@ When \code{compile} or \code{link} is \code{TRUE}, objects of class \code{obsfn}
 point to the newly built shared object.
 
 The remote build runs from a generated shell script that resolves all
-path-valued compiler flags (CppODE include directory, BLAS/LAPACK, and
+path-valued compiler flags (cppDE include directory, BLAS/LAPACK, and
 Sundials/KLU for CVODE and sparse models) \emph{on the remote machine}, since
 the local library paths do not carry over. The model-specific \code{-D} macros
 are read from the \code{"compileInfo"} attribute of the model objects in the
-workspace. \code{CppODE} therefore has to be installed for the R that is on
+workspace. \code{cppDE} therefore has to be installed for the R that is on
 \code{PATH} on the remote machine.
 }
 \examples{

@@ -18,7 +18,7 @@ observables <- eqnvec(B_obs = "B + off_B")
 errors <- eqnvec(B_obs = "sigma_abs")
 
 # Generate dMod objects
-model <- odemodel(f, modelname = "errtest", compile = FALSE, solver = "deSolve")
+model <- odemodel(f, modelname = "errtest", compile = FALSE, backend = "deSolve")
 x     <- Xs(model, optionsSens = list(method = "lsoda"), optionsOde = list(method = "lsodes"))
 g     <- Y(observables, x, 
            compile = FALSE, modelname = "obsfn")

@@ -90,7 +90,7 @@ dlist <- as.datalist(data_df)
 ##      dCc/dt =  Ka * Ag / V - Cl/V * Cc  (central concentration)
 ##
 ## Observable y = log(Cc + 1e-9). The tiny offset only matters at t == 0 where
-## CppODE always emits a row at Cc = 0; for all retained observations y is
+## cppDE always emits a row at Cc = 0; for all retained observations y is
 ## identical to log(Cc) at relative precision ~ 1e-9, far below the residual
 ## SD.
 ## ----------------------------------------------------------------------------
@@ -99,7 +99,7 @@ reactions <- addReaction(reactions, "Ag", "",  "Ka * Ag",     "absorption")
 reactions <- addReaction(reactions, "",   "Cc", "Ka * Ag / V", "appearance")
 reactions <- addReaction(reactions, "Cc", "",  "Cl/V * Cc",   "elimination")
 m <- odemodel(reactions, modelname = "theoph_ode", compile = F,
-              solver = "CppODE", deriv2 = T)
+              backend = "cppDE", deriv2 = T)
 x <- Xs(m)
 g <- Y(c(y = "log(Cc + 1e-9)"), x, modelname = "theoph_obs",
        compile = F, deriv2 = T)

@@ -8,7 +8,7 @@
 
   ## v2 example (the bundled v2 test suite):
   yamlPath <- system.file("PEtabTests/v2/0001/_0001.yaml", package = "dMod")
-  petab <- importPEtab(yamlPath, solver = "deSolve")
+  petab <- importPEtab(yamlPath, backend = "deSolve")
 
   ## v1 still works -- same call, different YAML schema:
   ## yamlPath <- system.file("PEtabTests/0001/_0001.yaml", package = "dMod")
@@ -37,5 +37,5 @@
   outDir <- file.path(tempdir(), "petab_export")
   yamlOut <- exportPEtabObject(petab, outDir, formatVersion = "2.0.0",
                                overwrite = TRUE)
-  petab2 <- importPEtab(yamlOut, solver = "deSolve")
+  petab2 <- importPEtab(yamlOut, backend = "deSolve")
 }

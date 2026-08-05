@@ -1275,14 +1275,14 @@ readPetabTables <- function(yamlPath) {
 
 
 # Build the underlying odemodel and the Xs() prediction function for the
-# chosen solver. `compile` is forwarded to cOde::funC / CppODE::CppODE so
+# chosen backend. `compile` is forwarded to cOde::funC / cppDE::cppODE so
 # the importer can defer linking until a single batched compile(). `events`
 # (an eventlist or NULL) is what `importSbml()` reads from <event> blocks.
-.petab_build_odemodel <- function(reactions, solver,
+.petab_build_odemodel <- function(reactions, backend,
                                   modelname = "petab_model",
                                   compile = TRUE,
                                   events = NULL) {
-  m <- odemodel(reactions, modelname = modelname, solver = solver,
+  m <- odemodel(reactions, modelname = modelname, backend = backend,
                 events = events, compile = compile)
   list(odemodel = m, x = Xs(m))
 }
@@ -1311,7 +1311,7 @@ readPetabTables <- function(yamlPath) {
 # / `e` only compile what they need.
 .petab_build_model_pieces <- function(sbml, meas_m, conditions_df,
                                       obs_meta_full, param_meta,
-                                      modelname, solver, compile,
+                                      modelname, backend, compile,
                                       sub_cond_prefix = "") {
 
   obs_used <- unique(meas_m$observableId)
@@ -1384,7 +1384,7 @@ readPetabTables <- function(yamlPath) {
     fixed <- c(fixed, extra_fixed)
   }
 
-  ode_pair <- .petab_build_odemodel(sbml$reactions, solver = solver,
+  ode_pair <- .petab_build_odemodel(sbml$reactions, backend = backend,
                                     modelname = paste0(modelname, "_ode"),
                                     compile = compile,
                                     events = sbml$events)
@@ -1547,7 +1547,7 @@ readPetabTables <- function(yamlPath) {
 #' multi-period experiments (>2 periods).
 #'
 #' @param yamlPath Path to the PEtab YAML manifest.
-#' @param solver Required: one of `"deSolve"` or `"CppODE"`. Forwarded to
+#' @param backend Required: one of `"deSolve"` or `"cppDE"`. Forwarded to
 #'   [odemodel()].
 #' @param compile Logical. If `TRUE` (default) the generated trafo,
 #'   observation function, and ODE model are compiled to native code. Set to
@@ -1575,16 +1575,16 @@ readPetabTables <- function(yamlPath) {
 #'   `attr(., "petab_meta")`.
 #' @export
 #' @example inst/examples/PEtabInterface.R
-importPEtab <- function(yamlPath, solver,
+importPEtab <- function(yamlPath, backend,
                         compile = TRUE, cores = 1L, modelname = NULL) {
 
   cores <- as.integer(cores)
   if (length(cores) != 1L || is.na(cores) || cores < 1L)
     stop("`cores` must be a single positive integer.")
 
-  if (missing(solver))
-    stop("Argument `solver` is required (one of \"deSolve\", \"CppODE\").")
-  solver <- match.arg(solver, c("deSolve", "CppODE"))
+  if (missing(backend))
+    stop("Argument `backend` is required (one of \"deSolve\", \"cppDE\").")
+  backend <- match.arg(backend, c("deSolve", "cppDE"))
 
   yamlPath <- normalizePath(yamlPath, mustWork = TRUE)
   if (is.null(modelname))
@@ -1650,7 +1650,7 @@ importPEtab <- function(yamlPath, solver,
       obs_meta_full    = obs_meta,
       param_meta       = param_meta,
       modelname        = paste0(modelname, suffix),
-      solver           = solver,
+      backend          = backend,
       compile          = FALSE,
       sub_cond_prefix  = sc_prefix)
     pieces$modelID <- mid

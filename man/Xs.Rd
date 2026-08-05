@@ -3,7 +3,7 @@
 \name{Xs}
 \alias{Xs}
 \alias{Xs.deSolve}
-\alias{Xs.CppODE}
+\alias{Xs.cppDE}
 \title{Model prediction function for ODE models.}
 \usage{
 Xs(odemodel, ...)
@@ -20,7 +20,7 @@ Xs(odemodel, ...)
   ...
 )
 
-\method{Xs}{CppODE}(
+\method{Xs}{cppDE}(
   odemodel,
   forcings = NULL,
   events = NULL,
@@ -37,8 +37,8 @@ Xs(odemodel, ...)
 \item{...}{Additional arguments passed to methods.}
 
 \item{forcings}{data.frame with columns name (factor), time (numeric) and value (numeric).
-The ODE forcings. Forcing support for the CppODE / Sundials backends depends
-on the chosen solver method; see \code{\link[CppODE:CppODE]{CppODE::CppODE()}}.}
+The ODE forcings. Forcing support for the cppDE / Sundials backends depends
+on the chosen stepper method; see \code{\link[cppDE:cppODE]{cppDE::cppODE()}}.}
 
 \item{events}{An \link{eventlist} (or \code{data.frame} coercible via \link{as.eventlist}).
 Applied to the forward simulation only -- sensitivities are not corrected.

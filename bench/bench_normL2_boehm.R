@@ -16,7 +16,7 @@ yaml <- file.path("/home/simon/Documents/Projects/dMod",
                   "Boehm_JProteomeRes2014.yaml")
 cat("Importing Boehm PEtab ... ")
 t0 <- Sys.time()
-pp <- importPEtab(yaml, solver = "CppODE", compile = TRUE, cores = 4)
+pp <- importPEtab(yaml, backend = "cppDE", compile = TRUE, cores = 4)
 cat(sprintf("done (%.1fs)\n", as.numeric(Sys.time() - t0, units = "secs")))
 
 obj <- pp$obj
@@ -62,7 +62,7 @@ total <- sum(prof$self.time)
 cat(sprintf("total sampled time: %.2fs\n", total))
 
 classify <- function(name) {
-  if (grepl("CppODE|solveODE|\\.Call", name)) return("ode_solve")
+  if (grepl("cppDE|solveODE|\\.Call", name)) return("ode_solve")
   if (grepl("res\\b|evalConditionResidual|objlist|constraintL2|normL2|Reduce|lapply|match\\.num|\\.bmm|data\\.table|objframe|parvec|prdframe|getDerivs|\\+\\.objfn|\\*\\.fn", name))
     return("r_glue")
   if (grepl("^trust\\b|trustOptim|solve\\b|qr\\.", name)) return("trust_step")

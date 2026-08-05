@@ -42,7 +42,7 @@ conservation then holds to the solver tolerance (\code{controlsNleqslv$ftol}).
 If \code{FALSE}, the pivot species per conserved quantity becomes a pass-through
 parameter and its redundant equation is dropped.}
 
-\item{compile, modelname, verbose}{Forwarded to \link[CppODE:funCpp]{CppODE::funCpp}.}
+\item{compile, modelname, verbose}{Forwarded to \link[cppDE:funCpp]{cppDE::funCpp}.}
 
 \item{deriv, deriv2}{Attach first/second-order IFT sensitivities.
 \code{deriv2} requires \code{funCpp} to expose \code{hess()}.}

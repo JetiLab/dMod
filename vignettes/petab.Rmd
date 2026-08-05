@@ -72,7 +72,7 @@ the ODE plus sensitivity equations, compiles them, and returns a single
 
 ```{r import, eval = have_libsbml}
 setwd(tempdir())  # native artefacts (.c, .so, ...) land in cwd
-petab <- importPEtab(yamlPath, solver = "deSolve", cores = 2L)
+petab <- importPEtab(yamlPath, backend = "deSolve", cores = 2L)
 print(petab)
 ```
 

@@ -12,7 +12,7 @@
 # test-mstrust-profile.R and the existing FOCEI tests.
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 

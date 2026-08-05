@@ -8,12 +8,12 @@
 
 # ---- Xs -------------------------------------------------------------------
 
-test_that("Xs.CppODE deriv2 reproduces linear-decay analytical Hessian", {
+test_that("Xs.cppDE deriv2 reproduces linear-decay analytical Hessian", {
   prev <- getwd(); on.exit(setwd(prev), add = TRUE)
   withr::local_dir(tempdir())
   f <- c(x = "-k * x")  # x(t) = x0 * exp(-k*t)
   m <- odemodel(f, modelname = paste0("decay_d2_", as.integer(Sys.time())),
-                solver = "CppODE", deriv2 = TRUE, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, verbose = FALSE)
   xfn <- Xs(m, optionsOde = list(atol = 1e-10, rtol = 1e-10),
             optionsSens = list(atol = 1e-10, rtol = 1e-10))
 
@@ -40,7 +40,7 @@ test_that("Xs.CppODE deriv2 reproduces linear-decay analytical Hessian", {
   expect_equal(d2[, "x", "k", "x"], unname(ref_H_xk), tolerance = 1e-7)
 })
 
-test_that("odemodel(deriv2 = TRUE) emits <m>, <m>_s, <m>_s2 and Xs.CppODE dispatches", {
+test_that("odemodel(deriv2 = TRUE) emits <m>, <m>_s, <m>_s2 and Xs.cppDE dispatches", {
   prev <- getwd(); on.exit(setwd(prev), add = TRUE)
   td <- file.path(tempdir(), paste0("triple_", as.integer(Sys.time())))
   dir.create(td, showWarnings = FALSE, recursive = TRUE)
@@ -48,7 +48,7 @@ test_that("odemodel(deriv2 = TRUE) emits <m>, <m>_s, <m>_s2 and Xs.CppODE dispat
 
   f <- c(x = "-k * x")
   modelname <- "triple"
-  m <- odemodel(f, modelname = modelname, solver = "CppODE",
+  m <- odemodel(f, modelname = modelname, backend = "cppDE",
                 deriv2 = TRUE, verbose = FALSE)
   expect_true(file.exists(paste0(modelname,    ".cpp")))
   expect_true(file.exists(paste0(modelname, "_s.cpp")))
@@ -73,7 +73,7 @@ test_that("Xs.deSolve refuses deriv2 = TRUE", {
   withr::local_dir(tempdir())
   f <- c(x = "-k*x")
   m <- odemodel(f, modelname = paste0("decay_des_", as.integer(Sys.time())),
-                solver = "deSolve", verbose = FALSE, compile = FALSE)
+                backend = "deSolve", verbose = FALSE, compile = FALSE)
   xfn <- Xs(m); compile(xfn)
   expect_error(xfn(c(0, 1), c(x = 1, k = 0.5), deriv2 = TRUE),
                "Xs.deSolve")
@@ -336,7 +336,7 @@ test_that("(Y * Xs)(times, pars, deriv2 = TRUE) chain-rule matches analytical", 
   f <- c(x = "-k * x")
   m <- odemodel(f,
                 modelname = paste0("compose_decay_", as.integer(Sys.time())),
-                solver = "CppODE", deriv2 = TRUE, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, verbose = FALSE)
   xfn <- Xs(m, optionsOde = list(atol = 1e-10, rtol = 1e-10),
             optionsSens = list(atol = 1e-10, rtol = 1e-10))
   gfn <- Y(c(y = "a*x^2 + b*x"), f = f, parameters = c("a", "b"),
@@ -407,14 +407,14 @@ test_that("res() reduces 4D deriv2 attribute to 3D [n_residuals, p, p]", {
 
 test_that("normL2 gradient is identical for deriv2 = FALSE and deriv2 = TRUE", {
   # Regression for the [.parvec / c.parvec deriv2-drop bug. With deriv2 = TRUE,
-  # the upstream Hessian seed must reach Xs.CppODE so the _s2 integration
+  # the upstream Hessian seed must reach Xs.cppDE so the _s2 integration
   # produces the same first-order sensitivities as the _s integration. If
   # subsetting drops attr(., "deriv2") the gradient diverges silently.
   prev <- getwd(); on.exit(setwd(prev), add = TRUE)
   withr::local_dir(tempdir())
   f <- c(x = "-k*x")
   m <- odemodel(f, modelname = paste0("nl_grad_id_", as.integer(Sys.time())),
-                solver = "CppODE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
   ode_opts <- list(atol = 1e-12, rtol = 1e-12)
   xfn <- Xs(m, condition = "C1",
             optionsOde = ode_opts, optionsSens = ode_opts)
@@ -448,7 +448,7 @@ test_that("normL2(deriv2 = FALSE) reproduces the pre-deriv2 GN Hessian", {
   withr::local_dir(tempdir())
   f <- c(x = "-k*x")
   m <- odemodel(f, modelname = paste0("nl_d2_gn_", as.integer(Sys.time())),
-                solver = "CppODE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
   xfn <- Xs(m, condition = "C1")
   gfn <- Y(c(y = "a*x^2 + b*x"), f = f, parameters = c("a", "b"),
            modelname = paste0("nl_obs_gn_", as.integer(Sys.time())),
@@ -478,7 +478,7 @@ test_that("normL2(deriv2 = TRUE) adds residual times d^2 pred / sigma^2", {
   withr::local_dir(tempdir())
   f <- c(x = "-k*x")
   m <- odemodel(f, modelname = paste0("nl_d2_ex_", as.integer(Sys.time())),
-                solver = "CppODE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
+                backend = "cppDE", deriv2 = TRUE, nStack = 4L, verbose = FALSE)
   ode_opts <- list(atol = 1e-12, rtol = 1e-12)
   xfn <- Xs(m, condition = "C1",
             optionsOde = ode_opts, optionsSens = ode_opts)

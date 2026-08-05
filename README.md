@@ -18,7 +18,7 @@ expressions for symbolic derivatives.
 
 dMod uses the package [cOde](https://github.com/dkaschek/cOde) to set up
 ODE models as compiled C code (deSolve) or
-[CppODE](https://github.com/simonbeyer1/CppODE) to autogenerate C++ code
+[cppDE](https://github.com/simonbeyer1/cppDE) to autogenerate C++ code
 (Boost.Odeint). This means that **C and C++ compilers** are required on
 the system. On Linux, the compilers are installed by default. Windows
 users need to install

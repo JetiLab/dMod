@@ -7,7 +7,7 @@
 # ============================================================================
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 
@@ -30,7 +30,7 @@ test_that("Xs on linear decay matches A0 * exp(-k * t)", {
 
 test_that("Xs on two-step cascade matches the closed-form A(t), B(t), C(t)", {
   skip_if_no_compile()
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   oldwd <- setwd(.dmod_fx_workdir()); on.exit(setwd(oldwd), add = TRUE)
 
   reactions <- eqnlist() |>
@@ -253,7 +253,7 @@ test_that("Xf reproduces the linear-decay closed form and emits no deriv attribu
 
 
 # ============================================================================
-# Xs.CppODE theta-sensitivity path: heap vs stack AD slab parity
+# Xs.cppDE theta-sensitivity path: heap vs stack AD slab parity
 # (Phi'(theta) as sens1ini; per-condition varying theta counts via two-condition setup)
 # ============================================================================
 
@@ -264,8 +264,8 @@ test_that("Heap and stack AD slabs match on a single-condition linear model", {
          B =  "k1*A - k2*B")
 
   # Default heap slab vs explicit stack slab (nStack = 4 covers {A,B,log_k1,log_k2}).
-  mod_v1 <- odemodel(f, modelname = "rep_v1", solver = "CppODE")
-  mod_v2 <- odemodel(f, modelname = "rep_v2", solver = "CppODE", nStack = 4L)
+  mod_v1 <- odemodel(f, modelname = "rep_v1", backend = "cppDE")
+  mod_v2 <- odemodel(f, modelname = "rep_v2", backend = "cppDE", nStack = 4L)
 
   # Same parameter transformation for both.
   trafo <- c(A = "A", B = "B", k1 = "exp(log_k1)", k2 = "exp(log_k2)")
@@ -304,9 +304,9 @@ test_that("Heap/stack parity holds with per-condition varying theta subsets", {
   f <- c(A = "-k1*A + k2*B",
          B =  "k1*A - k2*B")
 
-  mod_v1 <- odemodel(f, modelname = "repmulti_v1", solver = "CppODE")
+  mod_v1 <- odemodel(f, modelname = "repmulti_v1", backend = "cppDE")
   # Stack upper bound: any condition may activate up to 4 thetas.
-  mod_v2 <- odemodel(f, modelname = "repmulti_v2", solver = "CppODE", nStack = 4L)
+  mod_v2 <- odemodel(f, modelname = "repmulti_v2", backend = "cppDE", nStack = 4L)
 
   # Condition "closed" uses log_k1; condition "open" uses log_k_open instead.
   # Global theta set has 5 elements; each condition activates 4.

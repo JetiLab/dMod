@@ -109,7 +109,7 @@ reactions <- addReaction(reactions, "Ag", "",  "Ka * Ag",     "absorption")
 reactions <- addReaction(reactions, "",   "Cc", "Ka * Ag / V", "appearance")
 reactions <- addReaction(reactions, "Cc", "",  "Cl/V * Cc",   "elimination")
 m <- odemodel(reactions, modelname = "theoph_smc_ode", compile = TRUE,
-              solver = "CppODE", deriv2 = TRUE)
+              backend = "cppDE", deriv2 = TRUE)
 x <- Xs(m)
 g <- Y(c(y = "Cc"), x, modelname = "theoph_smc_obs", compile = TRUE, deriv2 = TRUE)
 err <- Y(eqnvec(y = "sigma_add"), g, attach.input = FALSE,

@@ -3,7 +3,7 @@
 \name{Xf}
 \alias{Xf}
 \alias{Xf.deSolve}
-\alias{Xf.CppODE}
+\alias{Xf.cppDE}
 \title{Model prediction function for ODE models without sensitivities.}
 \usage{
 Xf(odemodel, ...)
@@ -18,7 +18,7 @@ Xf(odemodel, ...)
   ...
 )
 
-\method{Xf}{CppODE}(
+\method{Xf}{cppDE}(
   odemodel,
   forcings = NULL,
   events = NULL,
@@ -40,7 +40,7 @@ Xf(odemodel, ...)
 character denoting the condition for which the function makes a prediction.}
 
 \item{optionsOde}{list with arguments passed to the ODE integrator (deSolve
-or \link[CppODE:solveODE]{CppODE::solveODE}).}
+or \link[cppDE:solveODE]{cppDE::solveODE}).}
 
 \item{fcontrol}{list with additional fine-tuning arguments for the forcing
 interpolation (cOde backend only). See \link[stats:approxfun]{approxfun}.}
@@ -48,8 +48,8 @@ interpolation (cOde backend only). See \link[stats:approxfun]{approxfun}.}
 \description{
 Reduced version of \link{Xs} that returns the ODE output without
 first- or second-order sensitivities. Dispatches on the \link{odemodel} class:
-the \code{deSolve} method drives the cOde backend, the \code{CppODE} method drives
-the CppODE / Sundials backend.
+the \code{deSolve} method drives the cOde backend, the \code{cppDE} method drives
+the cppDE / Sundials backend.
 }
 \details{
 Can be used to integrate additional quantities, e.g. fluxes, by

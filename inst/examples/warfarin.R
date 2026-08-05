@@ -136,11 +136,11 @@ reactions <- addReaction(reactions, "",     "PCA",
 reactions <- addReaction(reactions, "PCA",  "",      "kout * PCA",
                          "PCA_degradation")
 m <- odemodel(reactions, modelname = "warf_ode", compile = F,
-              solver = "CppODE", deriv2 = T)
+              backend = "cppDE", deriv2 = T)
 x <- Xs(m, optionsSens = list(atol = 1e-4, rtol = 1e-4))
 
 # Two observables in one Y() call. log(Cc + 1e-9) keeps the spurious t == 0
-# prediction row CppODE emits (Center(0) = 0 -> cp(0) = 0) finite, which
+# prediction row cppDE emits (Center(0) = 0 -> cp(0) = 0) finite, which
 # dMod's prediction sanity check requires. The offset is far below the
 # residual SD so it does not affect the fit.
 g <- Y(c(y_cp  = "log(Center/V + 1e-3)",

@@ -227,11 +227,11 @@ test_that("fixed-vs-local-Fisher agree on a constant-G linear-Gauss toy", {
 
 test_that("mcmc/langevin on ODE-based decay model runs end-to-end", {
   # Structural smoke test: the C++ chain runner must integrate cleanly with
-  # a real ODE-backed objfn (normL2 -> CppODE solver -> back to objfn).
+  # a real ODE-backed objfn (normL2 -> cppDE solver -> back to objfn).
   # Quantitative posterior recovery on this fixture is fragile because dual
   # averaging can overshoot when the metric eigenvalues are O(100-1000);
   # quantitative checks are done on the linear-Gauss fixtures above.
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
   bench <- fx_decay_compiled()
   data  <- fx_decay_data(sigma = 0.1)
@@ -410,7 +410,7 @@ test_that("mcmc/sequential is reproducible under set.seed()", {
 # ---- Multi-chain (chains = N) -------------------------------------------
 
 test_that("mcmc(target, chains = N) returns expected shape and R-hat", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 
   set.seed(1)

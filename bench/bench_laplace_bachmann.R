@@ -18,7 +18,7 @@ set.seed(20260723)
 
 yaml <- Sys.getenv("DMOD_BACHMANN_YAML",
   "/home/simon/Documents/Projects/PEtab2dmod/BenchmarkModels/Bachmann_MSB2011/Bachmann_MSB2011.yaml")
-pe <- importPEtab(yaml, solver = "CppODE", compile = TRUE, cores = 4L)
+pe <- importPEtab(yaml, backend = "cppDE", compile = TRUE, cores = 4L)
 m  <- pe$odemodel
 
 ## ---- natural-scale nominal parameter values (from the Bachmann SBML) ----------

@@ -74,7 +74,7 @@ reactions <- eqnlist() %>%
   addReaction("TCA_cana",   "TCA_buffer", rate = "k_reflux * TCA_cana", description = "Reflux into the buffer")
 
 mymodel <- odemodel(reactions, modelname = "ba_bayes_ode",
-                    compile = FALSE, solver = "CppODE")
+                    compile = FALSE, backend = "cppDE")
 x <- Xs(mymodel)
 
 observables <- eqnvec(buffer   = "s * TCA_buffer",

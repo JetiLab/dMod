@@ -114,7 +114,7 @@ reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_i",
 reactions <- addReaction(reactions, "Epo_EpoR_i", "dEpo_e",
                          "Epo_EpoR_i * kde", "extracellular degradation")
 
-m <- odemodel(reactions, modelname = "beckerc", solver = "CppODE",
+m <- odemodel(reactions, modelname = "beckerc", backend = "cppDE",
               compile = FALSE, deriv2 = TRUE, outdir = outdir)
 x <- Xs(m, compile = FALSE)
 g <- Y(eqnvec(y_ext = "log(Epo + dEpo_e + 1)",

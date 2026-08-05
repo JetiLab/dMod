@@ -411,7 +411,7 @@ and analogously $\partial H_{i,\mathrm{GN}} / \partial \eta_l$ needs
 $\partial^2 y_i / (\partial \eta\, \partial \eta_l)$. Both are mixed
 *second-order* sensitivities of the prediction. They are supplied by
 the `deriv2` pipeline (`odemodel(..., deriv2 = TRUE)` with the Sens2
-stage in `CppODE`; the legacy `cOde` backend only ships first-order
+stage in `cppDE`; the legacy `cOde` backend only ships first-order
 sensitivities and is therefore not eligible for FOCEI) and surface in
 the prediction object as `attr(pred, "deriv2")` with axes
 $[t,\, \mathrm{obs},\, \eta,\, \psi]$.

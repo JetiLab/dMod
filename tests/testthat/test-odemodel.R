@@ -8,7 +8,7 @@ test_that("Basic ODE model integration with forcings", {
   ## Generate the same model from an equation list
   f <- addReaction(NULL, from = "", to = "A", rate = "scale*F", description = "production")
   f <- addReaction(f   , from = "A", to = "", rate = "k*A", description = "degradation")
-  model <- odemodel(f, forcings = "F", fixed = "scale", solver = "deSolve",
+  model <- odemodel(f, forcings = "F", fixed = "scale", backend = "deSolve",
                     compile = FALSE)
   compile(Xs(model))
   

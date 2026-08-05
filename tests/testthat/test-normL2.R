@@ -12,7 +12,7 @@
 # ============================================================================
 
 skip_if_no_compile <- function() {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
 }
 
@@ -550,7 +550,7 @@ test_that("normL2 BLOQ M4 + proportional errmodel: value and gradient match", {
 # ============================================================================
 
 test_that("normL2 cpp kernel agrees with R reference on the linear-decay fixture", {
-  testthat::skip_if_not_installed("CppODE")
+  testthat::skip_if_not_installed("cppDE")
   testthat::skip_on_cran()
   bench <- fx_decay_compiled()
   data  <- fx_decay_data(sigma = 0.05)

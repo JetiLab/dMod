@@ -200,7 +200,7 @@ test_that("hand-built case-0001 fixture produces solution-matching llh", {
   reactions <- addReaction(reactions, "B", "A", "k2*B", "rev")
 
   ode <- odemodel(reactions, modelname = "petab_fixture_ode",
-                  solver = "deSolve", compile = FALSE)
+                  backend = "deSolve", compile = FALSE)
   x <- Xs(ode)
 
   # Observation function: obs_a = A.
@@ -261,7 +261,7 @@ test_that("PEtab test cases 0001-0006 import and produce solution-matching llh",
     sol_path  <- file.path(petab_dir, id, paste0("_", id, "_solution.yaml"))
     if (!file.exists(sol_path)) next
 
-    petab <- importPEtab(yamlPath, solver = "deSolve",
+    petab <- importPEtab(yamlPath, backend = "deSolve",
                          modelname = paste0("petab_", id))
     sol <- yaml::read_yaml(sol_path)
 
@@ -297,7 +297,7 @@ test_that("PEtab Stage-2 test cases 0007-0016 produce solution-matching llh", {
     if (!file.exists(sol_path)) next
 
     suppressWarnings(
-      petab <- importPEtab(yamlPath, solver = "deSolve",
+      petab <- importPEtab(yamlPath, backend = "deSolve",
                            modelname = paste0("petab_s2_", id)))
     sol <- yaml::read_yaml(sol_path)
     out <- petab$obj(petab$bestfit, deriv = FALSE)
@@ -324,7 +324,7 @@ test_that("two-condition roundtrip preserves objective value", {
   # interesting part: without it the reimported objective evaluates with
   # state initials = 0 and disagrees with the original.
   yaml1 <- file.path(petab_dir, "0002", "_0002.yaml")
-  petab1 <- importPEtab(yaml1, solver = "deSolve",
+  petab1 <- importPEtab(yaml1, backend = "deSolve",
                         modelname = "rt_in")
   v1 <- petab1$obj(petab1$bestfit, deriv = FALSE)$value
 
@@ -335,7 +335,7 @@ test_that("two-condition roundtrip preserves objective value", {
   yaml2 <- exportPEtabObject(petab1, out_dir, modelID = "rt_out",
                              formatVersion = "1", overwrite = TRUE)
 
-  petab2 <- importPEtab(yaml2, solver = "deSolve",
+  petab2 <- importPEtab(yaml2, backend = "deSolve",
                         modelname = "rt_back")
   v2 <- petab2$obj(petab2$bestfit, deriv = FALSE)$value
 
@@ -371,7 +371,7 @@ test_that("Boehm_JProteomeRes2014 benchmark imports and matches published optimu
 
   yamlPath <- file.path(bm_dir, "Boehm_JProteomeRes2014",
                          "Boehm_JProteomeRes2014.yaml")
-  petab <- importPEtab(yamlPath, solver = "deSolve",
+  petab <- importPEtab(yamlPath, backend = "deSolve",
                        modelname = "boehm")
 
   # Imported problem shape:
@@ -517,7 +517,7 @@ test_that("native exportPEtab roundtrips outer pouter on log10 scale (1-cond)", 
     addReaction("B", "A", rate = "k2*B", description = "rev")
 
   m <- odemodel(reactions, modelname = "rt1_ode", compile = FALSE,
-                solver = "deSolve")
+                backend = "deSolve")
   x_native <- Xs(m)
 
   obs <- eqnvec(obs_a = "A", obs_b = "B")
@@ -545,7 +545,7 @@ test_that("native exportPEtab roundtrips outer pouter on log10 scale (1-cond)", 
     parameterScale = "log10", modelID = "rt1_export",
     formatVersion = "1", dir = out_dir, overwrite = TRUE)
 
-  petab <- importPEtab(yaml_out, solver = "deSolve",
+  petab <- importPEtab(yaml_out, backend = "deSolve",
                        modelname = "rt1_imp")
 
   expect_setequal(names(petab$bestfit), names(pouter))
@@ -569,7 +569,7 @@ test_that("native exportPEtab roundtrips per-condition k override (2-cond)", {
     addReaction("A", "B", rate = "k*A", description = "fwd")
 
   m <- odemodel(reactions, modelname = "rt2_ode", compile = FALSE,
-                solver = "deSolve")
+                backend = "deSolve")
   x_native <- Xs(m)
   obs <- eqnvec(obs_a = "A")
   g_native <- Y(obs, f = x_native, condition = NULL, compile = FALSE,
@@ -605,7 +605,7 @@ test_that("native exportPEtab roundtrips per-condition k override (2-cond)", {
   expect_true("k" %in% colnames(cond_df))
   expect_setequal(cond_df$k, c("K", "K_OPEN"))
 
-  petab <- importPEtab(yaml_out, solver = "deSolve",
+  petab <- importPEtab(yaml_out, backend = "deSolve",
                        modelname = "rt2_imp")
   expect_setequal(names(petab$bestfit), c("A", "B", "K", "K_OPEN"))
 
@@ -626,7 +626,7 @@ test_that("exportPEtab errors on undeclared free symbol after strip", {
   reactions <- eqnlist() %>%
     addReaction("A", "B", rate = "k*A", description = "fwd")
   m <- odemodel(reactions, modelname = "err1_ode", compile = FALSE,
-                solver = "deSolve")
+                backend = "deSolve")
   x <- Xs(m)
   obs <- eqnvec(obs_a = "A")
   g <- Y(obs, f = x, compile = FALSE, modelname = "err1_obs",
@@ -661,7 +661,7 @@ test_that("native exportPEtab roundtrips per-row sigma via noiseParameters colum
   reactions <- eqnlist() %>%
     addReaction("A", "B", rate = "k*A", description = "fwd")
   m <- odemodel(reactions, modelname = "rt_sig_ode", compile = FALSE,
-                solver = "deSolve")
+                backend = "deSolve")
   x <- Xs(m)
   obs <- eqnvec(obs_a = "A")
   g <- Y(obs, f = x, condition = NULL, compile = FALSE,
@@ -697,7 +697,7 @@ test_that("native exportPEtab roundtrips per-row sigma via noiseParameters colum
                          stringsAsFactors = FALSE)
   expect_setequal(as.numeric(meas_tsv$noiseParameters), c(0.5, 1.0, 2.0))
 
-  petab <- importPEtab(yaml_out, solver = "deSolve",
+  petab <- importPEtab(yaml_out, backend = "deSolve",
                        modelname = "rt_sig_imp")
   v_native <- obj_native(pouter, deriv = FALSE)$value
   v_petab  <- petab$obj(pouter[names(petab$bestfit)], deriv = FALSE)$value
@@ -718,7 +718,7 @@ test_that("native exportPEtab roundtrips compound trafos like 10^(KM + 5)", {
   reactions <- eqnlist() %>%
     addReaction("A", "B", rate = "k*A", description = "fwd")
   m <- odemodel(reactions, modelname = "rt3_ode", compile = FALSE,
-                solver = "deSolve")
+                backend = "deSolve")
   x <- Xs(m)
   obs <- eqnvec(obs_a = "A")
   g <- Y(obs, f = x, compile = FALSE, modelname = "rt3_obs",
@@ -747,7 +747,7 @@ test_that("native exportPEtab roundtrips compound trafos like 10^(KM + 5)", {
                         stringsAsFactors = FALSE)
   expect_match(as.character(cond_df$k[[1L]]), "log10\\(K\\)")
 
-  petab <- importPEtab(yaml_out, solver = "deSolve",
+  petab <- importPEtab(yaml_out, backend = "deSolve",
                        modelname = "rt3_imp")
   v_native <- obj_native(pouter, deriv = FALSE)$value
   v_petab  <- petab$obj(pouter[names(petab$bestfit)], deriv = FALSE)$value
@@ -997,7 +997,7 @@ test_that("exportPEtabObject v2 writes nominalValue verbatim (no parameterScale 
 
   withr::local_dir(tempdir())
   pp <- importPEtab(file.path(petab_dir, "0001", "_0001.yaml"),
-                    solver = "deSolve", compile = FALSE)
+                    backend = "deSolve", compile = FALSE)
   td <- tempfile("petab_v2_lin_"); dir.create(td)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
 
@@ -1030,7 +1030,7 @@ test_that("exportPEtabObject v2 writes long-format conditions and experiments", 
   # 0001 has a single condition; trivial v2 export should produce one
   # experimentId row.
   petab <- importPEtab(file.path(petab_dir, "0001", "_0001.yaml"),
-                       solver = "deSolve", compile = FALSE)
+                       backend = "deSolve", compile = FALSE)
   td <- tempfile("petab_v2_out_"); dir.create(td)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
   yamlPath <- exportPEtabObject(petab, dir = td, formatVersion = "2.0.0",
@@ -1057,14 +1057,14 @@ test_that("v2 export → v2 import roundtrips the objective on case 0001", {
 
   withr::local_dir(tempdir())
   pp1 <- importPEtab(file.path(petab_dir, "0001", "_0001.yaml"),
-                     solver = "deSolve", compile = TRUE)
+                     backend = "deSolve", compile = TRUE)
   td <- tempfile("v2_rt_"); dir.create(td)
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
   yamlPath <- exportPEtabObject(pp1, dir = td, formatVersion = "2.0.0",
                                  overwrite = TRUE)
 
   setwd(td)
-  pp2 <- importPEtab(yamlPath, solver = "deSolve", compile = TRUE)
+  pp2 <- importPEtab(yamlPath, backend = "deSolve", compile = TRUE)
 
   v1 <- pp1$obj(pp1$bestfit)$value
   v2 <- pp2$obj(pp2$bestfit)$value
@@ -1091,7 +1091,7 @@ test_that("v2 PEtab test cases 0001/0002/0009 import and match published llh", {
     wd <- tempfile(paste0("v2_case_", case, "_")); dir.create(wd)
     setwd(wd)
     res <- tryCatch({
-      pp <- importPEtab(yamlPath, solver = "deSolve", compile = TRUE,
+      pp <- importPEtab(yamlPath, backend = "deSolve", compile = TRUE,
                         modelname = paste0("v2bench_", case))
       pp$obj(pp$bestfit)$value
     }, error = function(e) {

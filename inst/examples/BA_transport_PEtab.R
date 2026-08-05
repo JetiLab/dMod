@@ -27,7 +27,7 @@ reactions <- eqnlist() %>%
   addReaction("TCA_cana",   "TCA_buffer", rate = "k_reflux*TCA_cana",       description = "Reflux into the buffer")
 
 mymodel <- odemodel(reactions, modelname = "bamodel",
-                    compile = FALSE, solver = "Sundials")
+                    compile = FALSE, backend = "Sundials")
 x <- Xs(mymodel)
 
 observables <- eqnvec(buffer   = "s*TCA_buffer",
@@ -105,7 +105,7 @@ cat("\nWritten files:\n  ", paste(list.files(out_dir), collapse = "\n  "), "\n",
 
 ## --- 4. Re-import and verify --------------------------------------------
 
-petab <- importPEtab(yaml_out, solver = "CppODE", cores = 4)
+petab <- importPEtab(yaml_out, backend = "cppDE", cores = 4)
 
 cat("\nReimported bestfit names:       ", paste(names(petab$bestfit), collapse = ", "), "\n")
 cat("Reimported parameterScales:     ", paste(attr(petab$bestfit, "petab_scales"), collapse = ", "), "\n")

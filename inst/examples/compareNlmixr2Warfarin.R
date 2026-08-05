@@ -113,7 +113,7 @@ reactions <- addReaction(reactions, "",       "PCA",
 reactions <- addReaction(reactions, "PCA",    "",       "kout * PCA",
                          "PCA_degradation")
 m <- odemodel(reactions, modelname = "warf_ode", compile = FALSE,
-              solver = "CppODE", deriv2 = TRUE)
+              backend = "cppDE", deriv2 = TRUE)
 x <- Xs(m, optionsSens = list(atol = 1e-4, rtol = 1e-4))
 g <- Y(c(y_cp  = "log(Center/V + 1e-3)", y_pca = "PCA"),
        x, modelname = "warf_obs", compile = FALSE, deriv2 = TRUE)

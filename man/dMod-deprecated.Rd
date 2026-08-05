@@ -89,8 +89,8 @@ deletes local result files.}
 are transferred to the cluster and fully recompiled into shared objects (\code{.so}).
 If set to \code{TRUE}, this overrides \code{link = TRUE}. The build runs from a
 generated shell script that resolves all path-valued compiler flags
-(CppODE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
-sparse models) on the cluster, so \code{CppODE} has to be installed for the R
+(cppDE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
+sparse models) on the cluster, so \code{cppDE} has to be installed for the R
 that \verb{module load math/R} provides there. The job is only submitted if the
 build succeeds.}
 

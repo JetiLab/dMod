@@ -2,7 +2,7 @@
  * blasTools: BLAS-backed batched matrix multiplication, batch-first.
  *
  * All 3D arrays use [B, M, N] convention (batch axis FIRST), matching
- * CppODE sensitivity output and dMod's deriv/Hessian layouts. Column-major
+ * cppDE sensitivity output and dMod's deriv/Hessian layouts. Column-major
  * storage means the batch axis varies fastest -> per-batch slices are not
  * contiguous, so bmm_rb / bmm_bb gather into scratch before the dgemm.
  * bmm_lb exploits the [B,M,K] == [B*M, K] memory identity and runs as a

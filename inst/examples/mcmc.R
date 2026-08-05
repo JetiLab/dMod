@@ -10,7 +10,7 @@
   reactions <- addReaction(eqnlist(), from = "A", to = "",
                            rate = "k*A", description = "decay")
   m   <- odemodel(reactions, modelname = "mcmc_decay_m",
-                  solver = "CppODE", deriv2 = TRUE, compile = TRUE)
+                  backend = "cppDE", deriv2 = TRUE, compile = TRUE)
   xfn <- Xs(m)
   gfn <- Y(c(y = "A"), f = xfn, condition = NULL, attach.input = FALSE,
            modelname = "mcmc_decay_obs", compile = TRUE, deriv2 = TRUE)

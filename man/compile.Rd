@@ -30,7 +30,7 @@ Per-file compile and link flags are taken from the \code{"compileInfo"}
 attribute that \code{\link[=odemodel]{odemodel()}}, \code{\link[=Xs]{Xs()}}, \code{\link[=Xf]{Xf()}}, \code{\link[=Y]{Y()}} and \code{\link[=P]{P()}} attach to
 their return values. Each entry carries the source file together with the
 \code{compileArgs} and \code{linkArgs} reported by the backend that produced it
-(\code{cOde::funC}, \code{CppODE::CppODE}, \code{CppODE::CVODE}, ...), so solver-specific
+(\code{cOde::funC}, \code{cppDE::cppODE}, \code{cppDE::cvode}, ...), so solver-specific
 libraries reach only the files that need them. Objects without
 \code{compileInfo} fall back to modelname-based file discovery in the current
 working directory.

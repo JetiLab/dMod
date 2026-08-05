@@ -19,7 +19,7 @@ set.seed(5555)
 
 cat("R:", R.version.string, "\n")
 cat("dMod:", as.character(packageVersion("dMod")), "\n")
-cat("CppODE:", as.character(packageVersion("CppODE")), "\n\n")
+cat("cppDE:", as.character(packageVersion("cppDE")), "\n\n")
 
 ## ---- BA_transport model (small, realistic) ----
 data(badata)
@@ -32,7 +32,7 @@ reactions <- eqnlist() |>
   addReaction("TCA_cana",   "TCA_buffer", rate = "k_reflux*TCA_cana")
 
 mymodel <- odemodel(reactions, modelname = "bamodel_bench",
-                    solver = "CppODE", deriv2 = TRUE, compile = FALSE)
+                    backend = "cppDE", deriv2 = TRUE, compile = FALSE)
 x <- Xs(mymodel,
         optionsOde  = list(atol = 1e-8, rtol = 1e-8),
         optionsSens = list(atol = 1e-8, rtol = 1e-8))
@@ -143,7 +143,7 @@ cat(sprintf("total sampled time: %.2fs\n", total))
 
 ## Classify samples by family
 classify <- function(name) {
-  ode_pattern <- c("\\.Call", "lsoda", "lsodes", "ode_", "Xs\\.", "CppODE",
+  ode_pattern <- c("\\.Call", "lsoda", "lsodes", "ode_", "Xs\\.", "cppDE",
                    "\\.C\\b", "solveODE", "compileAndLoad")
   glue_pattern <- c("res\\b", "evalConditionResidual", "objlist",
                     "constraintL2", "datapointL2", "normL2",
