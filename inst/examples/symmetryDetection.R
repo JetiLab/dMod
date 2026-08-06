@@ -28,7 +28,7 @@ out <- symmetryDetection(reactions, g, method = "observability",
                          reduceCQ = TRUE, reconstruct = TRUE)
 
 # Assigning the result still shows it: symmetryDetection() prints its report on
-# return (silence it with verbose = FALSE or options(dMod.sym.verbose = FALSE)).
+# return (silence it with verbose = FALSE).
 # The two views of an `out`:
 print(out)     # terse: just the verdict and the generators, grouped by type
 summary(out)   # adds the computation block (engine, Lie order, saturation guard)

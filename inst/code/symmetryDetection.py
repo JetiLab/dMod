@@ -518,80 +518,20 @@ def symRatReconBig(residues, primes):
     return {'num': num, 'den': den}
 
 
-def _modular_nullspace(M):
-    """Exact nullspace of sympy Matrix M via multi-prime GF(p) + CRT +
-    rational reconstruction. Returns list of sympy column vectors, or None
-    if reconstruction/validation fails (caller falls back to sympy)."""
-    nrows, ncols = M.shape
-    if nrows == 0:
-        return [spy.Matrix([1 if j == c else 0 for j in range(ncols)])
-                for c in range(ncols)]
-    Aint = []
-    for i in range(nrows):
-        row = [spy.Rational(M[i, j]) for j in range(ncols)]
-        L = 1
-        for r in row:
-            L = spy.ilcm(L, r.q)
-        Aint.append([int(r * L) for r in row])
-
+def _crt_nullspace(reduceModP, ncols):
+    """Multi-prime GF(p) + CRT + rational-reconstruction nullspace core, shared by
+    the two exact nullspace routines below. `reduceModP(p)` yields the matrix rows
+    reduced mod p (anything _rref_mod_p accepts). Primes whose pivot set differs
+    from the first one's are skipped -- they saw an unlucky rank drop -- and the
+    residues of the first four agreeing primes are lifted to Q. Returns the free-
+    column basis as sympy column vectors (NOT validated: each caller validates in
+    its own arithmetic), or None if no prime agreed or a residue has no lift."""
     ref_pivots = None
     free = None
     residues = {}
     mods = []
     for p in _PRIMES:
-        Ap = [[x % p for x in row] for row in Aint]
-        R, pivots = _rref_mod_p(Ap, p)
-        if ref_pivots is None:
-            ref_pivots = pivots
-            free = [c for c in range(ncols) if c not in pivots]
-        elif pivots != ref_pivots:
-            continue
-        mods.append(p)
-        for ki in range(len(ref_pivots)):
-            for f in free:
-                residues.setdefault((ki, f), []).append(int(R[ki, f]) % p)
-        if len(mods) >= 4:
-            break
-
-    if not mods:
-        return None
-
-    from sympy.ntheory.modular import crt
-    exact = {}
-    for key, res in residues.items():
-        x, Mmod = crt(mods, res)
-        val = _rational_reconstruct(int(x), int(Mmod))
-        if val is None:
-            return None
-        exact[key] = val
-
-    basis = []
-    for f in free:
-        v = [spy.Integer(0)] * ncols
-        v[f] = spy.Integer(1)
-        for ki, c in enumerate(ref_pivots):
-            v[c] = -exact[(ki, f)]
-        basis.append(spy.Matrix(v))
-
-    # validate exactly
-    for v in basis:
-        if not (M * v).is_zero_matrix:
-            return None
-    return basis
-
-
-def _modular_nullspace_int(rowsInt, ncols):
-    """Exact nullspace of an INTEGER matrix (list of int rows) via multi-prime GF(p) +
-    CRT + rational reconstruction, staying in numpy int with no per-entry sympy (the
-    analogue of _modular_nullspace for the scaling determining matrix). Returns a list
-    of sympy column vectors, or None if reconstruction/validation fails."""
-    A0 = np.asarray(rowsInt, dtype=np.int64)
-    ref_pivots = None
-    free = None
-    residues = {}
-    mods = []
-    for p in _PRIMES:
-        R, pivots = _rref_mod_p(A0 % p, p)
+        R, pivots = _rref_mod_p(reduceModP(p), p)
         if ref_pivots is None:
             ref_pivots = pivots
             pivset = set(pivots)
@@ -623,6 +563,43 @@ def _modular_nullspace_int(rowsInt, ncols):
         for ki, c in enumerate(ref_pivots):
             v[c] = -exact[(ki, f)]
         basis.append(spy.Matrix(v))
+    return basis
+
+
+def _modular_nullspace(M):
+    """Exact nullspace of sympy Matrix M via _crt_nullspace, validated symbolically.
+    Returns list of sympy column vectors, or None if reconstruction/validation
+    fails (caller falls back to sympy)."""
+    nrows, ncols = M.shape
+    if nrows == 0:
+        return [spy.Matrix([1 if j == c else 0 for j in range(ncols)])
+                for c in range(ncols)]
+    Aint = []
+    for i in range(nrows):
+        row = [spy.Rational(M[i, j]) for j in range(ncols)]
+        L = 1
+        for r in row:
+            L = spy.ilcm(L, r.q)
+        Aint.append([int(r * L) for r in row])
+
+    basis = _crt_nullspace(lambda p: [[x % p for x in row] for row in Aint], ncols)
+    if basis is None:
+        return None
+    for v in basis:
+        if not (M * v).is_zero_matrix:
+            return None
+    return basis
+
+
+def _modular_nullspace_int(rowsInt, ncols):
+    """Exact nullspace of an INTEGER matrix (list of int rows), staying in numpy int
+    with no per-entry sympy (the analogue of _modular_nullspace for the scaling
+    determining matrix). Returns a list of sympy column vectors, or None if
+    reconstruction/validation fails."""
+    A0 = np.asarray(rowsInt, dtype=np.int64)
+    basis = _crt_nullspace(lambda p: A0 % p, ncols)
+    if basis is None:
+        return None
 
     # exact validation over the integers: clear denominators per basis vector, then
     # A0 @ W == 0 in one object-dtype matmul (exact big-int, no overflow)
@@ -2351,16 +2328,41 @@ def recastBacksub(expr, eNames, lNames, bases, exps):
 
 # ---- observability tape compiler (multi-condition, shared coordinate space) ----------
 
+def _compose_t0_events(icMap, t0evs, pval, subsMap):
+    """Apply a segment's t0 events (a dose at the start point) to the initial-state
+    map in place: the observability jet then starts at x0 = E(x_ss) while the f = 0
+    constraint stays on the pre-event x_ss. An event on a state that is not a
+    coordinate (a constant/eliminated species) is ignored."""
+    for e in t0evs or []:
+        Xv = spy.Symbol(str(e['var']))
+        if Xv not in icMap:
+            continue
+        val = spy.sympify(pval(e['value'])).subs(subsMap)
+        meth = str(e['method'])
+        if meth == 'replace':
+            icMap[Xv] = val
+        elif meth == 'add':
+            icMap[Xv] = icMap[Xv] + val
+        elif meth == 'multiply':
+            icMap[Xv] = icMap[Xv] * val
+    return icMap
+
+
 def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC0,
                                   fixed=None, parameters=None, backend='sympy',
                                   equilibrate=False, forcings=None,
                                   segEquilibrate=None, conditionEvents=None,
                                   conditionT0Events=None, jointSteadyState=False,
-                                  jointFixedStates=None, heldStateParams=None):
+                                  jointFixedStates=None, heldStateParams=None,
+                                  conditionObs=None):
     """Compile one observability tape per experimental condition over a shared
     coordinate space, for the multi-condition observability path.
 
-    The base `model` and `observation` are symbolic. `conditionSubs` is a list
+    The base `model` and `observation` are symbolic. `conditionObs` optionally
+    replaces `observation` per condition (one entry per condition, each a list of
+    observation lines), for observables that exist only in a subset of the
+    conditions -- their rows then enter the stacked codistribution only where they
+    are actually measured. `conditionSubs` is a list
     (one entry per condition) of {symbol: replacement} maps: a numeric
     replacement bakes that symbol to a constant in the condition, a symbol
     replacement renames it (e.g. a knockdown-specific rate), and pre-equilibration
@@ -2394,6 +2396,14 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
         segEq = [bool(x) for x in list(segEquilibrate)]
         segEq += [bool(equilibrate)] * (K - len(segEq))
 
+    # per-condition observation: an entry of `conditionObs` overrides `observation`
+    # for that condition, so an observable measured in only some conditions
+    # contributes rows only there. Missing/None entries fall back to `observation`.
+    conditionObs = list(conditionObs) if conditionObs else []
+    obsPerCond = [_as_list(conditionObs[c]) if (c < len(conditionObs) and
+                                                conditionObs[c] is not None)
+                  else observation for c in range(K)]
+
     extra = []
     for d in conditionSubs:
         for k, v in dict(d).items():
@@ -2401,11 +2411,13 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
     for d in conditionIC0:
         for k, v in dict(d).items():
             extra += [str(k), str(v)]
-    all_lines = model + observation + _as_list(parameters) + extra
+    all_lines = (model + observation + [l for o in obsPerCond for l in o] +
+                 _as_list(parameters) + extra)
     local, parse = _make_local_parse(all_lines)
 
     variables, diffEquations, _ = _read_equations(model, parse)
-    obsVars, obsFunctions, _ = _read_equations(observation, parse)
+    obsRead = [_read_equations(o, parse) for o in obsPerCond]
+    obsVarsPer = [r[0] for r in obsRead]
     fixedNames = set(str(s) for s in
                      [local.get(nm, spy.Symbol(nm)) for nm in _as_list(fixed)])
     # held-variable moiety parameterisation (equilibrate + reduceCQ = FALSE): each pivot
@@ -2427,13 +2439,14 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
         return spy.sympify(parse(str(s)))
 
     perCond = []
+    subsPer = []            # each condition's substitution map, aligned with perCond
     for c in range(K):
         subsMap = {}
         for k, v in dict(conditionSubs[c]).items():
             subsMap[local.get(str(k), spy.Symbol(str(k)))] = pval(v)
         ic0 = dict(conditionIC0[c]) if c < len(conditionIC0) else {}
         f_c = [e.subs(subsMap) for e in Srhs]
-        g_c = [spy.sympify(e).subs(subsMap) for e in obsFunctions]
+        g_c = [spy.sympify(e).subs(subsMap) for e in obsRead[c][1]]
         # resting-state model for the equilibrate solve: forcings at 0, no events,
         # non-forcing per-condition substitutions baked in
         forcZero = {local.get(nm, spy.Symbol(nm)): spy.Integer(0) for nm in forcings}
@@ -2444,6 +2457,7 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             e = pval(ic0[str(X)]) if str(X) in ic0 else X
             ic_c[str(X)] = spy.sympify(e).subs(subsMap)
         perCond.append((f_c, g_c, ic_c, f_ss))
+        subsPer.append(subsMap)
 
     # power/Hill recast: replace base^exp (exp a parameter) by a state E with
     # E' = exp*E*base'/base and a companion L = log(base). E and L are appended as
@@ -2492,11 +2506,11 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
                 rc['inverted'] = False
 
     nonrational = []
-    for (f_c, g_c, ic_c, f_ss) in perCond:
+    for c, (f_c, g_c, ic_c, f_ss) in enumerate(perCond):
         for X, e in zip(S, f_c):
             if not _is_rational_expr(e):
                 nonrational.append('d%s/dt = %s' % (X, e))
-        for y, e in zip(obsVars, g_c):
+        for y, e in zip(obsVarsPer[c], g_c):
             if not _is_rational_expr(e):
                 nonrational.append('%s = %s' % (y, e))
         for X in S:
@@ -2570,6 +2584,7 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
 
     tapes = []
     for c, (f_c, g_c, ic_c, f_ss) in enumerate(perCond):
+        subsMap = subsPer[c]
         try:
             op, a, b, cnum, cden, outslots = _emit_tape_shared(f_c, g_c, slotOf, base)
         except _NotRational:
@@ -2585,7 +2600,7 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             # multi-condition scaling peel
             'modelLines': ['%s = %s' % (str(S[i]), spy.sympify(f_c[i]))
                            for i in range(nS)],
-            'obsLines': ['%s = %s' % (str(obsVars[j]), spy.sympify(g_c[j]))
+            'obsLines': ['%s = %s' % (str(obsVarsPer[c][j]), spy.sympify(g_c[j]))
                          for j in range(len(g_c))],
         }
         if segEq[c] and jointSteadyState:
@@ -2607,20 +2622,9 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             # x0 = E(x_ss) while the df constraint is on the pre-event x_ss. R seeds
             # the state leaf with the pre-event value (valBy), and the IC tape carries
             # E with its chain-rule duals w.r.t. the leaves.
-            t0evs = (conditionT0Events[c]
-                     if conditionT0Events and c < len(conditionT0Events) else [])
-            for e in t0evs:
-                Xv = spy.Symbol(str(e['var']))
-                if Xv not in icMap:
-                    continue
-                val = spy.sympify(pval(e['value'])).subs(subsMap)
-                meth = str(e['method'])
-                if meth == 'replace':
-                    icMap[Xv] = val
-                elif meth == 'add':
-                    icMap[Xv] = icMap[Xv] + val
-                elif meth == 'multiply':
-                    icMap[Xv] = icMap[Xv] * val
+            _compose_t0_events(icMap, conditionT0Events[c]
+                               if conditionT0Events and c < len(conditionT0Events)
+                               else [], pval, subsMap)
             try:
                 icOp, icA, icB, icCnum, icCden, icOut = _emit_tape_shared(
                     [icMap[X] for X in S], [], leafSlot, nLeaves)
@@ -2653,20 +2657,10 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
                              for i, X in enumerate(S)}
                     # t0 events (a dose at t0) compose onto the resting state; their
                     # parameter sensitivities then come from the same forward-mode duals
-                    t0evs = (conditionT0Events[c]
-                             if conditionT0Events and c < len(conditionT0Events) else [])
-                    for e in t0evs:
-                        Xv = spy.Symbol(str(e['var']))
-                        if Xv not in icMap:
-                            continue
-                        val = spy.sympify(pval(e['value'])).subs(subsMap)
-                        meth = str(e['method'])
-                        if meth == 'replace':
-                            icMap[Xv] = val
-                        elif meth == 'add':
-                            icMap[Xv] = icMap[Xv] + val
-                        elif meth == 'multiply':
-                            icMap[Xv] = icMap[Xv] * val
+                    _compose_t0_events(icMap, conditionT0Events[c]
+                                       if conditionT0Events and
+                                       c < len(conditionT0Events) else [],
+                                       pval, subsMap)
                     try:
                         icOp, icA, icB, icCnum, icCden, icOut = _emit_tape_shared(
                             [icMap[X] for X in S], [], leafSlot, nLeaves)
@@ -3049,12 +3043,15 @@ def _lie_deriv(h, states, rhs):
 
 
 def observabilitySympyMulti(model, observation, conditionSubs=None, conditionIC0=None,
-                            fixed=None, parameters=None, inputs=None, backend='sympy'):
+                            fixed=None, parameters=None, inputs=None, backend='sympy',
+                            conditionObs=None):
     """Multi-condition pure-symbolic observability-identifiability -- the exact
     cross-check of the modular multi-condition engine.
 
     Each condition substitutes its per-condition values `conditionSubs[k]` into f and
-    g and seeds the observation jet at its own initial state `conditionIC0[k]`. A
+    g and seeds the observation jet at its own initial state `conditionIC0[k]`.
+    `conditionObs[k]` optionally replaces `observation` in condition k, for
+    observables measured in only a subset of the conditions. A
     direction is non-identifiable iff it lies in the nullspace of EVERY condition's
     observability matrix, i.e. the nullspace of the row-stacked O over one SHARED
     coordinate space -- the intersection of the per-condition observability
@@ -3070,15 +3067,21 @@ def observabilitySympyMulti(model, observation, conditionSubs=None, conditionIC0
     conditionIC0 = [dict(c) for c in asL(conditionIC0)]
     K = len(conditionSubs)
     forcings = set(str(x) for x in asL(inputs))
+    conditionObs = list(conditionObs) if conditionObs else []
+    obsPerCond = [[str(l) for l in asL(conditionObs[c])]
+                  if (c < len(conditionObs) and conditionObs[c] is not None)
+                  else observation for c in range(K)]
 
     all_lines = model + observation + asL(parameters)
+    for o in obsPerCond:
+        all_lines += o
     for c in conditionSubs + conditionIC0:
         for k, v in c.items():
             all_lines += [str(k), str(v)]
     local, parse = _make_local_parse(all_lines)
 
     variables, diffEquations, _ = _read_equations(model, parse)
-    obsVars, obsFunctions, _ = _read_equations(observation, parse)
+    obsFunPer = [_read_equations(o, parse)[1] for o in obsPerCond]
     fixedNames = set(str(s) for s in
                      [local.get(nm, spy.Symbol(nm)) for nm in asL(fixed)])
 
@@ -3099,7 +3102,7 @@ def observabilitySympyMulti(model, observation, conditionSubs=None, conditionIC0
                    for k, v in conditionSubs[c].items()}
         ic0 = conditionIC0[c] if c < len(conditionIC0) else {}
         f_c = [e.subs(subsMap) for e in Srhs]
-        g_c = [spy.sympify(e).subs(subsMap) for e in obsFunctions]
+        g_c = [spy.sympify(e).subs(subsMap) for e in obsFunPer[c]]
         ic_c = {}
         for X in S:
             e = pval(ic0[str(X)]) if str(X) in ic0 else X

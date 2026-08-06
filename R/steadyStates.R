@@ -59,7 +59,7 @@
 #' @return Named character vector of steady-state equations (dMod compatible).
 #'
 #' @references \[1\]
-#' <https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863410/>
+#' <https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/>
 #' @references \[2\]
 #' <https://github.com/marcusrosenblatt/AlyssaPetit>
 #' @references \[3\]

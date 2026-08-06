@@ -123,6 +123,15 @@ inline void trust_sub(int K, const double* g,
   double lam_min = vals[0];
   for (int j = 1; j < K; ++j) if (vals[j] < lam_min) lam_min = vals[j];
 
+  // Threshold below which lam_min counts as negative. A singular H returns a smallest
+  // eigenvalue of +/-O(eps * ||H||) whose sign depends on the LAPACK build; testing
+  // lam_min < 0 exactly made the hard-hard extension below platform-dependent.
+  double lam_absmax = 0.0;
+  for (int j = 0; j < K; ++j)
+    if (std::fabs(vals[j]) > lam_absmax) lam_absmax = std::fabs(vals[j]);
+  const double neg_tol =
+    8.0 * K * std::numeric_limits<double>::epsilon() * lam_absmax;
+
   std::vector<double> beta(K);
   std::vector<unsigned char> imin(K);
   for (int j = 0; j < K; ++j) {
@@ -223,10 +232,10 @@ inline void trust_sub(int K, const double* g,
                   w.data(), &i_one, &d_zero, p_out, &i_one FCONE);
 
   // Extending along the min-eigendirection only pays against negative
-  // curvature. For lam_min >= 0 that direction carries no model information
+  // curvature. For lam_min >= -neg_tol that direction carries no model information
   // (q_jmin == 0 by C2 == 0), so the minimum-norm step is the answer.
   double utry = 0.0;
-  if (lam_min < 0.0) {
+  if (lam_min < -neg_tol) {
     double pn2 = 0.0;
     for (int i = 0; i < K; ++i) pn2 += p_out[i] * p_out[i];
     utry = std::sqrt(std::max(0.0, r * r - pn2));

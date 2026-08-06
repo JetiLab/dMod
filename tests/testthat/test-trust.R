@@ -357,6 +357,26 @@ test_that("a rank-deficient Gauss-Newton Hessian gives a minimum-norm step", {
 })
 
 
+test_that("curvature at roundoff level does not steer the degenerate step", {
+  # H = J'J - d*I has eigenvalues {-d, 2-d}, so lam_min is negative by construction
+  # rather than by LAPACK rounding -- the test above only catches the drift on builds
+  # whose dsyevr happens to return the singular direction as negative.
+  obj <- function(d) function(p, ...) {
+    res <- as.numeric(p[1] + p[2] - 2)
+    J   <- matrix(c(1, 1), nrow = 1)
+    list(value = 0.5 * res^2, gradient = as.numeric(t(J) * res),
+         hessian = t(J) %*% J - diag(d, 2))
+  }
+  drift <- function(d) {
+    fit <- trust(obj(d), c(x = 0, y = 0), rinit = 1, rmax = 10, iterlim = 100)
+    expect_equal(sum(fit$argument), 2, tolerance = 1e-6)   # the fit itself is unaffected
+    unname(fit$argument[["x"]] - fit$argument[["y"]])
+  }
+  expect_equal(drift(1e-15), 0, tolerance = 1e-6)   # roundoff-level: ignored
+  expect_gt(abs(drift(1e-6)), 1)                    # real: extended to the boundary
+})
+
+
 test_that("bounds compose with parscale, parinit on a bound, and minimize = FALSE", {
   target <- c(x = 5, y = 5)
 

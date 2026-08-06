@@ -23,7 +23,6 @@ jobs:
           - {os: windows-latest, r: 'release'}
           - {os: ubuntu-latest,   r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-latest,   r: 'release'}
-          - {os: ubuntu-latest,   r: 'oldrel-1'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -60,6 +59,43 @@ jobs:
           # which is not provisioned in CI; --no-build-vignettes alone leaves a
           # "Directory 'inst/doc' does not exist" WARNING that --ignore-vignettes
           # silences cleanly.
+          args: 'c("--no-manual", "--ignore-vignettes")'
+          upload-snapshots: true
+          build_args: 'c("--no-manual","--no-build-vignettes","--compact-vignettes=gs+qpdf")'
+          error-on: '"warning"'
+
+  # Fedora is not a hosted runner, hence a container with the distro's own R:
+  # gcc, FlexiBLAS and the hardening flags differ from Ubuntu's. No RSPM binaries
+  # here, so dependencies build from source.
+  fedora:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    name: fedora (R release, gcc/FlexiBLAS)
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      DMOD_PETABTESTS: ${{ github.workspace }}/PEtabTests
+      DMOD_BENCHMARKMODELS: ${{ github.workspace }}/BenchmarkModels
+
+    steps:
+      - name: Install R and build dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            R R-devel gcc gcc-c++ gcc-gfortran make cmake git \
+            openssl-devel libcurl-devel libxml2-devel fontconfig-devel \
+            harfbuzz-devel fribidi-devel freetype-devel libpng-devel \
+            libtiff-devel libjpeg-turbo-devel pandoc python3 python3-pip
+
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      - uses: r-lib/actions/check-r-package@v2
+        with:
           args: 'c("--no-manual", "--ignore-vignettes")'
           upload-snapshots: true
           build_args: 'c("--no-manual","--no-build-vignettes","--compact-vignettes=gs+qpdf")'

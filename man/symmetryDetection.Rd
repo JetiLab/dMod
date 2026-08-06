@@ -24,227 +24,199 @@ symmetryDetection(
   polynomial = polynomialControl(),
   scaling = scalingControl(),
   symEngine = c("modular", "symbolic"),
-  verbose = getOption("dMod.sym.verbose", TRUE)
+  verbose = TRUE
 )
 }
 \arguments{
-\item{f}{The model right-hand sides: an \link{eqnlist}, an \link{eqnvec}, or a named
-character vector keyed by state name (anything \link{as.eqnvec} accepts). With an
-\link{eqnlist}, conserved quantities can be reduced first (\code{reduceCQ}).}
+\item{f}{The model right-hand sides: an \link{eqnlist}, an \link{eqnvec}, or a named character
+vector keyed by state name. \code{reduceCQ} needs an \link{eqnlist}.}
 
-\item{g}{The observation functions, as an \link{eqnvec} or named character vector.}
+\item{g}{The observation functions, as an \link{eqnvec} or named character vector applied
+to every condition, or -- for \code{"observability"} and \code{"scaling"} -- a \emph{list} of
+\link{eqnvec}s, one per condition in the row order of \code{conditions}. Use the list when
+the observables differ between conditions: a single \code{g} credits every condition
+with every measurement and so under-reports. Its length must match the \code{conditions}
+rows and any per-condition \code{trafo} list; given neither, it sets the number of
+conditions.}
 
-\item{trafo}{Optional parameter transformation: one \link{eqnvec} (applied to every
-condition) or, for \code{"observability"}, a \emph{list} of \link{eqnvec}s (one per condition).
+\item{trafo}{Optional parameter transformation: one \link{eqnvec} applied to every
+condition, or -- for \code{"observability"} -- a \emph{list} of \link{eqnvec}s, one per condition.
 A parameter-named entry is substituted into \code{f} and \code{g}; a state-named entry is
-that state's initial condition. A solved steady state from \link{steadyStates} can be
-passed whole, and a per-condition list is the explicit route for per-condition
-steady states.}
+that state's initial condition. A steady state from \link{steadyStates} can be passed
+whole.}
 
-\item{method}{One of \code{"observability"} (default), \code{"polynomial"} or
-\code{"scaling"}; see Description.}
+\item{method}{One of \code{"observability"} (default), \code{"polynomial"} or \code{"scaling"}; see
+Description.}
 
 \item{parameters}{Character vector of extra symbols to treat as parameters.}
 
-\item{fixed}{Character vector of symbols that are known and therefore not
-unknowns. For \code{"observability"} they are excluded from the coordinates \code{z}:
-a fixed parameter is a known constant, and a fixed state keeps its dynamics
-but carries no unknown initial value. For \code{"polynomial"} their infinitesimal
-ansatz is set to zero.}
+\item{fixed}{Character vector of symbols that are known and therefore not unknowns.
+For \code{"observability"} they leave the coordinates: a fixed parameter is a known
+constant, a fixed state keeps its dynamics but carries no unknown initial value.
+For \code{"polynomial"} they do not transform.}
 
 \item{forcings}{Character vector of externally driven (input) state names. For
-\code{"observability"} a forcing is an integrated state (default initial value 0)
-excluded from the \code{f = 0} steady-state constraint; for \code{"polynomial"}/\code{"scaling"}
-it is an input whose infinitesimal ansatz is fixed.}
+\code{"observability"} a forcing is an integrated state with initial value 0, excluded
+from the \code{f = 0} steady state; for \code{"polynomial"}/\code{"scaling"} it does not transform.}
 
-\item{events}{Optional \link{eventlist}. For \code{"observability"} an event value naming a
-\code{conditions} grid column is read from that grid. The Taylor expansion starts at
-the earliest event time; later events split the timeline into segments that are
-stacked, the state propagated exactly across each gap (Details).}
+\item{events}{Optional \link{eventlist} for \code{"observability"} and \code{"scaling"}; event times
+must be numeric. The analysis starts at the earliest event time, so place an event
+there if its transient is to be seen. An event value naming a \code{conditions} column
+is read from that grid.}
 
-\item{conditions}{Optional data frame of experimental conditions (one row per
-condition; columns named by model symbols or event-value placeholders). For
-\code{"observability"} each condition is compiled with its own substitutions (a
-numeric cell bakes a symbol to a constant, a symbol cell renames it) and their
-observability matrices are stacked: a direction is non-identifiable only when
-unobservable in every condition (the intersection nullspace).}
+\item{conditions}{Optional data frame of experimental conditions: one row per
+condition, columns named by model symbols or by event-value placeholders. A numeric
+cell bakes that symbol to a constant in the condition, a character cell renames it.
+A direction is reported only if it is non-identifiable in \emph{every} condition.}
 
-\item{equilibrate}{Logical. For \code{"observability"}, start the states at a steady
-state of \code{f} (forcings held at 0), solved over a finite field; the earliest
-events are applied on top. State initial conditions in \code{trafo} are then ignored.
-A free power/Hill exponent is supported with or without \code{equilibrate}.}
+\item{equilibrate}{Logical, \code{"observability"} only. Start the states at a steady state
+of \code{f} (forcings held at 0) instead of at free initial values; the earliest events
+are applied on top, and state initial conditions in \code{trafo} are then ignored.}
 
-\item{reduceCQ}{Logical. Controls how a conserved moiety (which makes the
-\code{equilibrate} steady-state system \code{f = 0} rank-deficient) is handled for an
-\link{eqnlist}. \code{FALSE} (default) keeps every species a coordinate and, under
-\code{equilibrate}, holds one pivot species' resting value as its initial-value
-parameter (the "held-variable" parameterisation): the steady state becomes a
-function of that value with the other moiety species solved from \code{f = 0}.
-Following the dMod / deSolve convention that a parameter named like a state is
-that state's initial value, the moiety freedom is reported under the pivot
-species' own name. \code{TRUE} instead eliminates one pivot species per conserved
-quantity and reports the moiety freedom on a \code{total} parameter (the pivot
-species is then no longer a coordinate); it trades a simpler (often all-scaling)
-basis for fewer coordinates, which helps large models. Both give the same
-identifiability; they differ only in the moiety coordinate. If a state-named
-\code{trafo} initial condition names a species that participates in a conserved
-quantity, \code{reduceCQ} is forced to \code{FALSE} (with a warning): \code{TRUE} would
-otherwise eliminate a moiety species and silently discard the supplied
-steady-state relation, so the model would no longer start at the given steady
-state. The \code{total} parameters exist only under \code{reduceCQ = TRUE} and are named
-after \code{\link[=getTotals]{getTotals()}}; they can be pinned like any other parameter, through
-\code{fixed} or a \code{trafo} entry (\code{total_x = "1"}), even though they are not among
-\code{\link[=getParameters]{getParameters()}} of the \link{eqnlist}.}
+\item{reduceCQ}{Logical, \link{eqnlist} input only: how a conserved moiety is
+parameterised. \code{FALSE} (default) keeps every species a coordinate and reports the
+moiety freedom under one pivot species' own name -- its initial value, following the
+dMod convention that a parameter named like a state IS that state's initial value.
+\code{TRUE} instead eliminates one species per conserved quantity and reports the freedom
+on a \code{total} parameter, which means fewer coordinates on large models. Both give the
+same identifiability verdict. Forced to \code{FALSE} with a warning when \code{trafo} supplies
+an initial condition for a moiety species. The \code{total} parameters exist only under
+\code{TRUE}, are named after \code{\link[=getTotals]{getTotals()}}, and can be pinned through \code{fixed} or a
+\code{trafo} entry (\code{total_x = "1"}) although they are not among \code{\link[=getParameters]{getParameters()}}.}
 
-\item{freeInitial}{Character vector of state names. Under the held-variable
-parameterisation (\code{equilibrate = TRUE}, \code{reduceCQ = FALSE}), \code{f = 0} pins every
-moiety species but one, and that one (the pivot) keeps its free resting value as
-its initial-value parameter. \code{freeInitial} chooses that pivot per conserved
-quantity (one species each) instead of the automatic choice, so the moiety
-freedom is reported on the species you name. A name that is not a valid moiety
-pivot is ignored, and the argument is ignored (with a warning) outside the
-held-variable case, where every species already carries a free initial value.}
+\item{freeInitial}{Character vector of state names, at most one per conserved
+quantity. Chooses which species carries the moiety's free resting value under
+\verb{equilibrate = TRUE, reduceCQ = FALSE}, instead of the automatic choice. A name that
+is not a valid pivot is dropped, and the argument is ignored (with a warning)
+outside that case.}
 
-\item{reconstruct}{Logical. For \code{"observability"}, reconstruct the non-scaling
-directions as exact rational functions (a free exponent via its \code{base^exp} /
-\code{log(base)} recast), not just their support; scalings are always exact. A
-direction that cannot be reconstructed or certified is returned support-only
-(its \code{explicit} field is then \code{FALSE}).}
+\item{reconstruct}{Logical, \code{"observability"} only. Return the non-scaling directions
+as exact rational functions rather than only their support; scalings are always
+exact. A direction that cannot be reconstructed or certified stays support-only,
+with \code{explicit = FALSE}.}
 
-\item{verify}{Logical (default \code{TRUE}). For \code{"observability"}, run a fast
-Schwartz-Zippel saturation guard that extends the Lie order past the plateau
-heuristic and warns if the rank is still growing (a premature stop would
-over-report non-identifiability); the verdict is attached as \verb{$verification}.
-The margin of extra orders is set by \code{DMOD_SYM_VERIFY_MARGIN} (default 6).}
+\item{verify}{Logical (default \code{TRUE}), \code{"observability"} only. Check that the
+reported rank has really saturated and warn if it has not, since stopping early
+over-reports non-identifiability. The verdict is attached as \verb{$info$verification}.
+\code{DMOD_SYM_VERIFY_MARGIN} (default 6) sets how far past the reported order it looks.}
 
-\item{cores}{Number of threads for \code{"observability"}. The reconstruction's
-finite-field steady-state solves are parallelised over the sample points (fork
-on Linux, PSOCK pool on Windows), and the observability kernel threads over
-conditions/segments; \code{cores} is split across these two (nested) axes so they
-never oversubscribe. The \code{"polynomial"} and \code{"scaling"} engines are exact and
-serial and ignore it.}
+\item{cores}{Number of threads for \code{"observability"}, split across the parallel
+steady-state solves and the observability kernel so they do not oversubscribe.
+\code{"polynomial"} and \code{"scaling"} are serial and ignore it.}
 
 \item{control}{A \code{\link[=reconstControl]{reconstControl()}} list tuning the \code{"observability"} engine's
-saturation and closed-form reconstruction (relevance caps, fit degrees, term
-and gap-order caps). Raise the caps to recover wide or high-degree directions.}
+saturation and closed-form reconstruction (relevance caps, fit degrees, term and
+gap-order caps). Raise the caps to recover wide or high-degree directions.}
 
 \item{polynomial}{A \code{\link[=polynomialControl]{polynomialControl()}} list tuning the \code{"polynomial"} engine: the
 infinitesimal ansatz and degree, the extra Lie-derivative order, the symbolic
 backend and verification.}
 
-\item{scaling}{A \code{\link[=scalingControl]{scalingControl()}} list tuning the \code{"scaling"} engine: the
-symbolic backend.}
+\item{scaling}{A \code{\link[=scalingControl]{scalingControl()}} list tuning the \code{"scaling"} engine: the symbolic
+backend.}
 
-\item{symEngine}{For \code{"observability"}, the engine computing the matrix:
-\code{"modular"} (default; finite fields GF(p) + CRT, fast and scalable, drives the
-closed-form reconstruction and \code{verify}) or \code{"symbolic"} (exact sympy
-rational-function field, an independent cross-check for SMALL models; no recast,
-no \code{equilibrate}, no event gaps, no closed-form reconstruction).}
+\item{symEngine}{For \code{"observability"}: \code{"modular"} (default) is fast and scalable and
+the only engine that supports \code{equilibrate}, event gaps, a recast exponent and
+closed-form reconstruction. \code{"symbolic"} is an exact sympy cross-check for SMALL
+models.}
 
-\item{verbose}{Logical (default \code{TRUE}, overridable with
-\code{options(dMod.sym.verbose =)}). Print the result report on return (as
-\code{print()} renders it); set \code{FALSE} to compute silently.}
+\item{verbose}{Logical (default \code{TRUE}). Print the result report on return, as
+\code{print()} renders it; \code{FALSE} computes silently.}
 }
 \value{
-An object of class \code{symmetryDetection}, the same shape for every
-\code{method}, holding the \emph{verdict} at the top level and the \emph{how} under \verb{$info}:
+An object of class \code{symmetrydetection}, the same shape for every \code{method},
+holding the verdict at the top level and the computation under \verb{$info}:
 \describe{
-\item{\code{method}}{the engine that ran (\code{"observability"}, \code{"scaling"} or
-\code{"polynomial"}).}
-\item{\code{identifiable}}{\code{TRUE}/\code{FALSE} for \code{"observability"} (a full-rank
-verdict); \code{NA} for \code{"scaling"}/\code{"polynomial"}, which search
-non-exhaustively so "nothing found" is no proof of identifiability.}
-\item{\code{rank}, \code{dim}}{the observability-matrix rank and coordinate-space
-dimension (both \code{NA} for the scaling/polynomial engines).}
-\item{\code{symmetries}}{a list of the found generators/directions (empty when
-identifiable), each a differential generator \verb{sum_i xi_i d/dz_i} in a
-canonical gauge. Fields: \code{generator} (components \code{xi_i}, keyed by
-coordinate); \code{weights} (a scaling's integer weights, else \code{NULL}); \code{type}
-(\code{"scaling"}, \code{"translation"}, \code{"affine"}, \code{"polynomial"} or \code{"general"});
-\code{degree}; \code{support} (the coordinates involved, the only field set when no
-closed form was reached); \code{explicit}; \code{reason}; \code{certified};
-\code{transformation} (the finite map, polynomial engine); \code{verified}.}
-\item{\code{info}}{\code{engine}, \code{lieOrderUsed}, \code{gapOrderUsed}, \code{conditions},
-\code{segments}, the \code{settings} used, \code{elapsed} seconds and the \code{verification}
-guard.}
+\item{\code{method}}{the engine that ran.}
+\item{\code{identifiable}}{\code{TRUE}/\code{FALSE} for \code{"observability"}; \code{NA} for
+\code{"scaling"}/\code{"polynomial"}, which search non-exhaustively, so finding nothing
+is no proof of identifiability.}
+\item{\code{rank}, \code{dim}}{observability-matrix rank and coordinate-space dimension;
+both \code{NA} for the scaling/polynomial engines.}
+\item{\code{symmetries}}{the found directions (empty when identifiable), each a
+generator \verb{sum_i xi_i d/dz_i}. Fields: \code{generator} (the components \code{xi_i},
+keyed by coordinate), \code{weights} (a scaling's integer weights, else \code{NULL}),
+\code{type} (\code{"scaling"}, \code{"translation"}, \code{"affine"}, \code{"polynomial"} or
+\code{"general"}), \code{degree}, \code{support} (the coordinates involved -- the only field
+set when no closed form was reached), \code{explicit}, \code{reason}, \code{certified},
+\code{transformation} (the finite map, polynomial engine) and \code{verified}.}
+\item{\code{info}}{\code{engine}, \code{lieOrderUsed}, \code{gapOrderUsed}, \code{conditions}, \code{segments},
+the \code{settings} used, \code{elapsed} seconds and the \code{verification} guard.}
 \item{\code{call}}{the matched call.}
 }
-\code{print()} shows the verdict and generators; \code{summary()} adds the computation
-block, and \code{summary(x, verbose = TRUE)} the settings and guard detail.
+\code{print()} shows the verdict and generators, \code{summary()} adds the computation block,
+and \code{summary(x, verbose = TRUE)} the settings and guard detail.
 }
 \description{
-Detects structural non-identifiabilities of a reaction network and
-its observation map, via the Python module \code{symmetryDetection}
-(\code{reticulate}). The model \code{f}, observables \code{g} and optional \code{trafo} are given as
-equations (anything \link{as.eqnvec} accepts). The engine is chosen with \code{method}:
+Detects structural non-identifiabilities of a reaction network and its
+observation map, through the Python module \code{symmetryDetection} (\code{reticulate}). The
+model \code{f}, the observables \code{g} and an optional \code{trafo} are given as equations
+(anything \link{as.eqnvec} accepts). \code{method} selects the engine:
 \itemize{
-\item \code{"observability"} (default): rank of the observability-identifiability matrix
-over a finite field; the nullspace gives the non-identifiable directions.
-Exact and scalable; needs rational right-hand sides and observables. A free
-power/Hill exponent (\code{base^exp}) is supported, recast internally.
+\item \code{"observability"} (default): the non-identifiable directions of the
+observability-identifiability matrix. Exact and scalable; requires rational
+right-hand sides and observables. Supports a free power/Hill exponent
+(\code{base^exp}), and is the only engine that uses \code{equilibrate}.
 \item \code{"polynomial"}: the polynomial Lie-symmetry ansatz of Merkt et al. (2015),
-returning the explicit generator and finite transformation (grows with \code{pMax}).
-\item \code{"scaling"}: the scaling symmetries only, from the integer kernel of the
-monomial-exponent conditions (\code{equilibrate} does not apply).
+returning the generator and the finite transformation. Cost grows with
+\code{polynomialControl(pMax =)}. Ignores \code{events} and \code{conditions}.
+\item \code{"scaling"}: the scaling symmetries only, from an exact integer kernel. Ignores
+\code{equilibrate} (a scaling leaves \code{f = 0} invariant).
 }
+
+How the engines work is described in \code{vignette("symmetryDetection")}.
 }
 \details{
-With events after the earliest one, \code{"observability"} splits the timeline
-at the event times into segments and propagates the state exactly across each
-inter-event gap (for generic timing), so a parameter entering only through a
-transient between events is identified -- place such an event at the earliest
-time. A \code{replace}/\code{add}/\code{multiply} event acts on the propagated state; a dose on
-a species eliminated by \code{reduceCQ} is not seen (keep it with \code{reduceCQ = FALSE}).
-The method internals are covered in \code{vignette("symmetryDetection")}.
+Two behaviours are worth knowing before reading a result. Events after the
+earliest one split the timeline into segments, so a parameter that enters only
+through a transient between events is identified -- but the expansion starts at the
+\emph{earliest} event time, so an event placed there is the one whose transient is seen.
+And a dose on a species that \code{reduceCQ = TRUE} eliminates is not seen; keep such a
+model at \code{reduceCQ = FALSE}. See \code{vignette("symmetryDetection")}.
 }
 \note{
-The interface, defaults and output structure may still change between
-releases.
+The interface, defaults and output structure may still change between releases.
 }
 \examples{
 \dontrun{
-# The canonical scaling symmetry: a reversible reaction observed only through
-# alpha * A leaves the absolute scale free.
+# A reversible reaction observed only through alpha * A: the absolute scale is free.
 eq <- eqnlist() |>
   addReaction("A", "B", "k1 * A") |>
   addReaction("B", "A", "k2 * B")
 
-# Assigning still shows the result: symmetryDetection() prints its report on
-# return. print(out) is terse (verdict + generators); summary(out) adds the
-# computation block (engine, Lie order, saturation guard, timing).
+# The result prints on return, so assigning still shows it.
 out <- symmetryDetection(eq, eqnvec(Aobs = "alpha * A"))   # observability
-print(out)
-summary(out)
+summary(out)                                               # adds the computation block
 out <- symmetryDetection(eq, eqnvec(Aobs = "alpha * A"), method = "polynomial")
 out <- symmetryDetection(eq, eqnvec(Aobs = "alpha * A"), method = "scaling")
 
-# A steady-state initial condition as an expression: a state-named trafo entry
-# is the initial condition, seeded with its parameter sensitivities.
+# A state-named trafo entry is that state's initial condition.
 out <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                          trafo = eqnvec(x = "b/a"), reconstruct = TRUE)
 
-# Several experimental conditions: a switch held at one generic value makes
-# k1 and k2 look unidentifiable, but two values (set per condition by an
-# event, read from the grid) identify both.
+# Several conditions: one switch value cannot separate k1 and k2, two can.
 fu <- eqnvec(A = "-(k1 + u * k2) * A", u = "0")
 events <- addEvent(eventlist(), var = "u", time = -1, value = "var_u",
                    method = "replace")
 grid <- data.frame(var_u = c(0, 1), row.names = c("ctrl", "stim"))
 out <- symmetryDetection(fu, eqnvec(y = "A"), method = "observability",
                          events = events, conditions = grid)
-out$identifiable   # the object's fields are there for programmatic use
+out$identifiable   # the fields are there for programmatic use
 
-# Pre-equilibrated model with a dose event: the steady state b/a is the
-# relaxation attractor; a known dose makes (a, b, s) identifiable.
+# Observables measured in disjoint conditions: one eqnvec per condition row.
+fd <- eqnvec(A = "-k1*A", B = "-k2*B")
+out <- symmetryDetection(fd, list(eqnvec(yA = "sA*A"), eqnvec(yB = "sB*B")),
+                         method = "observability",
+                         conditions = data.frame(row.names = c("elisa", "wb")))
+
+# Pre-equilibrated model with a known dose, which makes (a, b, s) identifiable.
 dose <- addEvent(eventlist(), var = "x", time = 0, value = "dose",
                  method = "replace")
 out <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                          method = "observability", events = dose,
                          conditions = data.frame(dose = 2, row.names = "stim"))
-summary(out)
 
-# Full worked script (scaling, closed-form directions, an enzyme assay, a
-# transcription-translation rate curve, conditions and steady states):
+# Full worked script:
 file.edit(system.file("examples", "symmetryDetection.R", package = "dMod"))
 }
 }

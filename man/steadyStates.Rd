@@ -134,7 +134,7 @@ reticulate (Python 3.x). Three solver versions are selectable via the
 }
 \references{
 [1]
-\url{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4863410/}
+\url{https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/}
 
 [2]
 \url{https://github.com/marcusrosenblatt/AlyssaPetit}

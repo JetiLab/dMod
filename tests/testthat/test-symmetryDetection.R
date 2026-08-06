@@ -9,6 +9,11 @@
 # Reference: Merkt et al. 2015 (PRE 92, 012920).
 
 
+# symmetryDetection() prints its report on return (interactive convenience); the
+# tests read the returned object, so call it through this quiet wrapper.
+symdet <- function(...) symmetryDetection(..., verbose = FALSE)
+
+
 .sympy_works <- function() {
   if (!requireNamespace("reticulate", quietly = TRUE)) return(FALSE)
   isTRUE(tryCatch({
@@ -55,7 +60,7 @@
 test_that("liesym finds and verifies the canonical scaling symmetry", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "polynomial", reduceCQ = FALSE,
                            polynomial = polynomialControl(ansatz = "uni", pMax = 1L))
 
@@ -71,10 +76,10 @@ test_that("liesym finds and verifies the canonical scaling symmetry", {
 test_that("liesym exact and legacy float solvers agree on the canonical case", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  ex  <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  ex  <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "polynomial", reduceCQ = FALSE,
                            polynomial = polynomialControl(ansatz = "uni", pMax = 1L, exact = TRUE))
-  leg <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  leg <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "polynomial", reduceCQ = FALSE,
                            polynomial = polynomialControl(ansatz = "uni", pMax = 1L, exact = FALSE))
   expect_gte(length(ex$symmetries), 1L)          # non-vacuous: both actually find a symmetry
@@ -85,7 +90,7 @@ test_that("liesym exact and legacy float solvers agree on the canonical case", {
 test_that("liesym handles a log10 observable with an offset parameter", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "log10(A) + c"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "log10(A) + c"),
                            method = "polynomial", reduceCQ = FALSE,
                            polynomial = polynomialControl(ansatz = "uni", pMax = 1L))
 
@@ -100,7 +105,7 @@ test_that("a trafo that fixes a parameter removes its symmetry", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
   # substituting alpha = 1 through the trafo removes the calibration scaling
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            trafo = eqnvec(alpha = "1"), method = "polynomial",
                            reduceCQ = FALSE, polynomial = polynomialControl(ansatz = "uni", pMax = 1L))
   expect_equal(length(res$symmetries), 0L)
@@ -111,7 +116,7 @@ test_that("a trafo renames a rate and is substituted into the model", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
   # k1 -> kf renames the forward rate; the canonical scaling is unaffected
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            trafo = eqnvec(k1 = "kf"), method = "observability",
                            reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -124,7 +129,7 @@ test_that("a trafo renames a rate and is substituted into the model", {
 test_that("observability flags the canonical non-identifiability", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reduceCQ = FALSE)
 
   expect_false(res$identifiable)
@@ -138,7 +143,7 @@ test_that("observability flags the canonical non-identifiability", {
 test_that("observability reports a fully observed model as identifiable", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(o1 = "A", o2 = "B"),
+  res <- symdet(.canonical(), eqnvec(o1 = "A", o2 = "B"),
                            method = "observability", reduceCQ = FALSE)
   expect_true(res$identifiable)
   expect_equal(res$rank, res$dim)
@@ -148,7 +153,7 @@ test_that("observability reports a fully observed model as identifiable", {
 test_that("scaling finds the canonical scaling exactly via the integer kernel", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "scaling", reduceCQ = FALSE)
   expect_equal(length(res$symmetries), 1L)
   v <- res$symmetries[[1]]$weights
@@ -167,7 +172,7 @@ test_that("observability scales to a deep chain via the exact modular engine", {
     addReaction("B", "C", "k2 * B") |>
     addReaction("C", "D", "k3 * C") |>
     addReaction("D", "",  "k4 * D")
-  res <- symmetryDetection(eq, eqnvec(yD = "scale * D"), reduceCQ = FALSE)
+  res <- symdet(eq, eqnvec(yD = "scale * D"), reduceCQ = FALSE)
 
   expect_false(res$identifiable)
   expect_lt(res$rank, res$dim)
@@ -179,7 +184,7 @@ test_that("observability rejects a non-rational observable", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
   expect_error(
-    symmetryDetection(.canonical(), eqnvec(Aobs = "sqrt(A)"),
+    symdet(.canonical(), eqnvec(Aobs = "sqrt(A)"),
                       method = "observability", reduceCQ = FALSE),
     "rational")
 })
@@ -188,7 +193,7 @@ test_that("observability rejects a non-rational observable", {
 test_that("reconstruct observability returns exact rational directions", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
 
@@ -213,7 +218,7 @@ test_that("reconstruct observability returns exact rational directions", {
 test_that("reconstruct observability reconstructs a non-monomial direction", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  res <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  res <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
   # the conserved-quantity direction, reported as its canonical polynomial-
@@ -229,7 +234,7 @@ test_that("reconstruct observability reconstructs a non-monomial direction", {
   expect_true(.symExprEqual(d$generator[["B"]], "A + B"))
 
   # the scaling engine alone finds only the scaling symmetry, not this direction
-  sc <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  sc <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                           method = "scaling", reduceCQ = FALSE)
   expect_equal(length(sc$symmetries), 1L)
 })
@@ -238,10 +243,10 @@ test_that("reconstruct observability reconstructs a non-monomial direction", {
 test_that("the closed-form and support-only verdicts agree", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  ana <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  ana <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
-  sup <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  sup <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reconstruct = FALSE,
                            reduceCQ = FALSE)
   expect_equal(ana$rank, sup$rank)
@@ -262,7 +267,7 @@ test_that("reconstruct observability handles a deep chain", {
     addReaction("B", "C", "k2 * B") |>
     addReaction("C", "D", "k3 * C") |>
     addReaction("D", "",  "k4 * D")
-  res <- symmetryDetection(eq, eqnvec(yD = "scale * D"),
+  res <- symdet(eq, eqnvec(yD = "scale * D"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
 
@@ -277,10 +282,10 @@ test_that("reconstruct observability handles a deep chain", {
 test_that("a fixed parameter is excluded from z and removes its symmetry", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 
-  free  <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  free  <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                              method = "observability", reconstruct = TRUE,
                              reduceCQ = FALSE)
-  fixed <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  fixed <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                              method = "observability", reconstruct = TRUE,
                              fixed = "alpha", reduceCQ = FALSE)
 
@@ -296,12 +301,12 @@ test_that("observability, liesym and scaling agree on the scaling symmetry", {
 
   abAlpha <- function(s) all(c("A", "B", "alpha") %in% s)
 
-  obs <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  obs <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "observability", reduceCQ = FALSE)
-  lie <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  lie <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "polynomial", reduceCQ = FALSE,
                            polynomial = polynomialControl(ansatz = "uni", pMax = 1L))
-  scl <- symmetryDetection(.canonical(), eqnvec(Aobs = "alpha * A"),
+  scl <- symdet(.canonical(), eqnvec(Aobs = "alpha * A"),
                            method = "scaling", reduceCQ = FALSE)
 
   expect_true(any(vapply(obs$symmetries,
@@ -318,7 +323,7 @@ test_that("a steady-state expression initial condition is seeded with its duals"
 
   # x' = b - a x rests at x* = b/a; with that initial condition (and no dose) the
   # trajectory is constant, so only the product s*b/a is observed (rank 1 of 3)
-  res <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+  res <- symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                            trafo = eqnvec(x = "b/a"), method = "observability",
                            reconstruct = TRUE, reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -332,7 +337,7 @@ test_that("a pre-equilibrated model with a known dose is identifiable", {
 
   ident <- function(m) {
     ev <- addEvent(eventlist(), var = "x", time = 0, value = "dose", method = m)
-    symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+    symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                       trafo = eqnvec(x = "b/a"), events = ev,
                       conditions = data.frame(dose = 2, row.names = "stim"),
                       method = "observability", reduceCQ = FALSE)$identifiable
@@ -352,7 +357,7 @@ test_that("equilibrate reproduces the explicit steady state", {
   # rank 1/3 and non-identifiable directions as the explicit trafo x = b/a
   f <- eqnvec(x = "b - a*x")
   g <- eqnvec(y = "s*x")
-  res <- symmetryDetection(f, g, method = "observability",
+  res <- symdet(f, g, method = "observability",
                            equilibrate = TRUE, reconstruct = TRUE,
                            reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -375,7 +380,7 @@ test_that("equilibrate handles a steady state with no rational form", {
   # x* = sqrt(b/a) is irrational, so steadyStates() cannot return it, but the
   # saturated variety has an interior GF(p) point whenever b/a is a quadratic
   # residue; the modular solver finds it and the verdict is still reached
-  res <- symmetryDetection(eqnvec(x = "b - a*x^2"), eqnvec(y = "s*x"),
+  res <- symdet(eqnvec(x = "b - a*x^2"), eqnvec(y = "s*x"),
                            method = "observability", equilibrate = TRUE,
                            reconstruct = TRUE, reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -390,7 +395,7 @@ test_that("equilibrate ignores a state initial condition given in trafo", {
   # a state-named trafo entry is an initial condition; equilibrate solves the
   # steady state from f = 0 instead, so it is dropped with a warning
   expect_warning(
-    res <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+    res <- symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                              method = "observability", equilibrate = TRUE,
                              trafo = eqnvec(x = "x0"), reduceCQ = FALSE),
     "ignored")
@@ -398,7 +403,7 @@ test_that("equilibrate ignores a state initial condition given in trafo", {
   expect_equal(res$rank, 1L)
   expect_equal(res$dim, 3L)
   # a params-only trafo is a substitution and the constraint runs through it
-  res <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+  res <- symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                            equilibrate = TRUE, trafo = eqnvec(a = "k1*k2"),
                            method = "observability", reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -415,14 +420,14 @@ test_that("equilibrate applies a t0 dose on top of the resting state", {
   # identifiable. Without the dose only the resting product s*b/a is seen.
   dose <- addEvent(eventlist(), var = "x", time = 0, value = "dose",
                    method = "replace")
-  res <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+  res <- symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                            method = "observability", equilibrate = TRUE,
                            events = dose,
                            conditions = data.frame(dose = 2, row.names = "stim"))
   expect_true(res$identifiable)
   expect_equal(res$rank, 3L)
 
-  res0 <- symmetryDetection(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
+  res0 <- symdet(eqnvec(x = "b - a*x"), eqnvec(y = "s*x"),
                             method = "observability", equilibrate = TRUE)
   expect_false(res0$identifiable)
   expect_equal(res0$rank, 1L)
@@ -507,11 +512,11 @@ test_that("the C++ steady-state seed reproduces the symbolic verdict", {
   dirset <- function(r) sort(vapply(r$symmetries,
     function(d) paste(sort(d$support), collapse = "+"), character(1)))
   agree <- function(...) {
-    cpp <- symmetryDetection(...)
+    cpp <- symdet(...)
     old <- options(dMod.symSeedCpp = FALSE)
     sd$setForceConstraintSeed(TRUE)
     on.exit({ options(old); sd$setForceConstraintSeed(FALSE) })
-    sym <- symmetryDetection(...)
+    sym <- symdet(...)
     expect_identical(cpp$rank, sym$rank)
     expect_identical(cpp$identifiable, sym$identifiable)
     expect_identical(dirset(cpp), dirset(sym))
@@ -549,7 +554,7 @@ test_that("the analytic-segment kernel agrees across thread counts", {
   grid <- data.frame(var_u = c(0, 1, 0, 1), dose = c(1, 1, 2, 2),
                      row.names = c("c1", "c2", "c3", "c4"))
   run <- function(cores)
-    symmetryDetection(f, g, method = "observability", events = ev,
+    symdet(f, g, method = "observability", events = ev,
                       conditions = grid, forcings = "u",
                       reconstruct = TRUE, reduceCQ = FALSE, cores = cores)
   serial <- run(1L)
@@ -575,7 +580,7 @@ test_that("the batched chain kernel matches the serial path (joint + gap)", {
     old <- Sys.getenv("DMOD_SYM_NOCHUNK")
     Sys.setenv(DMOD_SYM_NOCHUNK = if (nochunk) "1" else "")
     on.exit(Sys.setenv(DMOD_SYM_NOCHUNK = old))
-    symmetryDetection(f, g, method = "observability", equilibrate = TRUE,
+    symdet(f, g, method = "observability", equilibrate = TRUE,
                       events = ev, conditions = cg, forcings = "u",
                       reconstruct = TRUE, reduceCQ = FALSE)
   }
@@ -599,7 +604,7 @@ test_that("observability recovers the Michaelis-Menten enzyme symmetries", {
   # the readout scale s. Both are derived in the vignette; here we check the two
   # closed-form directions annihilate exactly the observable invariants
   # {s*S, s*Km, s*kcat*Etot}.
-  res <- symmetryDetection(eqnvec(S = "-kcat*Etot*S/(Km + S)"), eqnvec(y = "s*S"),
+  res <- symdet(eqnvec(S = "-kcat*Etot*S/(Km + S)"), eqnvec(y = "s*S"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -631,7 +636,7 @@ test_that("observability finds the transcription-translation rate curve", {
   # translation ktl trade on the nonlinear curve ktx*ktl = const (the hidden mRNA
   # scales along it), giving one structural non-identifiability whose closed-form
   # direction must annihilate the observable invariants {ktx*ktl, ktl*m}
-  res <- symmetryDetection(eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p"),
+  res <- symdet(eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p"),
                            eqnvec(y = "p"), method = "observability",
                            reconstruct = TRUE, reduceCQ = FALSE)
   expect_false(res$identifiable)
@@ -661,7 +666,7 @@ test_that("scaling directions are peeled exactly past the interpolation cap", {
   # them all exactly, in both closed-form and support mode.
   f <- eqnvec(x = "-k * x")
   g <- eqnvec(y = "s*a*b*c*d*e*x")
-  res <- symmetryDetection(f, g, method = "observability", reconstruct = TRUE,
+  res <- symdet(f, g, method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
   expect_false(res$identifiable)
   expect_equal(res$dim, 8L)
@@ -683,7 +688,7 @@ test_that("scaling directions are peeled exactly past the interpolation cap", {
                          function(d) abs(inv(d)) < 1e-9, logical(1))))
 
   # the default (support) mode reports the same scalings in closed form
-  sup <- symmetryDetection(f, g, method = "observability", reduceCQ = FALSE)
+  sup <- symdet(f, g, method = "observability", reduceCQ = FALSE)
   expect_true(all(vapply(sup$symmetries, function(d)
     isTRUE(d$type == "scaling") && !is.null(d$generator), logical(1))))
   expect_length(sup$symmetries, 6L)
@@ -699,7 +704,7 @@ test_that("peeled scalings and per-entry reconstruction combine on two moieties"
   eq <- eqnlist() |>
     addReaction("A1", "B1", "k1 * A1") |> addReaction("B1", "A1", "k2 * B1") |>
     addReaction("A2", "B2", "k3 * A2") |> addReaction("B2", "A2", "k4 * B2")
-  res <- symmetryDetection(eq, eqnvec(y1 = "s * A1", y2 = "s * A2"),
+  res <- symdet(eq, eqnvec(y1 = "s * A1", y2 = "s * A2"),
                            method = "observability", reconstruct = TRUE,
                            reduceCQ = FALSE)
   expect_equal(res$rank, 6L)
@@ -729,7 +734,7 @@ test_that("equilibrate supports a free Hill/power exponent", {
   ev <- addEvent(eventlist(), var = "u", time = -1, value = "1", method = "replace")
   cond <- data.frame(var = 1, row.names = "stim")
   # cooperative self-inhibition with a free Hill coefficient nhill, pre-equilibrated
-  r <- symmetryDetection(
+  r <- symdet(
     eqnvec(p = "kpr/(1+kinh*p^nhill) - dp*p + kin*u", u = "0"), eqnvec(y = "s*p"),
     method = "observability", equilibrate = TRUE, forcings = "u", events = ev,
     conditions = cond, reconstruct = FALSE, reduceCQ = FALSE)
@@ -740,7 +745,7 @@ test_that("equilibrate supports a free Hill/power exponent", {
   # root; the inverted recast solves E = x^q and keeps x, log(x) generic. The
   # symmetry is a parameter-weighted scaling recovered exactly over Q(q) by the
   # toric peel (no rational fit): weight 1 - q on dp, integers elsewhere.
-  r2 <- symmetryDetection(
+  r2 <- symdet(
     eqnvec(x = "kpr - dp*x^q + kin*u", u = "0"), eqnvec(y = "s*x"),
     method = "observability", equilibrate = TRUE, forcings = "u", events = ev,
     conditions = cond, reconstruct = TRUE, reduceCQ = FALSE)
@@ -763,7 +768,7 @@ test_that("equilibrate supports a free Hill/power exponent", {
   # (free initial value p, no steady state) is MORE identifiable than the equilibrated
   # one: the single symmetry is the parameter-weighted scaling p->L*p, kpr->L*kpr,
   # kinh->kinh*L^-nhill, s->s/L, recovered in closed form with kinh weighted by nhill.
-  r3 <- symmetryDetection(eqnvec(p = "kpr/(1+kinh*p^nhill) - dp*p"),
+  r3 <- symdet(eqnvec(p = "kpr/(1+kinh*p^nhill) - dp*p"),
                           eqnvec(y = "s*p"), method = "observability",
                           equilibrate = FALSE, reduceCQ = FALSE, reconstruct = TRUE)
   expect_equal(r3$dim, 6L)                            # p(0), kpr, kinh, dp, nhill, s
@@ -787,7 +792,7 @@ test_that("equilibrate reconstructs Hill directions in closed form via the recas
   # two switch values make the Hill self-inhibition non-identifiable; the recast
   # coordinates E = p^nhill, L = log(p) are sampled and back-substituted so the
   # directions, including the transcendental ones, are returned in closed form
-  r <- symmetryDetection(
+  r <- symdet(
     eqnvec(p = "kpr/(1+kinh*p^nhill) - dp*p + kin*u", u = "0"), eqnvec(y = "s*p"),
     method = "observability", equilibrate = TRUE, events = ev,
     conditions = cond, reconstruct = TRUE, reduceCQ = FALSE)
@@ -816,7 +821,7 @@ test_that("a parameter-base (Michaelis) Hill exponent is non-identifiable (dim 7
   # verdict: K (a Michaelis constant under the exponent) is a coordinate and is
   # non-identifiable, so dim is 7. A regression that drops K to a non-coordinate
   # (the pre-Michaelis-fix bug) gives dim 6 and misses the K non-identifiability.
-  r <- symmetryDetection(hill, obs, method = "observability",
+  r <- symdet(hill, obs, method = "observability",
                          equilibrate = TRUE, reduceCQ = FALSE)
   expect_false(r$identifiable)
   expect_equal(r$dim, 7L)
@@ -829,7 +834,7 @@ test_that("a parameter-base (Michaelis) Hill exponent is non-identifiable (dim 7
   # xi_n = 1, xi_K = (K/n) log((k_pr_FB/d_FB)/K).
   ss <- eqnvec(FB = "k_pr_FB/d_FB",
                x  = "k_pr_x*K^n/(d_x*(K^n + (k_pr_FB/d_FB)^n))")
-  sres <- symmetryDetection(hill, obs, method = "observability",
+  sres <- symdet(hill, obs, method = "observability",
                             symEngine = "symbolic", trafo = ss)
   nd <- Filter(function(d) "n" %in% d$support, sres$symmetries)
   expect_length(nd, 1L)
@@ -851,7 +856,7 @@ test_that("modular reconstruct recovers the parameter-base (Michaelis) Hill dire
     addReaction("FB", "0",  "d_FB * FB")                   |>
     addReaction("0",  "x",  "k_pr_x * K^n / (K^n + FB^n)") |>
     addReaction("x",  "0",  "d_x * x")
-  r <- symmetryDetection(hill, eqnvec(xobs = "scale * x"), method = "observability",
+  r <- symdet(hill, eqnvec(xobs = "scale * x"), method = "observability",
                          equilibrate = TRUE, reconstruct = TRUE, reduceCQ = FALSE)
   expect_true(all(vapply(r$symmetries,
                          function(d) isTRUE(d$explicit), logical(1))))
@@ -1130,7 +1135,7 @@ test_that("sparse reconstruction matches the dense path when forced", {
   # the sparse path by dropping the dense cap; it must reproduce the dense result
   # (both report the same canonical affine generator: dB = A + B, dk1 = k2)
   eq <- eqnlist() |> addReaction("A", "B", "k1 * A") |> addReaction("B", "A", "k2 * B")
-  res <- symmetryDetection(eq, eqnvec(Aobs = "alpha * A"), method = "observability",
+  res <- symdet(eq, eqnvec(Aobs = "alpha * A"), method = "observability",
                            reconstruct = TRUE, reduceCQ = FALSE,
                            control = reconstControl(relevanceCap = 0L))
   d <- Filter(function(x) all(c("B", "k1", "k2") %in% names(x$generator)) &&
@@ -1151,7 +1156,7 @@ test_that("multi-condition observability identifies a switch-gated rate", {
   ev <- addEvent(eventlist(), var = "u", time = -1, value = "var_u", method = "replace")
   cg <- data.frame(var_u = c(0, 1), row.names = c("ctrl", "stim"))
 
-  multi <- symmetryDetection(f, g, method = "observability",
+  multi <- symdet(f, g, method = "observability",
                              events = ev, conditions = cg, reduceCQ = FALSE)
   expect_true(multi$identifiable)
   expect_equal(multi$info$conditions, 2L)
@@ -1171,7 +1176,7 @@ test_that("multi-condition observability spans a union parameter space", {
   cg <- data.frame(k = c("k", "k_knd"), row.names = c("ctrl", "knd"),
                    stringsAsFactors = FALSE)
 
-  res <- symmetryDetection(f, g, method = "observability", conditions = cg,
+  res <- symdet(f, g, method = "observability", conditions = cg,
                            reduceCQ = FALSE)
   expect_equal(res$dim, 3L)
   expect_true(res$identifiable)
@@ -1188,12 +1193,139 @@ test_that("multi-condition observability keeps a confounder common to all condit
   ev <- addEvent(eventlist(), var = "u", time = -1, value = "var_u", method = "replace")
   cg <- data.frame(var_u = c(0, 1), row.names = c("a", "b"))
 
-  res <- symmetryDetection(f, g, method = "observability", events = ev,
+  res <- symdet(f, g, method = "observability", events = ev,
                            conditions = cg, reduceCQ = FALSE)
   expect_false(res$identifiable)
   supp <- unlist(lapply(res$symmetries, function(d) d$support))
   expect_true(all(c("A", "s") %in% supp))
   expect_false("u" %in% supp)
+})
+
+
+test_that("a gap dose is resolved in its OWN condition, not the last one", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # The tape compiler used to re-substitute every condition's event values through
+  # whichever substitution map the condition loop happened to leave behind -- always
+  # the LAST condition's. It only showed when a resolved value still contained a
+  # symbol that the last condition renames, i.e. when a grid column is named after
+  # the symbol in its own first cell. The two runs below are the same model and
+  # differ only in that column's NAME, so they must reach the same verdict.
+  f  <- eqnvec(A = "-k*A")
+  ev <- addEvent(eventlist(), var = "A", time = 0, value = "0", method = "replace")
+
+  run <- function(colname) {
+    e <- addEvent(ev, var = "A", time = 1, value = colname, method = "add")
+    cg <- data.frame(c("d", "d2"), row.names = c("c1", "c2"),
+                     stringsAsFactors = FALSE)
+    names(cg) <- colname
+    symdet(f, eqnvec(y = "A"), method = "observability",
+                      events = e, conditions = cg, reduceCQ = FALSE)
+  }
+  neutral <- run("dose")   # column name distinct from every cell symbol
+  colliding <- run("d")    # column name equal to the first cell's own symbol
+
+  expect_equal(colliding$dim, neutral$dim)
+  expect_equal(colliding$rank, neutral$rank)
+  expect_equal(colliding$identifiable, neutral$identifiable)
+  # both conditions are dosed with their own value, so k and both doses are seen
+  expect_true(neutral$identifiable)
+  expect_equal(neutral$dim, 3L)
+})
+
+
+test_that("a per-condition `g` list keeps observables in their own conditions", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # B decays with a condition-specific rate and its readout exists only in the
+  # second condition (an assay run in its own experiment). A single `g` is applied
+  # to every condition, so it credits the first condition with a B measurement it
+  # never made and identifies q1 -- the optimistic, unsafe verdict. The list form
+  # measures each observable where it was measured and reports q1 as free.
+  f  <- eqnvec(A = "-k*A", B = "-q*B")
+  cg <- data.frame(q = c("q1", "q2"), row.names = c("elisa", "wb"),
+                   stringsAsFactors = FALSE)
+
+  pooled <- symdet(f, eqnvec(yA = "A", yB = "B"),
+                              method = "observability", conditions = cg,
+                              reduceCQ = FALSE)
+  expect_true(pooled$identifiable)
+  expect_equal(length(pooled$symmetries), 0L)
+
+  split <- symdet(f, list(eqnvec(yA = "A"), eqnvec(yB = "B")),
+                             method = "observability", conditions = cg,
+                             reduceCQ = FALSE)
+  expect_false(split$identifiable)
+  expect_equal(split$info$conditions, 2L)
+  expect_equal(split$dim, pooled$dim)        # the same coordinate space ...
+  expect_lt(split$rank, pooled$rank)         # ... seen by strictly fewer rows
+  expect_equal(length(split$symmetries), 1L)
+  expect_equal(split$symmetries[[1]]$support, "q1")
+
+  # the pure-symbolic cross-check engine reaches the same verdict
+  sym <- symdet(f, list(eqnvec(yA = "A"), eqnvec(yB = "B")),
+                           method = "observability", conditions = cg,
+                           reduceCQ = FALSE, symEngine = "symbolic")
+  expect_false(sym$identifiable)
+  expect_equal(sym$rank, split$rank)
+  expect_equal(sym$symmetries[[1]]$support, "q1")
+})
+
+
+test_that("a per-condition `g` list needs no grid and is length-checked", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # with neither a grid nor a trafo list, the `g` list alone sets the conditions:
+  # two decoupled decays, each read out in its own experiment
+  f <- eqnvec(A = "-k1*A", B = "-k2*B")
+  res <- symdet(f, list(eqnvec(yA = "sA*A"), eqnvec(yB = "sB*B")),
+                           method = "observability", reduceCQ = FALSE)
+  expect_equal(res$info$conditions, 2L)
+  expect_equal(length(res$symmetries), 2L)
+  supp <- lapply(res$symmetries, function(d) sort(d$support))
+  expect_setequal(supp, list(c("A", "sA"), c("B", "sB")))
+
+  cg <- data.frame(q = c("q1", "q2"), row.names = c("c1", "c2"),
+                   stringsAsFactors = FALSE)
+  expect_error(symdet(f, list(eqnvec(yA = "A")), method = "observability",
+                                 conditions = cg),
+               "must match the condition grid rows")
+  expect_error(symdet(f, list(eqnvec(yA = "A"), eqnvec(yB = "B")),
+                                 method = "observability",
+                                 trafo = list(eqnvec(k1 = "k1"), eqnvec(k1 = "1"),
+                                              eqnvec(k1 = "2"))),
+               "must match the per-condition `trafo` list length")
+  expect_error(symdet(f, list(eqnvec(yA = "A"), eqnvec(yB = "B")),
+                                 method = "polynomial"),
+               "has no conditions")
+})
+
+
+test_that("scaling intersects the lattices of the conditions that measured them", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # the second condition is absolutely calibrated (s -> 1) but only reads out B;
+  # the first reads out A on the free scale s. Pooling gives the calibrated run an
+  # A measurement, which pins the A scale and hides the calibration scaling.
+  f  <- eqnvec(A = "-k*A", B = "-k*B")
+  cg <- data.frame(s = c("s", "1"), row.names = c("relative", "calibrated"),
+                   stringsAsFactors = FALSE)
+
+  pooled <- symdet(f, eqnvec(yA = "s*A", yB = "s*B"), method = "scaling",
+                              conditions = cg, reduceCQ = FALSE)
+  expect_equal(length(pooled$symmetries), 0L)
+
+  split <- symdet(f, list(eqnvec(yA = "s*A"), eqnvec(yB = "s*B")),
+                             method = "scaling", conditions = cg, reduceCQ = FALSE)
+  expect_equal(length(split$symmetries), 1L)
+  expect_equal(split$symmetries[[1]]$support, c("A", "s"))
+
+  # observability sees the same scaling on the same input
+  obs <- symdet(f, list(eqnvec(yA = "s*A"), eqnvec(yB = "s*B")),
+                           method = "observability", conditions = cg,
+                           reduceCQ = FALSE)
+  expect_equal(length(obs$symmetries), 1L)
+  expect_equal(obs$symmetries[[1]]$support, c("A", "s"))
 })
 
 
@@ -1213,7 +1345,7 @@ test_that("a post-t0 event opens a second segment, propagated exactly", {
     addEvent(var = "A", time = 1, value = "d1", method = "add")
   cg <- data.frame(d0 = 1, d1 = 1, row.names = "c1")
 
-  r <- symmetryDetection(f, g, method = "observability", events = ev,
+  r <- symdet(f, g, method = "observability", events = ev,
                          conditions = cg, reconstruct = TRUE)
   expect_equal(r$info$conditions, 1L)
   expect_equal(r$info$segments, 2L)
@@ -1232,7 +1364,7 @@ test_that("with no post-t0 events the analysis collapses to a single segment", {
   ev <- addEvent(eventlist(), var = "A", time = 0, value = "d0", method = "add")
   cg <- data.frame(d0 = 1, row.names = "c1")
 
-  r <- symmetryDetection(f, g, method = "observability", events = ev,
+  r <- symdet(f, g, method = "observability", events = ev,
                          conditions = cg)
   expect_equal(r$info$segments, 1L)
   expect_equal(r$dim, 3L)             # A(0), s, k
@@ -1255,7 +1387,7 @@ test_that("exact propagation identifies a transient-channel parameter", {
     addEvent(var = "stim", time = 0,   value = "1", method = "replace")
   cg <- data.frame(row.names = "c1")
 
-  r30 <- symmetryDetection(f, g, method = "observability", equilibrate = TRUE,
+  r30 <- symdet(f, g, method = "observability", equilibrate = TRUE,
                            events = ev, conditions = cg,
                            forcings = c("inh", "stim"))
   supp30 <- unlist(lapply(r30$symmetries, function(d) d$support))
@@ -1278,7 +1410,7 @@ test_that("equilibrate seeds the first segment and propagates to a later one", {
     addEvent(var = "x", time = 1, value = "d1",   method = "add")
   cg <- data.frame(dose = 2, d1 = 1, row.names = "stim")
 
-  r <- symmetryDetection(f, g, method = "observability", equilibrate = TRUE,
+  r <- symdet(f, g, method = "observability", equilibrate = TRUE,
                          events = ev, conditions = cg)
   expect_equal(r$info$conditions, 1L)
   expect_equal(r$info$segments, 2L)
@@ -1299,7 +1431,7 @@ test_that("a free-Hill-exponent feedback closes as a weighted scaling", {
   f <- eqnvec(R  = "k_pr/(1 + k_fb*FB^nh) - k_dg*R + k_stim*u",
               FB = "k_pf*R - k_df*FB", u = "0")
   g <- eqnvec(R_obs = "s*R")
-  r <- symmetryDetection(f, g, method = "observability", equilibrate = TRUE,
+  r <- symdet(f, g, method = "observability", equilibrate = TRUE,
                          forcings = "u",
                          events = addEvent(eventlist(), var = "u", time = 0,
                                            value = "dose", method = "replace"),
@@ -1333,7 +1465,7 @@ test_that("implicit steady state finds non-scaling multi-condition directions", 
   g <- eqnvec(y = "s*(x1 + x2)")
   grid <- data.frame(k = c("k1", "k2"), row.names = c("c1", "c2"),
                      stringsAsFactors = FALSE)
-  r <- symmetryDetection(f, g, method = "observability", equilibrate = TRUE,
+  r <- symdet(f, g, method = "observability", equilibrate = TRUE,
                          conditions = grid, reduceCQ = FALSE, reconstruct = FALSE)
   expect_false(r$identifiable)
   expect_equal(r$dim, 6L)
@@ -1346,19 +1478,19 @@ test_that("a per-condition trafo list matches the equivalent condition grid", {
 
   f <- eqnvec(A = "-p*A"); g <- eqnvec(y = "s*A")
   # a symbol-rename per condition, once as a grid and once as a trafo list
-  r_grid <- symmetryDetection(f, g, method = "observability",
+  r_grid <- symdet(f, g, method = "observability",
     conditions = data.frame(p = c("pa", "pb"), row.names = c("c1", "c2")),
     reduceCQ = FALSE)
-  r_traf <- symmetryDetection(f, g, method = "observability",
+  r_traf <- symdet(f, g, method = "observability",
     trafo = list(c1 = eqnvec(p = "pa"), c2 = eqnvec(p = "pb")), reduceCQ = FALSE)
   expect_equal(r_traf$info$conditions, 2L)          # the list alone sets the conditions
   expect_equal(r_traf$rank, r_grid$rank)
   expect_equal(r_traf$dim, r_grid$dim)
 
   # a numeric bake per condition matches a numeric grid cell
-  r_bake  <- symmetryDetection(f, g, method = "observability",
+  r_bake  <- symdet(f, g, method = "observability",
     trafo = list(eqnvec(p = "1/2"), eqnvec(p = "3/2")), reduceCQ = FALSE)
-  r_bgrid <- symmetryDetection(f, g, method = "observability",
+  r_bgrid <- symdet(f, g, method = "observability",
     conditions = data.frame(p = c(0.5, 1.5), row.names = c("c1", "c2")),
     reduceCQ = FALSE)
   expect_equal(r_bake$rank, r_bgrid$rank)
@@ -1377,9 +1509,9 @@ test_that("trafo = steadyStates() matches equilibrate (explicit vs implicit rout
   ss <- steadyStates(eq, testSteady = "fast")
   skip_if_not(is.character(ss) && identical(unname(ss[["x"]]), "b/a"))
 
-  r_trafo <- symmetryDetection(eq, g, method = "observability", trafo = ss,
+  r_trafo <- symdet(eq, g, method = "observability", trafo = ss,
                                reconstruct = TRUE, reduceCQ = FALSE)
-  r_equil <- symmetryDetection(eq, g, method = "observability", equilibrate = TRUE,
+  r_equil <- symdet(eq, g, method = "observability", equilibrate = TRUE,
                                reconstruct = TRUE, reduceCQ = FALSE)
   expect_equal(r_trafo$rank, r_equil$rank)
   expect_equal(r_trafo$dim, r_equil$dim)
@@ -1394,22 +1526,22 @@ test_that("scaling uses events (fixed weight) and conditions (lattice intersecti
   eq <- .canonical(); g <- eqnvec(Aobs = "alpha * A")
 
   # baseline: the calibration scaling A, B, alpha
-  base <- symmetryDetection(eq, g, method = "scaling", reduceCQ = FALSE)
+  base <- symdet(eq, g, method = "scaling", reduceCQ = FALSE)
   expect_equal(length(base$symmetries), 1L)
 
   # a known dose pins A's absolute value, so it can no longer scale (weight 0)
   dose <- addEvent(eventlist(), var = "A", time = 0, value = "2", method = "replace")
-  pinned <- symmetryDetection(eq, g, method = "scaling", events = dose, reduceCQ = FALSE)
+  pinned <- symdet(eq, g, method = "scaling", events = dose, reduceCQ = FALSE)
   expect_equal(length(pinned$symmetries), 0L)
 
   # multi-condition via a trafo list: a second condition that fixes alpha drops the
   # shared scaling (the intersection of the per-condition lattices)
-  drop <- symmetryDetection(eq, g, method = "scaling", reduceCQ = FALSE,
+  drop <- symdet(eq, g, method = "scaling", reduceCQ = FALSE,
                             trafo = list(c1 = eqnvec(k1 = "k1"), c2 = eqnvec(alpha = "1")))
   expect_equal(length(drop$symmetries), 0L)
 
   # multi-condition where both conditions keep it: the scaling survives
-  keep <- symmetryDetection(eq, g, method = "scaling", reduceCQ = FALSE,
+  keep <- symdet(eq, g, method = "scaling", reduceCQ = FALSE,
                             conditions = data.frame(k1 = c("ka", "kb"),
                                                     row.names = c("c1", "c2")))
   expect_equal(length(keep$symmetries), 1L)
@@ -1424,7 +1556,7 @@ test_that("the toric peel recovers a parameter-weighted (Hill) scaling over Q(nh
   # as a scaling with weight -nhill on k_inh -- no rational fit, no sampling.
   ev <- addEvent(eventlist(), var = "u", time = -1, value = "var_u", method = "replace")
   cond <- data.frame(var_u = c(0, 1), row.names = c("ctrl", "stim"))
-  r <- symmetryDetection(
+  r <- symdet(
     eqnvec(p = "kpr/(1 + kinh*p^nhill) - dp*p + kin*u", u = "0"), eqnvec(y = "s*p"),
     method = "observability", equilibrate = TRUE, events = ev, conditions = cond,
     reconstruct = TRUE, reduceCQ = FALSE)
@@ -1445,9 +1577,9 @@ test_that("both observability engines report the same canonical generator", {
   # ("disguised") direction. The classifier canonicalises both to the same scaling
   # generator, so the two engines must now agree exactly.
   gene <- eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p")
-  mod <- symmetryDetection(gene, eqnvec(y = "p"), method = "observability",
+  mod <- symdet(gene, eqnvec(y = "p"), method = "observability",
                            reconstruct = TRUE)
-  sym <- symmetryDetection(gene, eqnvec(y = "p"), method = "observability",
+  sym <- symdet(gene, eqnvec(y = "p"), method = "observability",
                            symEngine = "symbolic")
   expect_length(mod$symmetries, 1L)
   expect_length(sym$symmetries, 1L)
@@ -1467,7 +1599,7 @@ test_that("a pure constant shift is classified as a translation", {
   # a conserved moiety A + B with only the total observed: shifting A up and B
   # down leaves the total unchanged -- a pure (constant) translation
   moi <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")
-  r <- symmetryDetection(moi, eqnvec(y = "A + B"), method = "observability",
+  r <- symdet(moi, eqnvec(y = "A + B"), method = "observability",
                          reconstruct = TRUE, reduceCQ = FALSE)
   ab <- Filter(function(d) all(c("A", "B") %in% names(d$generator)), r$symmetries)
   expect_gte(length(ab), 1L)
@@ -1483,7 +1615,7 @@ test_that("certifyPoly flags a direction that is a polynomial Lie symmetry", {
   # harmonic oscillator with only the conserved energy observed: the rotation of
   # the initial state is a genuine (affine) Lie point symmetry -> certified
   rot <- eqnvec(x1 = "-x2", x2 = "x1")
-  r <- symmetryDetection(rot, eqnvec(y = "x1^2 + x2^2"), method = "observability",
+  r <- symdet(rot, eqnvec(y = "x1^2 + x2^2"), method = "observability",
                          reconstruct = TRUE, reduceCQ = FALSE,
                          control = reconstControl(certifyPoly = TRUE))
   aff <- Filter(function(d) d$type == "affine", r$symmetries)
@@ -1491,7 +1623,7 @@ test_that("certifyPoly flags a direction that is a polynomial Lie symmetry", {
   expect_true(isTRUE(aff[[1]]$certified))
 
   # default (certifyPoly = FALSE) attaches no certificate
-  r0 <- symmetryDetection(rot, eqnvec(y = "x1^2 + x2^2"), method = "observability",
+  r0 <- symdet(rot, eqnvec(y = "x1^2 + x2^2"), method = "observability",
                           reconstruct = TRUE, reduceCQ = FALSE)
   aff0 <- Filter(function(d) d$type == "affine", r0$symmetries)
   expect_true(length(aff0) >= 1L && !isTRUE(aff0[[1]]$certified))
@@ -1506,9 +1638,9 @@ test_that("the symbolic engine handles multiple conditions and single-time event
   f  <- eqnvec(A = "-(k1 + u*k2)*A", u = "0")
   ev <- addEvent(eventlist(), var = "u", time = -1, value = "var_u", method = "replace")
   cg <- data.frame(var_u = c(0, 1), row.names = c("ctrl", "stim"))
-  mod <- symmetryDetection(f, eqnvec(y = "A"), method = "observability",
+  mod <- symdet(f, eqnvec(y = "A"), method = "observability",
                            events = ev, conditions = cg, reduceCQ = FALSE)
-  sym <- symmetryDetection(f, eqnvec(y = "A"), method = "observability",
+  sym <- symdet(f, eqnvec(y = "A"), method = "observability",
                            events = ev, conditions = cg, reduceCQ = FALSE,
                            symEngine = "symbolic")
   expect_equal(sym$rank, mod$rank)
@@ -1519,7 +1651,7 @@ test_that("the symbolic engine handles multiple conditions and single-time event
                           function(d) "u" %in% d$support, logical(1))))
 
   # a single switch value cannot separate k1 and k2 -> non-identifiable
-  s1 <- symmetryDetection(f, eqnvec(y = "A"), method = "observability",
+  s1 <- symdet(f, eqnvec(y = "A"), method = "observability",
                           events = ev, conditions = data.frame(var_u = 1, row.names = "stim"),
                           reduceCQ = FALSE, symEngine = "symbolic")
   expect_false(s1$identifiable)
@@ -1527,7 +1659,7 @@ test_that("the symbolic engine handles multiple conditions and single-time event
   # a condition-specific rate rename spans the union parameter space (k, k_knd, A)
   cgk <- data.frame(k = c("k", "k_knd"), row.names = c("ctrl", "knd"),
                     stringsAsFactors = FALSE)
-  uk <- symmetryDetection(eqnvec(A = "-k*A"), eqnvec(y = "A"),
+  uk <- symdet(eqnvec(A = "-k*A"), eqnvec(y = "A"),
                           method = "observability", conditions = cgk,
                           reduceCQ = FALSE, symEngine = "symbolic")
   expect_equal(uk$dim, 3L)
@@ -1540,7 +1672,7 @@ test_that("the symbolic engine rejects equilibrate and later-event gaps", {
 
   gene <- eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p")
   # equilibrate is a modular feature; symbolic wants an explicit steady state via trafo
-  expect_error(symmetryDetection(gene, eqnvec(y = "p"), method = "observability",
+  expect_error(symdet(gene, eqnvec(y = "p"), method = "observability",
                                  equilibrate = TRUE, symEngine = "symbolic"),
                "equilibrate")
   # later events (gaps) need the modular kernel
@@ -1548,7 +1680,7 @@ test_that("the symbolic engine rejects equilibrate and later-event gaps", {
     addEvent(var = "u", time = -1, value = "var_u", method = "replace") |>
     addEvent(var = "A", time = 0, value = "dose", method = "add")
   cg2 <- data.frame(var_u = c(0, 1), dose = c(1, 1), row.names = c("c1", "c2"))
-  expect_error(symmetryDetection(eqnvec(A = "-(k1 + u*k2)*A", u = "0"), eqnvec(y = "A"),
+  expect_error(symdet(eqnvec(A = "-(k1 + u*k2)*A", u = "0"), eqnvec(y = "A"),
                                  method = "observability", events = ev2, conditions = cg2,
                                  forcings = "u", reduceCQ = FALSE, symEngine = "symbolic"),
                "single-segment")
