@@ -19,6 +19,7 @@ steadyStates(
   solveQuadratic = FALSE,
   positive = TRUE,
   branches = FALSE,
+  priority = NULL,
   version = "1.2"
 )
 }
@@ -36,7 +37,9 @@ format c("A + pA = totA", "B + pB = totB"). The format c("A + pA", "B +
 pB") works also. If NULL, conserved quantities are automatically calculated.}
 
 \item{neglect}{Character vector with names of states and parameters that must
-not be used for solving the steady-state equations}
+not be used for solving the steady-state equations. A neglected state stays
+a free parameter of the transformation; a neglected rate parameter is never
+used as a pivot.}
 
 \item{sparsifyLevel}{Numeric. Upper bound for length of linear combinations
 used to simplify the stoichiometric matrix. Used by versions \code{"1.0"}
@@ -81,6 +84,13 @@ quadratic admitting two positive roots (bistability) is emitted with a
 selector symbol \verb{branch_<state>} taking \code{-1} or \code{+1} to recover the two
 steady states. \code{FALSE} (default) emits only the provably-unique positive
 root and pivots ambiguous cases. Version "1.2" only.}
+
+\item{priority}{Character vector of state and/or rate-parameter names,
+most-preferred first, biasing the order in which the solver resolves the
+system. A named state is resolved earlier; a named rate parameter is
+preferred as pivot, i.e. expressed in terms of the others. Structural
+constraints still win, so the order is a preference, not a guarantee.
+Unmatched names are reported and ignored. Version \code{"1.2"} only.}
 
 \item{version}{Character, AlyssaPetit backend version. One of
 \code{"1.0"} (original), \code{"1.1"} (adds \code{testSteady}), or

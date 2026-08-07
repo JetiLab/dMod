@@ -5,10 +5,12 @@
 // the historical R `trust()` (R/trust.R). The algorithm parametrises the
 // Lagrange multiplier as `beep = sigma + lam_min`, so the smallest shifted
 // eigenvalue `beta_j = vals_j - lam_min` is always non-negative and the
-// degenerate index set is exactly `{j : beta_j == 0}` rather than a
-// tolerance bucket. Branch selection then follows R's classical Moré-Sorensen
-// formulation:
-//   Newton              all(vals > 0) and ||H^{-1} g|| <= r
+// degenerate index set is `{j : beta_j <= eig_tol}`, eig_tol being the noise
+// floor of the eigen decomposition. `q` is zeroed on that set below the same
+// floor, so `C2 == 0` means "g orthogonal to the min-eigenspace" as decided in
+// double precision rather than as the LAPACK build happened to round it.
+// Branch selection then follows R's classical Moré-Sorensen formulation:
+//   Newton              all(vals > eig_tol) and ||H^{-1} g|| <= r
 //   easy (incl hard-easy)   C2 > 0  OR  C1 > r^2     (sigma found via root)
 //   hard-hard           C2 == 0 AND C1 <= r^2        (step lands on the
 //                                                     min-eigenspace boundary)
@@ -96,10 +98,23 @@ inline void trust_sub(int K, const double* g,
   F77_CALL(dgemv)("T", &K, &K, &d_one, vecs, &K,
                   g, &i_one, &d_zero, q.data(), &i_one FCONE);
 
-  // Newton: take if all eigenvalues positive AND ||H^{-1} g|| <= r.
+  // Noise floor of the eigen decomposition. Eigenvalues that agree to within it
+  // are the same eigenvalue, and one that sits inside it is a zero of
+  // unresolvable sign -- both differ between LAPACK builds, which is what made
+  // the branch selection below platform-dependent.
+  double lam_absmax = 0.0;
+  for (int j = 0; j < K; ++j)
+    if (std::fabs(vals[j]) > lam_absmax) lam_absmax = std::fabs(vals[j]);
+  const double eig_tol =
+    8.0 * K * std::numeric_limits<double>::epsilon() * lam_absmax;
+
+  // Newton: take if H is positive definite in double precision AND
+  // ||H^{-1} g|| <= r. A singular H whose zero eigenvalue happens to come back
+  // just above zero would otherwise pass, and q_j / vals_j then amplifies the
+  // roundoff in q_j into a full-size step along the null direction.
   bool all_pos = true;
   for (int j = 0; j < K; ++j) {
-    if (!(vals[j] > 0.0)) { all_pos = false; break; }
+    if (!(vals[j] > eig_tol)) { all_pos = false; break; }
   }
   if (all_pos) {
     std::vector<double> y(K);
@@ -123,31 +138,37 @@ inline void trust_sub(int K, const double* g,
   double lam_min = vals[0];
   for (int j = 1; j < K; ++j) if (vals[j] < lam_min) lam_min = vals[j];
 
-  // Threshold below which lam_min counts as negative. A singular H returns a smallest
-  // eigenvalue of +/-O(eps * ||H||) whose sign depends on the LAPACK build; testing
-  // lam_min < 0 exactly made the hard-hard extension below platform-dependent.
-  double lam_absmax = 0.0;
-  for (int j = 0; j < K; ++j)
-    if (std::fabs(vals[j]) > lam_absmax) lam_absmax = std::fabs(vals[j]);
-  const double neg_tol =
-    8.0 * K * std::numeric_limits<double>::epsilon() * lam_absmax;
-
+  // The min-eigenspace is a cluster, not one index: a repeated smallest
+  // eigenvalue comes back split by O(eps * ||H||), and dividing q_j by that
+  // split would turn roundoff into a large C1 term.
   std::vector<double> beta(K);
   std::vector<unsigned char> imin(K);
   for (int j = 0; j < K; ++j) {
     beta[j] = vals[j] - lam_min;
-    imin[j] = (beta[j] == 0.0) ? 1u : 0u;
+    imin[j] = (beta[j] <= eig_tol) ? 1u : 0u;
+    if (imin[j]) beta[j] = 0.0;
   }
+
+  // C3: ||q||^2 = ||g||^2 (orthonormal eigenbasis)
+  double C3 = 0.0;
+  for (int j = 0; j < K; ++j) C3 += q[j] * q[j];
+
+  // A gradient orthogonal to the min-eigenspace still projects onto it as
+  // O(eps * ||g||), because the eigenvector carrying it is only that accurate.
+  // Left in, the residue makes C2 > 0, routes the hard case through the easy
+  // branch, and the root it then chases is of the size of the residue itself --
+  // an arbitrary step along the null direction.
+  const double q_tol =
+    8.0 * K * std::numeric_limits<double>::epsilon() * std::sqrt(C3);
+  for (int j = 0; j < K; ++j)
+    if (imin[j] && std::fabs(q[j]) <= q_tol) q[j] = 0.0;
 
   // C1: contribution from non-degenerate eigenvectors at beep -> 0
   // C2: gradient mass in the min-eigenspace
-  // C3: ||q||^2 = ||g||^2 (orthonormal eigenbasis)
-  double C1 = 0.0, C2 = 0.0, C3 = 0.0;
+  double C1 = 0.0, C2 = 0.0;
   for (int j = 0; j < K; ++j) {
-    double qj2 = q[j] * q[j];
-    C3 += qj2;
     if (imin[j]) {
-      C2 += qj2;
+      C2 += q[j] * q[j];
     } else {
       double t = q[j] / beta[j];
       C1 += t * t;
@@ -199,7 +220,9 @@ inline void trust_sub(int K, const double* g,
         if (!(mid > a && mid < b)) { a = mid; b = mid; break; }
         double fm = fred(mid);
         if (fm > 0.0) b = mid; else a = mid;
-        if ((b - a) <= 1e-14 * (std::fabs(b) + std::fabs(a) + 1.0)) break;
+        // Relative: the root can sit orders of magnitude below beta_up, and an
+        // absolute floor would stop the bisection far short of it.
+        if ((b - a) <= 1e-14 * std::fabs(b)) break;
       }
       root = 0.5 * (a + b);
     }
@@ -232,10 +255,10 @@ inline void trust_sub(int K, const double* g,
                   w.data(), &i_one, &d_zero, p_out, &i_one FCONE);
 
   // Extending along the min-eigendirection only pays against negative
-  // curvature. For lam_min >= -neg_tol that direction carries no model information
+  // curvature. For lam_min >= -eig_tol that direction carries no model information
   // (q_jmin == 0 by C2 == 0), so the minimum-norm step is the answer.
   double utry = 0.0;
-  if (lam_min < -neg_tol) {
+  if (lam_min < -eig_tol) {
     double pn2 = 0.0;
     for (int i = 0; i < K; ++i) pn2 += p_out[i] * p_out[i];
     utry = std::sqrt(std::max(0.0, r * r - pn2));

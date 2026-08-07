@@ -180,9 +180,13 @@ evalConditionResidual <- function(dataI, predictionI, pars,
 #'   data. Event times should be included here if the prediction model uses events.
 #' @param attr.name Character string. The objective value is additionally returned
 #'   as an attribute with this name.
-#' @param use.bessel Logical. If TRUE and an error model is provided, applies a
-#'   global Bessel correction to variance estimates to account for finite-sample
-#'   bias. Defaults to TRUE if an error model is supplied, FALSE otherwise.
+#' @param use.bessel Logical or numeric. `TRUE` (default with an error model)
+#'   computes the Bessel correction from this call's data, `FALSE` disables it,
+#'   a positive number is used as the factor itself. No-op without `errmodel`.
+#'   See Details.
+#' @param n.total Optional data-point count to compute the correction from
+#'   instead of this objective's own rows. Ignored with a warning unless
+#'   `use.bessel = TRUE` and an `errmodel` is given.
 #' @param cores Integer. Number of OpenMP threads the C++ residual kernel uses
 #'   to evaluate conditions in parallel. Must be >= 1. Captured once when the
 #'   objective function is created. Default 1.
@@ -196,15 +200,25 @@ evalConditionResidual <- function(dataI, predictionI, pars,
 #' \code{obj(pars, fixed, deriv, env)} returning an [objlist].
 #'
 #' @details
-#' Combine objectives with `+` (see [sumobjfn]). The Bessel correction
-#' \eqn{\sqrt{n/(n-p)}} is applied globally (\eqn{n} = total data points,
-#' \eqn{p} = structural parameters). When `cores > 1`, conditions are
-#' evaluated in parallel; the core count is fixed at construction.
+#' Combine objectives with `+` (see [sumobjfn]). When `cores > 1`, conditions
+#' are evaluated in parallel; the core count is fixed at construction.
+#'
+#' The Bessel correction inflates the weighted residuals by
+#' \eqn{\sqrt{n/(n - p + p_\sigma)}}: \eqn{n} data points of *this* call,
+#' \eqn{p} parameters of `x` and `errmodel` together, \eqn{p_\sigma} error-model
+#' parameters. It is a property of the whole fit but is computed per objective,
+#' so a split `normL2(d1, ...) + normL2(d2, ...)` weighs each partial \eqn{n}
+#' against the full \eqn{p} and both terms get a wrong factor. Give every term
+#' `n.total = <total data points>`, or the same precomputed `use.bessel` factor.
+#'
+#' A non-positive \eqn{n - p + p_\sigma} (typical for a split term) leaves the
+#' factor undefined; `normL2` warns and uses 1 instead of propagating `NaN`.
 #'
 #' @example inst/examples/normL2.R
 #' @export
 normL2 <- function(data, x, errmodel = NULL, times = NULL,
                    attr.name = "data", use.bessel = !is.null(errmodel),
+                   n.total = NULL,
                    cores = 1L,
                    opt.BLOQ = c("M3", "M1", "M4NM", "M4BEAL")) {
 
@@ -221,13 +235,41 @@ normL2 <- function(data, x, errmodel = NULL, times = NULL,
   conditions <- intersect(x.cond, d.cond)
 
   # Precompute Bessel correction
+  if (!(is.logical(use.bessel) || is.numeric(use.bessel)) ||
+      length(use.bessel) != 1L || is.na(use.bessel) ||
+      (is.numeric(use.bessel) && (!is.finite(use.bessel) || use.bessel <= 0)))
+    stop("normL2: `use.bessel` must be TRUE, FALSE or a single positive number.",
+         call. = FALSE)
+  if (!is.null(n.total) &&
+      (!is.numeric(n.total) || length(n.total) != 1L ||
+       !is.finite(n.total) || n.total < 1))
+    stop("normL2: `n.total` must be a single positive number of data points.",
+         call. = FALSE)
+  if (!is.null(n.total) && !(isTRUE(use.bessel) && !is.null(errmodel)))
+    warning("normL2: `n.total` has no effect unless `use.bessel = TRUE` and an ",
+            "`errmodel` is given.", call. = FALSE)
+
   bessel <- 1
-  if (use.bessel && !is.null(errmodel)) {
-    n <- sum(vapply(data, nrow, 0L))
+  if (is.numeric(use.bessel)) {
+    bessel <- as.numeric(use.bessel)
+  } else if (use.bessel && !is.null(errmodel)) {
+    # n.total: pooled n, matching the full parameter count a split term sees.
+    n <- if (is.null(n.total)) sum(vapply(data, nrow, 0L)) else as.numeric(n.total)
     p.all <- union(getParameters(x), getParameters(errmodel))
     p.err <- setdiff(getSymbols(unlist(getEquations(errmodel))),
                      names(unlist(getEquations(errmodel))))
-    bessel <- sqrt(n / (n - length(p.all) + length(p.err)))
+    dof <- n - length(p.all) + length(p.err)
+    if (dof <= 0) {
+      warning("normL2: Bessel correction switched off, its degrees of freedom are ",
+              "not positive: n - p + p.sigma = ", n, " - ", length(p.all), " + ",
+              length(p.err), " = ", dof, ". Continuing with a factor of 1. If this ",
+              "objective carries only part of the data, pass ",
+              "n.total = <total number of data points> so that every term shares ",
+              "the factor of the pooled fit; pass use.bessel = FALSE to switch the ",
+              "correction off deliberately.", call. = FALSE)
+    } else {
+      bessel <- sqrt(n / dof)
+    }
   }
 
   # Force early binding

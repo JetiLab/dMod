@@ -77,7 +77,9 @@
 #'   `DMOD_SYM_VERIFY_MARGIN` (default 6) sets how far past the reported order it looks.
 #' @param cores Number of threads for `"observability"`, split across the parallel
 #'   steady-state solves and the observability kernel so they do not oversubscribe.
-#'   `"polynomial"` and `"scaling"` are serial and ignore it.
+#'   The solves -- the dominant cost of `equilibrate = TRUE` -- are filled in parallel
+#'   on every platform: `mclapply` forks on unix, a worker pool of Python interpreters
+#'   is used elsewhere. `"polynomial"` and `"scaling"` are serial and ignore it.
 #' @param control A [reconstControl()] list tuning the `"observability"` engine's
 #'   saturation and closed-form reconstruction (relevance caps, fit degrees, term and
 #'   gap-order caps). Raise the caps to recover wide or high-degree directions.
@@ -1904,7 +1906,9 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # list (ok, R, pivots, rank, dim). `maxM` caps the gap order (0 for the no-gap
 # path). Returns NULL if no usable point is found, else the reference reduction,
 # the certified rank, and the Lie / gap orders used.
-.symSaturateCertify <- function(kcall, nLeaves, nz, maxM = 0L) {
+.symSaturateCertify <- function(kcall, nLeaves, nz, maxM = 0L,
+                                warm = function(pts, primes) invisible(),
+                                probeBlock = 1L) {
   P <- .symPrimes[1]
   pool <- .symPool()
   point0 <- pool(seq_len(nLeaves))
@@ -1936,6 +1940,18 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   # over GF(p) for every condition (saturate the Lie order at gap order 0 first)
   sat <- NULL
   for (attempt in 1:50) {
+    # Once the first point has failed, probe the next block of candidates in one
+    # parallel batch: the retries are sequential only because each waits for the
+    # previous verdict, and that verdict is a single independent solve per point.
+    # The candidates are the same deterministic pool draws the loop makes below, so
+    # the winning point and the pool cursor are untouched -- only the cache is warm.
+    # Nothing is prefetched before the first failure: a model whose first point works
+    # (the common case) must not pay for speculation.
+    if (probeBlock > 1L && attempt >= 2L && ((attempt - 2L) %% probeBlock) == 0L)
+      warm(lapply(seq_len(probeBlock) - 1L, function(k)
+             if (k == 0L) point0
+             else pool(poolNext + (k - 1L) * nLeaves + seq_len(nLeaves) - 1L)),
+           rep(list(P), probeBlock))
     sat <- saturateNt(point0, 0L)
     if (!is.null(sat)) break
     point0 <- pool(poolNext + seq_len(nLeaves) - 1L); poolNext <- poolNext + nLeaves
@@ -1955,6 +1971,11 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     sat <- satM; NtUsed <- sat$Nt
   }
 
+  # The cross-prime rank check re-evaluates the SAME point at each remaining prime,
+  # and a prime whose first solve fails is dropped there and then. Those probes are
+  # independent, so warm them as ONE batch; the remaining conditions of a prime are
+  # filled by kcall below, and only for the primes whose probe actually passed.
+  warm(rep(list(point0), length(.symPrimes) - 1L), as.list(.symPrimes[-1]))
   rankMax <- sat$res$rank
   for (pj in .symPrimes[-1]) {
     rj <- kcall(point0, pj, NtUsed, MtotUsed)
@@ -2272,14 +2293,23 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       parallel::mclapply(xs, f, mc.cores = coresGLp, mc.preschedule = TRUE),
       function(o) if (inherits(o, "try-error")) NULL else o)
     else function(xs, f) lapply(xs, f)
-  # On unix parMap forks the whole per-point kcall (mclapply). Fork is unavailable
-  # elsewhere (Windows), so there the dominant per-point cost -- the coupled
-  # steady-state solve -- is filled in parallel through a PSOCK pool of Python
-  # interpreters instead (warmSolves below populates the solve cache; the kernel and
-  # reduce then run on the master over cached solves). The cache dedups either way.
-  useSolveCluster <- coresGLp > 1L && .Platform$OS.type != "unix" && isTRUE(closedForm)
-  cl <- NULL
-  warmSolves <- function(pts, primes) invisible()   # replaced in the jointSS block
+  # On unix parMap forks the whole per-point kcall (mclapply). Independently of that
+  # fork, the coupled steady-state solves themselves -- the dominant cost of the joint
+  # equilibrate path, in the saturation loop as much as in the sample bank -- are
+  # filled in parallel by warmSolves on EVERY platform: mclapply forks on unix, a
+  # PSOCK pool of Python interpreters is used elsewhere (Windows, where fork is
+  # unavailable). The kernel and reduce then run on the master over cached solves; the
+  # cache dedups either way, so a warm fill is only ever an accelerator.
+  usePool <- coresGLp > 1L
+  cl <- NULL                      # PSOCK pool, stood up lazily by solveMap below
+  poolTried <- FALSE
+  warmOff <- FALSE                # set inside the parMap fork: no nested forking
+  # one registration covers the lazily created pool: `cl` is read at exit time
+  on.exit(if (!is.null(cl)) tryCatch(parallel::stopCluster(cl),
+                                     error = function(e) NULL), add = TRUE)
+  # replaced in the jointSS block; the stub keeps the full signature so a caller
+  # never has to know which path built it
+  warmSolves <- function(pts, primes, conds = NULL) invisible()
   nLeaves <- as.integer(multi$nLeaves)
   nStates <- as.integer(multi$nStates)
   zSlots <- as.integer(multi$zSlots)
@@ -2520,18 +2550,32 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       # parameters, reuse one (often Groebner) solve. Negatives are cached too. This
       # cache is the sink the parallel warm pool fills.
       jointSolveCache <- new.env(parent = emptyenv())
+      # Keyed on the condition's SUBSTITUTED model rather than its index, so two
+      # conditions differing only OUTSIDE f -- a dose, an observation scale, an assay
+      # split -- share one solve instead of repeating it. Sound because in jointMode
+      # the solver returns on valBy/df_rest before it reaches the t0-event composition
+      # (that path serves the eliminated icSeed only), so the dose cannot enter the
+      # result and must not enter the key.
+      modelKey <- vapply(models, function(m) paste0(m, collapse = "\n"), character(1))
+      if (nzchar(Sys.getenv("DMOD_SYM_TIMING")))
+        message(sprintf("[sym] %d equilibrate condition(s), %d distinct steady state(s)",
+                        Kc, length(unique(modelKey[equilConds]))))
       solveKey <- function(p, pv, ci)
-        paste(ci, p, paste0(unlist(pv$paramVals), collapse = ","),
+        paste(modelKey[[ci]], p, paste0(unlist(pv$paramVals), collapse = ","),
               paste0(unlist(pv$lVals), collapse = ","),
               paste0(unlist(pv$heldVals), collapse = ","), sep = "|")
       # constant (point-independent) arguments of every solve, shipped once to the pool
       solveConst <- list(stateNames = realStateNames, paramNames = solveParamNames,
                          forcings = if (length(solveHeld)) solveHeld else NULL,
                          recast = if (length(recast)) recast else NULL)
+      # running mean of the serial solve cost: solveMap needs it to decide whether a
+      # batch repays standing up the PSOCK pool (a Python interpreter per worker)
+      solveSecs <- 0; solveN <- 0L
       solveRaw <- function(p, pv, ci) {
         evC <- if (ci <= length(t0events) && length(t0events[[ci]]))
           t0events[[ci]] else NULL
-        tryCatch(sd$solveSteadyStateModular(
+        .tSolve <- Sys.time()
+        out <- tryCatch(sd$solveSteadyStateModular(
           model = models[[ci]], stateNames = realStateNames,
           paramNames = solveParamNames, paramVals = pv$paramVals, prime = p,
           forcings = if (length(solveHeld)) solveHeld else NULL, t0events = evC,
@@ -2539,40 +2583,119 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
           jointMode = TRUE,
           heldStates = if (length(heldNames)) pv$heldVals else NULL),
           error = function(e) NULL)
+        solveSecs <<- solveSecs + as.numeric(Sys.time() - .tSolve, units = "secs")
+        solveN <<- solveN + 1L
+        # per-solve trace: prints from a forked child too (stderr is shared), so the
+        # cost split between the master and the parallel fill is visible
+        if (nzchar(Sys.getenv("DMOD_SYM_SOLVEDIAG")))
+          message(sprintf("[sym]   solve cond %d, pid %d: %.1fs", ci, Sys.getpid(),
+                          as.numeric(Sys.time() - .tSolve, units = "secs")))
+        out
       }
-      # ---- filling the solve cache in parallel (Windows PSOCK path) ----------------
-      # Fill the solve cache for a batch of points in parallel over the PSOCK pool
-      # (Windows path). Enumerate the distinct uncached (condition, subvector) jobs,
-      # solve them across the Python workers, and store each result (or a negative)
-      # under its key. A no-op without a pool: jointSolveCond then solves on demand.
-      warmSolves <- function(pts, primes) {
-        if (is.null(cl)) return(invisible())
+      # ---- filling the solve cache in parallel (both platforms) --------------------
+      # The parallel map behind warmSolves. On unix mclapply forks: cheap, and the
+      # child inherits the live Python, so it runs the identical solveRaw. Elsewhere
+      # the jobs go to a PSOCK pool of Python interpreters, stood up on the first
+      # batch whose measured serial cost repays the setup (an interpreter per worker
+      # costs seconds, so a model with cheap solves never pays for one) and reused for
+      # the rest of the analysis. NULL means "no parallel map": stay serial.
+      # DMOD_SYM_SOLVEPOOL takes the worker-pool branch (and opens the cost gate) on
+      # any platform, so the non-fork path is exercisable where fork is available.
+      forcePool <- nzchar(Sys.getenv("DMOD_SYM_SOLVEPOOL"))
+      mapKind <- "serial"          # which map the last fill used (DMOD_SYM_TIMING)
+      solveMap <- function(jobs) {
+        mapKind <<- "serial"
+        if (!requireNamespace("parallel", quietly = TRUE)) return(NULL)
+        n <- as.integer(min(coresGLp, length(jobs)))
+        # Prefer a PERSISTENT pool once the solves are known to be expensive. It is the
+        # only option where fork is unavailable, and where both exist it measured no
+        # worse (on a 28-state network with 10 distinct resting states: 513s against
+        # 556s end to end), because a pool worker carries its Python state -- notably
+        # the engine's memo of each model's prime-independent compile -- across every
+        # wave, while a fork discards it with the child. Standing it up costs an
+        # interpreter per worker, so the gate below waits until a measured batch repays
+        # that; until then unix forks, which is free.
+        if (is.null(cl) && (usePool || forcePool) && !poolTried &&
+            (forcePool || (solveN > 0L && length(jobs) * (solveSecs / solveN) >= 5))) {
+          poolTried <<- TRUE
+          cl <<- .symMakeSolveCluster(coresGLp)
+        }
+        if (!is.null(cl)) {
+          # reparent the worker to the global env so it serialises self-contained (the
+          # Python-only workers have no dMod namespace to resolve it against); its body
+          # uses only base ops and the worker option dMod.sym.worker_sd handle
+          worker <- .symSolveWorker
+          environment(worker) <- globalenv()
+          mapKind <<- sprintf("pool x%d", coresGLp)
+          # Submit in a canonical per-model order with chunk.size = 1: the static
+          # assignment job i -> worker ((i-1) mod n) then sends a model back to the
+          # worker that already holds its compile, wave after wave.
+          ord <- order(vapply(jobs, function(j) j$mkey, character(1)))
+          res <- tryCatch(parallel::parLapply(cl, jobs[ord], worker, cargs = solveConst,
+                                              chunk.size = 1L), error = function(e) NULL)
+          if (is.null(res) || length(res) != length(jobs)) return(NULL)
+          out <- vector("list", length(jobs)); out[ord] <- res
+          return(out)
+        }
+        # before the pool is warranted (or where it could not be built): fork on unix.
+        # Dynamic scheduling, not static chunking -- the solves of one batch differ by
+        # more than an order of magnitude, so a static split leaves cores idle behind
+        # one slow chunk, and each job dwarfs the fork that dispatches it.
+        if (.Platform$OS.type == "unix" && !forcePool) {
+          mapKind <<- sprintf("fork x%d", n)
+          return(parallel::mclapply(jobs, function(job) solveRaw(job$p, job$pv, job$ci),
+                                    mc.cores = n, mc.preschedule = FALSE))
+        }
+        NULL
+      }
+      # Fill the solve cache for a batch of points. The coupled solves dominate the
+      # joint equilibrate path and are independent, so this is where `cores` pays off:
+      # enumerate the distinct uncached (model, subvector) jobs and run them through
+      # solveMap. Called for the whole batch by kbatch/kchunk and for the Kc conditions
+      # of one point by kcall4, so both the reconstruction and the saturation loop are
+      # covered. A job the map did not answer is simply left uncached -- jointSolveCond
+      # then solves it serially on demand -- so a dead worker costs time, never a
+      # wrong verdict.
+      warmSolves <- function(pts, primes, conds = equilConds) {
+        if (warmOff || coresGLp <= 1L) return(invisible())
         jobs <- list(); seen <- new.env(parent = emptyenv())
         for (idx in seq_along(pts)) {
           p <- primes[[idx]]; pt <- pts[[idx]]
-          for (ci in equilConds) {
-            pv <- jointPV(pt, p); key <- solveKey(p, pv, ci)
+          pv <- jointPV(pt, p)                      # independent of the condition
+          for (ci in conds) {
+            key <- solveKey(p, pv, ci)
             if (!is.null(jointSolveCache[[key]]) || !is.null(seen[[key]])) next
             seen[[key]] <- TRUE
             evC <- if (ci <= length(t0events) && length(t0events[[ci]]))
               t0events[[ci]] else NULL
-            jobs[[length(jobs) + 1L]] <- list(key = key, ci = ci, p = p,
+            jobs[[length(jobs) + 1L]] <- list(key = key, ci = ci, p = p, pv = pv,
+              mkey = modelKey[[ci]],           # worker affinity: same model, same node
               model = models[[ci]], paramVals = pv$paramVals, lVals = pv$lVals,
               heldVals = if (length(heldNames)) pv$heldVals else NULL,
               t0events = evC)
           }
         }
-        if (!length(jobs)) return(invisible())
-        # reparent the worker to the global env so it serialises self-contained (the
-        # Python-only workers have no dMod namespace to resolve it against); its body
-        # uses only base ops and the worker option dMod.sym.worker_sd handle
-        worker <- .symSolveWorker
-        environment(worker) <- globalenv()
-        res <- tryCatch(parallel::parLapply(cl, jobs, worker, cargs = solveConst),
-                        error = function(e) vector("list", length(jobs)))
-        for (i in seq_along(jobs))
-          jointSolveCache[[jobs[[i]]$key]] <-
-            if (is.null(res[[i]]) || !isTRUE(res[[i]]$ok)) list(ok = FALSE) else res[[i]]
+        if (length(jobs) < 2L) {
+          if (nzchar(Sys.getenv("DMOD_SYM_TIMING")) && length(jobs))
+            message("[sym] warm fill: 1 solve, serial (nothing to spread)")
+          return(invisible())
+        }
+        .tFill <- Sys.time()
+        res <- solveMap(jobs)
+        if (nzchar(Sys.getenv("DMOD_SYM_TIMING")))
+          message(sprintf("[sym] warm fill: %d solve(s), %s, %.1fs%s", length(jobs),
+                          mapKind, as.numeric(Sys.time() - .tFill, units = "secs"),
+                          if (is.null(res)) " -> unavailable, staying serial" else ""))
+        if (is.null(res) || length(res) != length(jobs)) return(invisible())
+        for (i in seq_along(jobs)) {
+          r <- res[[i]]
+          if (inherits(r, "try-error")) r <- NULL
+          # a solve that legitimately fails answers ok = FALSE and is cached as a
+          # negative exactly as the serial path does; NULL (worker error) is left
+          # unset so the serial retry, not the worker's health, decides the verdict
+          if (!is.null(r)) jointSolveCache[[jobs[[i]]$key]] <-
+            if (isTRUE(r$ok)) r else list(ok = FALSE)
+        }
         invisible()
       }
       # solve one equilibrate condition and return its solution plus the point with
@@ -2688,6 +2811,17 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
                           as.integer(ptc %% p), p, as.integer(Nt), 1L)
       }
       kcall4 <- function(point, p, Nt, Mtot = 0L, solveFn = jointSolveCond) {
+        # This point's Kc coupled solves are independent and are what the saturation
+        # loop spends its time on, so fill them in parallel before the serial assembly
+        # below (a no-op once cached). Only for the default backward solve: the
+        # forward variant is uncached and cheap (a linear solve for the rates).
+        # Probe the first condition SERIALLY first: a degenerate point fails there and
+        # is discarded, and filling every condition for it would spend the whole fleet
+        # on solves nobody consumes -- at generic-point retries that is most of them.
+        # The probe is cache-backed, so the assembly below re-reads it for free.
+        if (missing(solveFn) && Kc > 1L &&
+            !is.null(jointSolveCond(point, p, equilConds[1])))
+          warmSolves(list(point), list(p))
         blocks <- list()
         for (mi in seq_len(Kc)) {
           ci <- equilConds[mi]
@@ -2842,7 +2976,16 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     }
   }
 
-  sc <- .symSaturateCertify(kcall4, nAug, nz, maxM)
+  # The saturation loop discards a point as soon as its FIRST condition fails to
+  # solve, so what it can usefully prefetch is exactly that one solve for several
+  # (point, prime) candidates at once -- never the whole condition set, which would
+  # spend the fleet on points and primes the loop then throws away. kcall4 fills the
+  # remaining conditions itself, once a point has passed the probe.
+  warmProbe <- if (jointSS)
+    function(pts, primes) warmSolves(pts, primes, conds = equilConds[1])
+    else function(pts, primes) invisible()
+  sc <- .symSaturateCertify(kcall4, nAug, nz, maxM, warm = warmProbe,
+                            probeBlock = max(1L, min(8L, coresGLp)))
   if (is.null(sc)) {
     if (ssConstraint && !is.null(ssWhy))
       warning("symmetryDetection(): no steady-state point over the finite field ",
@@ -2902,7 +3045,10 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       warmSolves(pointList, primeVec)
       if (coresGLp > 1L && .Platform$OS.type == "unix") {
         ccSaved <- coresCall; coresCall <<- 1L
-        on.exit(coresCall <<- ccSaved, add = TRUE)
+        # the batch is already warm and the fork is the parallelism here, so the
+        # per-point kcall4 inside a child must not fork a warm fill of its own
+        wsSaved <- warmOff; warmOff <<- TRUE
+        on.exit({coresCall <<- ccSaved; warmOff <<- wsSaved}, add = TRUE)
       }
       parMap(seq_along(pointList),
              function(i) kcall(pointList[[i]], primeVec[[i]], Nt))
@@ -3001,17 +3147,14 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       function(msg) message(sprintf("[sym %6.1fs] %s",
                                     as.numeric(Sys.time() - .t0, units = "secs"), msg))
       else function(msg) invisible()
-    # stand up the parallel solve pool (Windows: fork is unavailable, so the coupled
-    # per-point solves that dominate the probe and sample bank are filled across a
-    # PSOCK pool of Python interpreters). Only worth it when there are residual
-    # directions to reconstruct and jointSS solves them per point.
-    if (useSolveCluster && jointSS && length(residualFree)) {
-      cl <- .symMakeSolveCluster(coresGLp)
-      if (!is.null(cl)) on.exit(tryCatch(parallel::stopCluster(cl),
-                                         error = function(e) NULL), add = TRUE)
-      .tlog(sprintf("solve pool: %s", if (is.null(cl)) "unavailable (serial)"
-                    else sprintf("%d workers", coresGLp)))
-    }
+    # the parallel solve fill has been live since the saturation loop and stands up
+    # (and tears down) its own pool; nothing to set up here, only to report
+    if (jointSS && length(residualFree))
+      .tlog(sprintf("solve fill: %s",
+                    if (coresGLp <= 1L) "serial"
+                    else if (.Platform$OS.type == "unix")
+                      sprintf("fork, %d cores", coresGLp)
+                    else sprintf("PSOCK pool, up to %d workers", coresGLp)))
     .tlog(sprintf("start: %d residual direction(s)", length(residualFree)))
     # Shared relevance probe: one solve per one-leaf perturbation yields the residues of
     # every direction, so the per-leaf scan runs once instead of once per direction (the

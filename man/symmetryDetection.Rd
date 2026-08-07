@@ -102,7 +102,9 @@ over-reports non-identifiability. The verdict is attached as \verb{$info$verific
 
 \item{cores}{Number of threads for \code{"observability"}, split across the parallel
 steady-state solves and the observability kernel so they do not oversubscribe.
-\code{"polynomial"} and \code{"scaling"} are serial and ignore it.}
+The solves -- the dominant cost of \code{equilibrate = TRUE} -- are filled in parallel
+on every platform: \code{mclapply} forks on unix, a worker pool of Python interpreters
+is used elsewhere. \code{"polynomial"} and \code{"scaling"} are serial and ignore it.}
 
 \item{control}{A \code{\link[=reconstControl]{reconstControl()}} list tuning the \code{"observability"} engine's
 saturation and closed-form reconstruction (relevance caps, fit degrees, term and

@@ -13,7 +13,9 @@
 #'   format c("A + pA = totA", "B + pB = totB"). The format c("A + pA", "B +
 #'   pB") works also. If NULL, conserved quantities are automatically calculated.
 #' @param neglect Character vector with names of states and parameters that must
-#'   not be used for solving the steady-state equations
+#'   not be used for solving the steady-state equations. A neglected state stays
+#'   a free parameter of the transformation; a neglected rate parameter is never
+#'   used as a pivot.
 #' @param sparsifyLevel Numeric. Upper bound for length of linear combinations
 #'   used to simplify the stoichiometric matrix. Used by versions \code{"1.0"}
 #'   and \code{"1.1"}; ignored by \code{"1.2"}.
@@ -50,6 +52,12 @@
 #'   selector symbol `branch_<state>` taking `-1` or `+1` to recover the two
 #'   steady states. `FALSE` (default) emits only the provably-unique positive
 #'   root and pivots ambiguous cases. Version "1.2" only.
+#' @param priority Character vector of state and/or rate-parameter names,
+#'   most-preferred first, biasing the order in which the solver resolves the
+#'   system. A named state is resolved earlier; a named rate parameter is
+#'   preferred as pivot, i.e. expressed in terms of the others. Structural
+#'   constraints still win, so the order is a preference, not a guarantee.
+#'   Unmatched names are reported and ignored. Version `"1.2"` only.
 #' @param version Character, AlyssaPetit backend version. One of
 #'   \code{"1.0"} (original), \code{"1.1"} (adds \code{testSteady}), or
 #'   \code{"1.2"} (default; sink-cluster detection, \code{walltime},
@@ -74,7 +82,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                          givenCQs = NULL, neglect = NULL, sparsifyLevel = NULL,
                          outputFormat = "R", testSteady = c("fast", "exact", "skip"),
                          walltime = 0L, simplify = TRUE, solveQuadratic = FALSE,
-                         positive = TRUE, branches = FALSE,
+                         positive = TRUE, branches = FALSE, priority = NULL,
                          version = "1.2") {
 
   .require_ns("reticulate", "steadyStates()")
@@ -120,7 +128,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   # Version-specific Python signatures:
   #   v1.0: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat)
   #   v1.1: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady)
-  #   v1.2: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady, walltime, simplify, solveQuadratic)
+  #   v1.2: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady, walltime, simplify, solveQuadratic, positive, branches, priority)
   #        -- v1.2 additionally runs structural sink-cluster detection a priori,
   #          and (when `solveQuadratic=TRUE`) attempts a closed-form quadratic
   #          state-side solve before resorting to flux-parameter pivots.
@@ -129,12 +137,16 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
       message("Note: version 1.0 does not support testSteady='skip', test will always run.")
     if (isTRUE(solveQuadratic))
       message("Note: version 1.0 does not support solveQuadratic=TRUE, ignored.")
+    if (length(priority) > 0)
+      message("Note: version 1.0 does not support 'priority', ignored.")
     m_ss <- ap$Alyssa(model, as.list(forcings), as.list(givenCQs),
                       as.list(neglect), sparsifyLevel, outputFormat)
 
   } else if (version == "1.1") {
     if (isTRUE(solveQuadratic))
       message("Note: version 1.1 does not support solveQuadratic=TRUE, ignored.")
+    if (length(priority) > 0)
+      message("Note: version 1.1 does not support 'priority', ignored.")
     if (testSteady == "fast")
       message("Note: version 1.1 has no 'fast' test, using 'exact' instead.")
     # v1.1 backend takes the legacy "T"/"F" tokens.
@@ -165,7 +177,8 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                       simplify       = simplify_arg,
                       solveQuadratic = as.logical(solveQuadratic),
                       positive       = positive_arg,
-                      branches       = as.logical(branches))
+                      branches       = as.logical(branches),
+                      priority       = as.list(as.character(priority)))
   }
 
   if (is.null(m_ss) || identical(m_ss, 0L)) return(0)

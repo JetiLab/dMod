@@ -79,10 +79,13 @@ jobs:
       DMOD_BENCHMARKMODELS: ${{ github.workspace }}/BenchmarkModels
 
     steps:
+      # glibc-langpack-en: the image ships glibc-minimal-langpack only, so
+      # R CMD check's syntax pass cannot honour the en_US.UTF-8 it asks for and
+      # warns -- which error-on: "warning" turns into a failed job.
       - name: Install R and build dependencies
         run: |
           dnf install -y --setopt=install_weak_deps=False \
-            R R-devel gcc gcc-c++ gcc-gfortran make cmake git \
+            R R-devel gcc gcc-c++ gcc-gfortran make cmake git glibc-langpack-en \
             openssl-devel libcurl-devel libxml2-devel fontconfig-devel \
             harfbuzz-devel fribidi-devel freetype-devel libpng-devel \
             libtiff-devel libjpeg-turbo-devel pandoc python3 python3-pip

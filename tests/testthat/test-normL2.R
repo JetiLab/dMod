@@ -157,6 +157,119 @@ test_that("bessel correction inflates the chi-square term by exactly factor^2", 
 })
 
 
+# Same constant-sigma errmodel, but the trafo carries four dummy parameters so
+# that a short dataset is guaranteed to have n - p + p.err <= 0.
+.build_overparam_errmodel_chain <- function(bench, mn_suffix) {
+  .dmod_with_fx_workdir({
+    e_const <- Y(c(y = "sigma_y"), f = bench$gfn, attach.input = FALSE,
+                 condition = "C1",
+                 modelname = paste0("fx_decay_err_", mn_suffix),
+                 compile = TRUE)
+    pfn_over <- P(eqnvec(A = "A * d1 * d2 * d3 * d4", k = "k",
+                         sigma_y = "sigma_y"),
+                  condition = "C1",
+                  modelname = paste0("fx_decay_p_over_", mn_suffix),
+                  compile = TRUE)
+    prd_over <- bench$gfn * bench$xfn * pfn_over
+  })
+  list(prd = prd_over, e = e_const)
+}
+
+test_that("non-positive bessel dof warns and falls back to 1 instead of NaN", {
+  skip_if_no_compile()
+  bench <- fx_decay_compiled()
+  sigma_const <- 0.1
+  data_em <- fx_decay_data(times = seq(0, 4, by = 1), sigma = sigma_const)
+  data_em$C1$sigma <- NA_real_
+
+  ec <- .build_overparam_errmodel_chain(bench, "dof")
+  pars_em <- c(A = 1, d1 = 1, d2 = 1, d3 = 1, d4 = 1, k = 0.5,
+               sigma_y = sigma_const)
+
+  n     <- nrow(data_em$C1)
+  p_all <- union(getParameters(ec$prd), getParameters(ec$e))
+  p_err <- setdiff(cOde::getSymbols(unlist(getEquations(ec$e))),
+                   names(unlist(getEquations(ec$e))))
+  # premise of the test: fewer data points than parameters
+  expect_lte(n - length(p_all) + length(p_err), 0)
+
+  for_each_backend(function(cpp) {
+    expect_warning(obj <- normL2(data_em, ec$prd, errmodel = ec$e,
+                                 use.bessel = TRUE),
+                   "Bessel correction switched off", info = paste0("cpp=", cpp))
+    o <- obj(pars_em)
+    expect_true(is.finite(o$value), info = paste0("cpp=", cpp))
+    expect_true(all(is.finite(o$gradient)), info = paste0("cpp=", cpp))
+    expect_true(all(is.finite(o$hessian)), info = paste0("cpp=", cpp))
+
+    o_off <- normL2(data_em, ec$prd, errmodel = ec$e,
+                    use.bessel = FALSE)(pars_em)
+    expect_equal(o$value, o_off$value, tolerance = 1e-12,
+                 info = paste0("cpp=", cpp))
+  })
+})
+
+
+test_that("split objectives share the pooled bessel factor via n.total", {
+  skip_if_no_compile()
+  bench <- fx_decay_compiled()
+  sigma_const <- 0.1
+  data_em <- fx_decay_data(sigma = sigma_const)
+  data_em$C1$sigma <- NA_real_
+
+  ec <- .build_const_errmodel_chain(bench, "split")
+  pars_em <- c(bench$outerpars_id, sigma_y = sigma_const)
+
+  n <- nrow(data_em$C1)
+  d_a <- data_em; d_a$C1 <- data_em$C1[1:6, , drop = FALSE]
+  d_b <- data_em; d_b$C1 <- data_em$C1[7:n, , drop = FALSE]
+
+  p_all  <- union(getParameters(ec$prd), getParameters(ec$e))
+  p_err  <- setdiff(cOde::getSymbols(unlist(getEquations(ec$e))),
+                    names(unlist(getEquations(ec$e))))
+  factor <- sqrt(n / (n - length(p_all) + length(p_err)))
+
+  # same integration grid everywhere, otherwise the split terms differ from the
+  # pooled one at solver tolerance
+  tt <- data_em$C1$time
+
+  for_each_backend(function(cpp) {
+    pooled <- normL2(data_em, ec$prd, errmodel = ec$e, times = tt,
+                     use.bessel = TRUE)(pars_em)$value
+
+    split_ntotal <-
+      normL2(d_a, ec$prd, errmodel = ec$e, times = tt, n.total = n)(pars_em)$value +
+      normL2(d_b, ec$prd, errmodel = ec$e, times = tt, n.total = n)(pars_em)$value
+    expect_equal(split_ntotal, pooled, tolerance = 1e-10,
+                 info = paste0("cpp=", cpp))
+
+    split_numeric <-
+      normL2(d_a, ec$prd, errmodel = ec$e, times = tt, use.bessel = factor)(pars_em)$value +
+      normL2(d_b, ec$prd, errmodel = ec$e, times = tt, use.bessel = factor)(pars_em)$value
+    expect_equal(split_numeric, pooled, tolerance = 1e-10,
+                 info = paste0("cpp=", cpp))
+
+    # per-term n against the full p is what n.total is there to avoid
+    split_local <-
+      normL2(d_a, ec$prd, errmodel = ec$e, times = tt)(pars_em)$value +
+      normL2(d_b, ec$prd, errmodel = ec$e, times = tt)(pars_em)$value
+    expect_false(isTRUE(all.equal(split_local, pooled, tolerance = 1e-6)))
+  })
+})
+
+
+test_that("n.total and use.bessel are validated", {
+  skip_if_no_compile()
+  bench <- fx_decay_compiled()
+  data <- fx_decay_data(sigma = 0.1)
+
+  expect_error(normL2(data, bench$prd_id, use.bessel = -1), "positive number")
+  expect_error(normL2(data, bench$prd_id, use.bessel = NA), "TRUE, FALSE")
+  expect_error(normL2(data, bench$prd_id, n.total = 0), "positive number")
+  # no errmodel -> the correction is a no-op, so n.total cannot do anything
+  expect_warning(normL2(data, bench$prd_id, n.total = 100), "no effect")
+})
+
 # ---- Multi-condition aggregation ----------------------------------------
 
 test_that("normL2 sums per-condition contributions across two conditions", {

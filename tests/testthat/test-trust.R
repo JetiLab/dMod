@@ -377,6 +377,26 @@ test_that("curvature at roundoff level does not steer the degenerate step", {
 })
 
 
+test_that("a null space wider than one direction still gives the minimum-norm step", {
+  # f = 0.5 (J p - 2)^2 with J = (1, 2, 3). H = J'J is rank 1, so its null space
+  # is two-dimensional and comes back as a pair of eigenvalues split by roundoff.
+  # No LAPACK build returns a basis for that space which g is exactly orthogonal
+  # to, so the drift the two tests above only see on some builds shows up here on
+  # every one of them.
+  J <- matrix(c(1, 2, 3), nrow = 1)
+  obj <- function(p, ...) {
+    res <- as.numeric(J %*% p - 2)
+    list(value = 0.5 * res^2, gradient = as.numeric(t(J) * res), hessian = t(J) %*% J)
+  }
+  fit <- trust(obj, c(x = 0, y = 0, z = 0), rinit = 1, rmax = 10, iterlim = 100)
+
+  expect_equal(as.numeric(J %*% fit$argument), 2, tolerance = 1e-6)
+  # Minimum-norm solution of J p = 2 from the origin is J' * 2 / ||J||^2.
+  expect_equal(unname(fit$argument), as.numeric(t(J)) * 2 / sum(J^2),
+               tolerance = 1e-6)
+})
+
+
 test_that("bounds compose with parscale, parinit on a bound, and minimize = FALSE", {
   target <- c(x = 5, y = 5)
 

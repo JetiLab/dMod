@@ -11,6 +11,7 @@ normL2(
   times = NULL,
   attr.name = "data",
   use.bessel = !is.null(errmodel),
+  n.total = NULL,
   cores = 1L,
   opt.BLOQ = c("M3", "M1", "M4NM", "M4BEAL")
 )
@@ -30,9 +31,14 @@ data. Event times should be included here if the prediction model uses events.}
 \item{attr.name}{Character string. The objective value is additionally returned
 as an attribute with this name.}
 
-\item{use.bessel}{Logical. If TRUE and an error model is provided, applies a
-global Bessel correction to variance estimates to account for finite-sample
-bias. Defaults to TRUE if an error model is supplied, FALSE otherwise.}
+\item{use.bessel}{Logical or numeric. \code{TRUE} (default with an error model)
+computes the Bessel correction from this call's data, \code{FALSE} disables it,
+a positive number is used as the factor itself. No-op without \code{errmodel}.
+See Details.}
+
+\item{n.total}{Optional data-point count to compute the correction from
+instead of this objective's own rows. Ignored with a warning unless
+\code{use.bessel = TRUE} and an \code{errmodel} is given.}
 
 \item{cores}{Integer. Number of OpenMP threads the C++ residual kernel uses
 to evaluate conditions in parallel. Must be >= 1. Captured once when the
@@ -54,10 +60,19 @@ The returned objective function can be used with optimizers such as
 \link{mstrust} and supports aggregation over multiple experimental conditions.
 }
 \details{
-Combine objectives with \code{+} (see \link{sumobjfn}). The Bessel correction
-\eqn{\sqrt{n/(n-p)}} is applied globally (\eqn{n} = total data points,
-\eqn{p} = structural parameters). When \code{cores > 1}, conditions are
-evaluated in parallel; the core count is fixed at construction.
+Combine objectives with \code{+} (see \link{sumobjfn}). When \code{cores > 1}, conditions
+are evaluated in parallel; the core count is fixed at construction.
+
+The Bessel correction inflates the weighted residuals by
+\eqn{\sqrt{n/(n - p + p_\sigma)}}: \eqn{n} data points of \emph{this} call,
+\eqn{p} parameters of \code{x} and \code{errmodel} together, \eqn{p_\sigma} error-model
+parameters. It is a property of the whole fit but is computed per objective,
+so a split \code{normL2(d1, ...) + normL2(d2, ...)} weighs each partial \eqn{n}
+against the full \eqn{p} and both terms get a wrong factor. Give every term
+\verb{n.total = <total data points>}, or the same precomputed \code{use.bessel} factor.
+
+A non-positive \eqn{n - p + p_\sigma} (typical for a split term) leaves the
+factor undefined; \code{normL2} warns and uses 1 instead of propagating \code{NaN}.
 }
 \examples{
 \dontrun{

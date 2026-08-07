@@ -594,6 +594,44 @@ test_that("the batched chain kernel matches the serial path (joint + gap)", {
 })
 
 
+test_that("the parallel steady-state fill matches the serial path (joint)", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # equilibrate routes every (point, prime) through the parallel solve fill, which
+  # carries the joint path's dominant cost. mclapply forks on unix;
+  # DMOD_SYM_SOLVEPOOL takes the worker-pool branch Windows uses, so both are
+  # covered wherever the suite runs. Neither may move the verdict.
+  f  <- as.eqnvec(c(R = "kpr - kdg*R + kon*u*R", u = "0"))
+  g  <- as.eqnvec(c(y = "scale*R"))
+  ev <- eventlist() |>
+    addEvent(var = "u", time = 0,  value = "init_u", method = "replace") |>
+    addEvent(var = "u", time = 60, value = "0",      method = "replace")
+  # a per-condition production rate gives c1/c3 and c2/c4 their own resting state;
+  # the forcing level does not (a forcing is held while equilibrating), so the fill
+  # must dedup these four conditions to two solves rather than repeat them
+  cg <- data.frame(kpr = c("kpr_a", "kpr_b", "kpr_a", "kpr_b"), init_u = c(1, 1, 2, 2),
+                   row.names = paste0("c", 1:4))
+  run <- function(cores, pool = FALSE) {
+    old <- Sys.getenv("DMOD_SYM_SOLVEPOOL")
+    Sys.setenv(DMOD_SYM_SOLVEPOOL = if (pool) "1" else "")
+    on.exit(Sys.setenv(DMOD_SYM_SOLVEPOOL = old))
+    symdet(f, g, method = "observability", equilibrate = TRUE, events = ev,
+           conditions = cg, forcings = "u", reconstruct = TRUE, reduceCQ = FALSE,
+           cores = cores)
+  }
+  lineOf <- function(o) sort(vapply(o$symmetries, dMod:::.symDirectionLine,
+                                    character(1)))
+  serial <- run(1L)
+  forked <- run(4L)
+  pooled <- run(2L, pool = TRUE)
+  for (par in list(forked, pooled)) {
+    expect_identical(par$rank, serial$rank)
+    expect_identical(par$identifiable, serial$identifiable)
+    expect_identical(lineOf(par), lineOf(serial))
+  }
+})
+
+
 test_that("observability recovers the Michaelis-Menten enzyme symmetries", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
 

@@ -301,7 +301,7 @@ def _rational_sign_class(expr, positive_syms=None):
         return '-'
     return '±'
 
-def _try_positive_direct_solve(SM, F, X, positive_syms=None):
+def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=()):
     # Find a state y whose own ODE is (a) linear in y and (b) has a
     # structurally positive closed-form steady-state solution y = -In/Out
     # under positive_syms (None = all symbols positive). Returns
@@ -309,8 +309,12 @@ def _try_positive_direct_solve(SM, F, X, positive_syms=None):
     # parts of the network that don't actually need an r_* helper -- this
     # avoids leaking negative r_* contributions into downstream states whose
     # own ODE would otherwise have been positive by construction.
+    # States in `neglect` are skipped: their ODE must be spent on a flux
+    # pivot so they stay free parameters of the trafo.
     for i in range(len(X)):
         y=X[i]
+        if str(y) in neglect:
+            continue
         eq=sympy.S.Zero
         row=SM.row(i)
         for k in range(SM.cols):
@@ -370,15 +374,19 @@ def _simplify_with_sqrt(expr):
     sq_factored = sympy.sqrt(D_factored)
     return (factor(P_scaled) + factor(Q_scaled)*sq_factored) / factor(R)
 
-def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False):
+def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False,
+                                  neglect=()):
     # Resolve a state y whose ODE is quadratic in y (a*y^2 + b*y + c = 0,
     # normalised to sign(a)=+) as a closed-form root, avoiding sympy.solve().
     # sign(c)=- gives the unique positive root (-b + sqrt(disc))/(2a); with
     # branches=True, sign(c)=+ & sign(b)=- gives two positive roots, emitted
     # with a selector branch_y in {-1,+1}. Other patterns pivot instead.
-    # Returns (row_idx, y, sol, branch) or None.
+    # Returns (row_idx, y, sol, branch) or None. States in `neglect` are
+    # skipped (see _try_positive_direct_solve).
     for i in range(len(X)):
         y=X[i]
+        if str(y) in neglect:
+            continue
         eq=sympy.S.Zero
         row=SM.row(i)
         for k in range(SM.cols):
@@ -627,7 +635,22 @@ def _side_type(flux_col_counts):
     return 3
 
 
-def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars=None):
+def printPriorityTable(rows, top=5):
+    """Log the head of the priority table -- the candidates that were in
+    contention for the cycle break about to happen, in ranked order."""
+    print(f'   Priority table (top {min(top, len(rows))} of {len(rows)}):',flush=True)
+    for rank, r in enumerate(rows[:top], start=1):
+        side='CQ ' if r['isOutflux'] is None else ('out' if r['isOutflux'] else 'in ')
+        fps=','.join(str(fp) for fp in r['fluxPars']) or '-'
+        print(f"     {rank}. {r['species']:<18s} {side} prio={r['userRank']} "
+              f"type={r['type']} risk={r['propagationRisk']} len={r['fluxLength']} "
+              f"cyc={r['NoCycleOccur']} rhs={r['OccInRhs']}"
+              + ('  UNUSABLE' if r['dontUseThisSide'] else '')
+              + f"  [{fps}]",flush=True)
+
+
+def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars=None,
+                     priority=()):
     """Global priority table for cycle breaking / state resolution.
 
     Idea and sort criteria ported from Severin Bang's Julia reimplementation
@@ -649,10 +672,21 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
       - fluxParIDs, fluxPars: per-side flux indices and their flux parameters
       - dontUseThisSide    : 1 if any flux parameter is in `neglect` or the
                              side has no flux -- the side is unusable
+      - userRank           : position of the first symbol of `priority`
+                             matching this row (its species or one of its
+                             flux parameters); len(priority) if none match
       - OccInCycles        : 1 if the state is in any simple cycle, else 0
       - NoCycleOccur       : number of simple cycles containing the state
       - OccInRhs           : number of OTHER ODE equations whose RHS
                              contains this species
+
+    `priority` is a user-supplied sequence of symbol names (states and/or
+    rate parameters). It outranks every structural key except
+    `dontUseThisSide` and `OccInCycles`: the solver still refuses unusable
+    sides and still only breaks states that actually sit in a cycle, but
+    among those the user's order decides. Naming a state promotes breaking
+    that state's row; naming a rate parameter promotes the row whose pivot
+    side contains it.
 
     Returns `(rows, cycles)` where rows is the sorted list of candidate
     dicts and cycles is the list of simple cycles used to compute the
@@ -693,6 +727,12 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     # contains fp). See the "Direct positive-solve pass" block in Alyssa()
     # for why.
     locked_set = set(str(x) for x in (locked_fluxpars or set()))
+    prio_index = {str(nm): i for i, nm in enumerate(priority)}
+    prio_none = len(prio_index)
+
+    def _user_rank(*names):
+        return min((prio_index[nm] for nm in names if nm in prio_index),
+                   default=prio_none)
 
     def _state_in_active_cq(nm):
         parsed = parse_expr(nm)
@@ -720,6 +760,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
                 'NoCycleOccur': noCycleOccur[i],
                 'OccInRhs': occInRhs[i],
                 'propagationRisk': 0,
+                'userRank': _user_rank(nm),
             })
             continue
 
@@ -762,6 +803,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
                 'NoCycleOccur': noCycleOccur[i],
                 'OccInRhs': occInRhs[i],
                 'propagationRisk': prop_risk,
+                'userRank': _user_rank(nm, *(str(fp) for fp in flux_pars)),
             })
 
     # Sort key extensions over Severin Bang's 6-key Julia ranking
@@ -779,7 +821,12 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     #      3 sides always have propagationRisk >= 1; among them we
     #      prefer the smallest risk.
     #
-    #  (b) rowop_penalty -- a binary flag that demotes type-3 anz==1
+    #  (b) userRank -- the caller's explicit `priority` order, inserted
+    #      directly below OccInCycles so it decides among all rows that are
+    #      legitimately breakable, but can never force an unusable side or
+    #      a state outside every cycle.
+    #
+    #  (c) rowop_penalty -- a binary flag that demotes type-3 anz==1
     #      pivots. Those take the direct-solve + SM row-manipulation
     #      path, which INSERTS new flux terms (with inherited negative
     #      stoichiometry) into other ODEs. That is strictly worse than
@@ -795,6 +842,7 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
     rows.sort(key=lambda r: (
         r['dontUseThisSide'],
         -r['OccInCycles'],
+        r['userRank'],
         r['type'],
         r['propagationRisk'],
         _rowop_penalty(r),
@@ -1034,7 +1082,8 @@ def Alyssa(filename,
           simplify=True,
           solveQuadratic=False,
           positive=True,
-          branches=False):
+          branches=False,
+          priority=[]):
     filename=str(filename)
     _start_time = time.time()
     def _check_walltime():
@@ -1051,6 +1100,15 @@ def Alyssa(filename,
         positive_syms = set(parse_expr(str(s)) for s in positive)
     else:
         positive_syms = None if bool(positive) else set()
+    # Names the solver must not spend on a state expression / flux pivot.
+    # Kept as a set of plain strings: `str(sym) in neglect` is the only test
+    # anywhere in the pipeline.
+    neglect=set(str(n) for n in neglect)
+    # Caller-supplied resolution order for the priority table (states and/or
+    # rate parameters, most-preferred first). Validated against the model
+    # once X and fluxpars exist -- see the check below the flux-parameter
+    # extraction.
+    priority=[str(pr) for pr in priority]
     file=csv.reader(open(filename), delimiter=',')
     print('Reading csv-file ...',flush=True)
     L=[]
@@ -1355,6 +1413,14 @@ def Alyssa(filename,
         else:
             fluxpars.append(flux)
 
+    if priority:
+        known={str(x) for x in Xo} | {str(fp) for fp in fluxpars}
+        unknown=[pr for pr in priority if pr not in known]
+        if unknown:
+            print('Warning: priority entries match no state or rate parameter '
+                  'and are ignored: '+str(unknown),flush=True)
+        print('Priority order: '+str(priority),flush=True)
+
 #### Find conserved quantities
     # Computed before sparsification so we can protect CQ-involved state rows
     # during sparsification (see below). FindLCL consumes CMbig, built from
@@ -1409,7 +1475,8 @@ def Alyssa(filename,
     # create self-referential eqOut entries, see _try_positive_direct_solve).
     locked_fluxpars=set()
     fluxpar_str_to_sym={str(fp): fp for fp in fluxpars}
-    priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars)
+    priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
+                                                  priority)
 #### Remove cycles step by step
     gesnew=0
     eqOut=[]
@@ -1451,7 +1518,7 @@ def Alyssa(filename,
         # producing initial conditions that are not actually at steady state.
         found=False
         while True:
-            direct=_try_positive_direct_solve(SM, F, X, positive_syms)
+            direct=_try_positive_direct_solve(SM, F, X, positive_syms, neglect)
             if direct is None:
                 break
             row_idx, y, sol = direct
@@ -1467,7 +1534,8 @@ def Alyssa(filename,
             return False
         found=False
         while True:
-            quad=_try_positive_quadratic_solve(SM, F, X, positive_syms, branches)
+            quad=_try_positive_quadratic_solve(SM, F, X, positive_syms, branches,
+                                               neglect)
             if quad is None:
                 break
             row_idx, y, sol, branch = quad
@@ -1495,7 +1563,8 @@ def Alyssa(filename,
         print('\nDirect positive-solve pass ...',flush=True)
         if _drain_positive_solves():
             SSgraph=DetermineGraphStructure(SM, F, X, neglect)
-            priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars)
+            priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
+                                                          priority)
         else:
             print('   (nothing resolvable positively up-front)',flush=True)
 
@@ -1505,7 +1574,8 @@ def Alyssa(filename,
         # into a linear-in-itself or quadratic-with-positive-root one.
         if _drain_positive_solves():
             SSgraph=DetermineGraphStructure(SM, F, X, neglect)
-            priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars)
+            priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
+                                                          priority)
             if not cycles_list:
                 break
         row = priority_rows[0]
@@ -1523,6 +1593,7 @@ def Alyssa(filename,
         fp2Rem = row['fluxPars'][0] if (minType == 1 and row['fluxPars']) else None
 
         print('Removing cycle '+str(counter),flush=True)
+        printPriorityTable(priority_rows)
         # Unresolvable candidate: no usable side for the top priority row.
         if row['dontUseThisSide'] and minType != 0:
             # Take any simple cycle the state participates in for the
@@ -1594,16 +1665,24 @@ def Alyssa(filename,
                     GetNegFluxParameters(SM, fluxpars, X, n))
                 for n in unique_nodes
             )
+            neglected_nodes = [n for n in unique_nodes if n in neglect]
             nodes_str = ", ".join(unique_nodes)
+            _item=[0]
+            def nextItem():
+                _item[0]+=1
+                return str(_item[0])
             if(has_absorbed):
-                print(f"      1. Supply a conserved quantity (givenCQs) that includes {nodes_str}.",flush=True)
+                print(f"      {nextItem()}. Supply a conserved quantity (givenCQs) that includes {nodes_str}.",flush=True)
                 print(f"         This lets the solver express {nodes_str} in terms of other states",flush=True)
                 print(f"         and a total-amount parameter, without needing flux parameters.",flush=True)
                 print(f"         Example: givenCQs = c(\"{unique_nodes[0]} + ... = total{unique_nodes[0]}\")",flush=True)
             if(has_blocked):
-                print(f"      {'2' if has_absorbed else '1'}. Remove blocked parameters from 'neglect'.",flush=True)
-            nxt='3' if has_absorbed and has_blocked else '2' if has_absorbed or has_blocked else '1'
-            print(f"      {nxt}. Review the model reactions involving {nodes_str}:",flush=True)
+                print(f"      {nextItem()}. Remove blocked parameters from 'neglect'.",flush=True)
+            if(neglected_nodes):
+                print(f"      {nextItem()}. Remove {neglected_nodes} from 'neglect'.",flush=True)
+                print(f"         A neglected state must spend its ODE on a rate-parameter pivot,",flush=True)
+                print(f"         and no usable flux side is left for it.",flush=True)
+            print(f"      {nextItem()}. Review the model reactions involving {nodes_str}:",flush=True)
             print(f"         Does {nodes_str} participate in enough independent reactions?",flush=True)
             print(f"         A state needs both production and consumption to be solvable.",flush=True)
             # Extra note when the model has CQ-involved bilinear coupling that
@@ -1616,8 +1695,7 @@ def Alyssa(filename,
                 for n in unique_nodes
             )
             if cq_related:
-                nxt2=str(int(nxt)+1)
-                print(f"      {nxt2}. This model has bilinear coupling between conservation-law states.",flush=True)
+                print(f"      {nextItem()}. This model has bilinear coupling between conservation-law states.",flush=True)
                 print(f"         AlyssaPetit cannot express the steady state as manifestly positive",flush=True)
                 print(f"         rational functions for this class. Consider MiraHendrix for this model.",flush=True)
             print("    ======================================================",flush=True)
@@ -1765,7 +1843,8 @@ def Alyssa(filename,
         X.row_del(index)
         SM.row_del(index)
         SSgraph=DetermineGraphStructure(SM, F, X, neglect)
-        priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars)
+        priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
+                                                      priority)
         counter=counter+1
     print('There is no cycle in the system!\n',flush=True)
     
