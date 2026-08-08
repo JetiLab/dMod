@@ -483,6 +483,89 @@ addReaction <- function(eqnlist, from, to, rate, description = names(rate),
 }
 
 
+# Reference compartment per reaction: the frame in which its rate is a
+# concentration-rate. Shared with .volumeScaledReactions() so the ODE and the
+# csv the steady-state backend reads cannot drift apart.
+.refCompartments <- function(SMatrix, compOf, reactionCompartment, description) {
+
+  vref_cid <- character(nrow(SMatrix))
+  for (i in seq_len(nrow(SMatrix))) {
+    if (!is.null(reactionCompartment) && !is.na(reactionCompartment[i])) {
+      vref_cid[i] <- reactionCompartment[i]
+      next
+    }
+    row_i <- SMatrix[i, ]
+    educt_idx <- which(!is.na(row_i) & row_i < 0)
+    product_idx <- which(!is.na(row_i) & row_i > 0)
+    cand <- if (length(educt_idx) > 0) unique(compOf[educt_idx])
+            else if (length(product_idx) > 0) unique(compOf[product_idx])
+            else character(0)
+    if (length(cand) == 1L) {
+      vref_cid[i] <- cand
+    } else if (length(cand) > 1L) {
+      stop(sprintf(
+        "Reaction %d (\"%s\") spans compartments (%s). Pass `reactionCompartment` to name the frame in which the rate is a concentration-rate.",
+        i, description[i], paste(cand, collapse = ", ")))
+    } else {
+      stop(sprintf("Reaction %d (\"%s\") has no species; cannot determine reference compartment.",
+                   i, description[i]))
+    }
+  }
+  vref_cid
+}
+
+
+# Reactions as a data.frame for the steady-state backend, which sees only rates
+# and stoichiometry while getFluxes() scales every flux by V_ref / V_X. One csv
+# row carries one rate, so a reaction touching states at different ratios is
+# split into one row per ratio.
+.volumeScaledReactions <- function(eqnlist) {
+
+  data <- as.data.frame(eqnlist)
+  SMatrix <- eqnlist$smatrix
+  variables <- eqnlist$states
+  compartments <- eqnlist$compartments
+  compartmentOf <- eqnlist$compartmentOf
+  if (is.null(SMatrix) || is.null(compartments) || is.null(compartmentOf))
+    return(data)
+
+  # A volume rule adds a dilution term -[X]*V'/V, which is not a reaction flux.
+  ruled <- names(compartments)[vapply(compartments,
+    function(cmp) !is.null(cmp$rule) && nzchar(cmp$rule), logical(1))]
+  if (length(ruled))
+    stop("Compartment(s) ", paste(ruled, collapse = ", "), " carry a volume ",
+         "rule, whose dilution term -[X]*V'/V is not a reaction flux.",
+         call. = FALSE)
+
+  compOf <- compartmentOf[variables]
+  vol <- vapply(compOf, function(cid) compartments[[cid]]$volume, character(1))
+  vref_cid <- .refCompartments(SMatrix, compOf, eqnlist$reactionCompartment,
+                               eqnlist$description)
+  vref_vol <- vapply(vref_cid, function(cid) compartments[[cid]]$volume, character(1))
+
+  # as.data.frame.eqnlist(): Description, Rate, then states in order.
+  stateCols <- seq_along(variables) + 2L
+
+  rows <- lapply(seq_len(nrow(SMatrix)), function(i) {
+    touched <- which(!is.na(SMatrix[i, ]))
+    ratio <- ifelse(vref_cid[i] == compOf[touched], "",
+                    paste0("*(", vref_vol[i], "/", vol[touched], ")"))
+    lapply(unique(ratio), function(rr) {
+      keep <- touched[ratio == rr]
+      row <- data[i, , drop = FALSE]
+      if (nzchar(rr)) row$Rate <- paste0("(", data$Rate[i], ")", rr)
+      row[1, stateCols] <- NA
+      row[1, stateCols[keep]] <- as.numeric(SMatrix[i, keep])
+      row
+    })
+  })
+
+  out <- do.call(rbind, unlist(rows, recursive = FALSE))
+  rownames(out) <- NULL
+  out
+}
+
+
 #' Generate list of fluxes from equation list
 #' 
 #' @param eqnlist object of class [eqnlist].
@@ -521,30 +604,7 @@ getFluxes <- function(eqnlist, type = c("conc", "amount")) {
   # educt compartment, (3) unique product compartment for pure synthesis.
   # When educts span multiple compartments and no annotation is given, we
   # error with a clear message pointing the user at `reactionCompartment`.
-  nR <- nrow(SMatrix)
-  vref_cid <- character(nR)
-  for (i in seq_len(nR)) {
-    if (!is.null(reactionCompartment) && !is.na(reactionCompartment[i])) {
-      vref_cid[i] <- reactionCompartment[i]
-      next
-    }
-    row_i <- SMatrix[i, ]
-    educt_idx <- which(!is.na(row_i) & row_i < 0)
-    product_idx <- which(!is.na(row_i) & row_i > 0)
-    cand <- if (length(educt_idx) > 0) unique(compOf[educt_idx])
-            else if (length(product_idx) > 0) unique(compOf[product_idx])
-            else character(0)
-    if (length(cand) == 1L) {
-      vref_cid[i] <- cand
-    } else if (length(cand) > 1L) {
-      stop(sprintf(
-        "Reaction %d (\"%s\") spans compartments (%s). Pass `reactionCompartment` to name the frame in which the rate is a concentration-rate.",
-        i, description[i], paste(cand, collapse = ", ")))
-    } else {
-      stop(sprintf("Reaction %d (\"%s\") has no species; cannot determine reference compartment.",
-                   i, description[i]))
-    }
-  }
+  vref_cid <- .refCompartments(SMatrix, compOf, reactionCompartment, description)
   vref_vol <- vapply(vref_cid, function(cid) compartments[[cid]]$volume, character(1))
 
   # generate equation expressions

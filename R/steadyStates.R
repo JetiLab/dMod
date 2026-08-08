@@ -58,6 +58,11 @@
 #'   preferred as pivot, i.e. expressed in terms of the others. Structural
 #'   constraints still win, so the order is a preference, not a guarantee.
 #'   Unmatched names are reported and ignored. Version `"1.2"` only.
+#' @param resolve Logical. When `TRUE` (default), the equations are passed
+#'   through [resolveRecurrence()] so that none refers to another -- a dMod
+#'   parameter transformation substitutes all entries at once. Version `"1.2"`
+#'   already resolves on the backend side; this matters for `"1.0"` / `"1.1"`.
+#'   `FALSE` keeps the compact recurrent form.
 #' @param version Character, AlyssaPetit backend version. One of
 #'   \code{"1.0"} (original), \code{"1.1"} (adds \code{testSteady}), or
 #'   \code{"1.2"} (default; sink-cluster detection, \code{walltime},
@@ -83,7 +88,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                          outputFormat = "R", testSteady = c("fast", "exact", "skip"),
                          walltime = 0L, simplify = TRUE, solveQuadratic = FALSE,
                          positive = TRUE, branches = FALSE, priority = NULL,
-                         version = "1.2") {
+                         version = "1.2", resolve = TRUE) {
 
   .require_ns("reticulate", "steadyStates()")
   # Validate version and verification mode
@@ -107,7 +112,11 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   # Check if model is an equation list
   if (inherits(model, "eqnlist")) {
     if (is.null(file)) file <- "reactions_for_Alyssa"
-    write.eqnlist(model, file = paste0(file, "_model.csv"))
+    # Not write.eqnlist(): the backend never sees the volumes, so the
+    # V_ref / V_X factors getFluxes() applies have to be folded in first.
+    utils::write.csv(.volumeScaledReactions(model),
+                     file = paste0(file, "_model.csv"),
+                     row.names = FALSE, na = "")
     model <- paste0(file, "_model.csv")
   }
   if (!is.null(givenCQs) && length(names(givenCQs)) > 0)
@@ -192,6 +201,26 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   }))
 
   if (length(m_ssChar) == 0) return(0)
+
+  # Version 1.2 resolves on the backend side; this covers the older ones. Only
+  # rewrite when there is something to resolve -- resolveRecurrence() reformats
+  # every equation it touches, which would break printed == returned.
+  if (resolve && outputFormat == "R" && length(m_ssChar) > 1) {
+    # Entries kept as their own name are free parameters, not definitions.
+    passthrough <- names(m_ssChar)[trimws(m_ssChar) == names(m_ssChar)]
+    recurrent <- function(x) vapply(seq_along(x), function(i) {
+      any(setdiff(getSymbols(x[i]), passthrough) %in% names(x)[-i])
+    }, logical(1))
+    if (any(recurrent(m_ssChar))) {
+      m_ssChar <- resolveRecurrence(m_ssChar)
+      left <- recurrent(m_ssChar)
+      if (any(left))
+        warning("Steady-state equations still reference each other after ",
+                "resolveRecurrence(): ", paste(names(m_ssChar)[left], collapse = ", "),
+                ". The returned vector cannot be used as a parameter ",
+                "transformation as is.")
+    }
+  }
 
   # Write steady states to disk
   if (!is.null(file) && is.character(file))

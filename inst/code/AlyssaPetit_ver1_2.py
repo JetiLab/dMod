@@ -14,6 +14,7 @@ from sympy.matrices import *
 from sympy.matrices import matrix_multiply_elementwise
 from scipy.optimize import linprog
 import csv
+import re
 import time
 import random
 from random import shuffle
@@ -773,10 +774,6 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
                     flux_ids.append(c)
                 elif (not is_out) and v > 0:
                     flux_ids.append(c)
-            # Drop locked flux parameters: cycle-breaking isn't allowed to
-            # pick them as the pivot, but they still contribute to the
-            # state's ODE structurally.
-            flux_ids = [c for c in flux_ids if str(fluxpars[c]) not in locked_set]
             flux_pars = [fluxpars[c] for c in flux_ids]
             fc_counts = [col_counts[c] for c in flux_ids]
             typ = _side_type(fc_counts)
@@ -784,7 +781,17 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
             if typ is None:
                 typ = 3
                 dont = 1
+            # A flux without its own rate constant (an irreducible sum) offers
+            # nothing to solve for, so the whole side is unusable as a pivot.
+            if any(fp is None for fp in flux_pars):
+                dont = 1
             if any(str(fp) in neglect_set for fp in flux_pars):
+                dont = 1
+            # A locked flux disqualifies the WHOLE side, not just itself:
+            # `type`/`fluxLength` are what certify a pivot as positive, and a
+            # type-1 pivot solves the state's FULL ODE, so a hidden second flux
+            # turns the solve into influx - other_outflux.
+            if any(fp is not None and str(fp) in locked_set for fp in flux_pars):
                 dont = 1
             # Propagation risk (Python-only extension, see sort comment):
             # sum over pivot-side flux columns of (col_count - 1), i.e.
@@ -882,6 +889,21 @@ def GetType(node, fp, fluxpars, LCLs):
     else:
         return(3)
         
+def GetFluxParameter(flux, X):
+    """Rate constant the whole flux is proportional to, or None.
+
+    A flux parameter is a top-level factor that kills the flux when set to
+    zero, so that `flux = fluxpar * prefactor` -- the form every trafo body
+    below relies on. A flux that is an irreducible sum has no such factor and
+    yields None.
+    """
+    if(flux.args==()):
+        return(flux)
+    for el in flux.args:
+        if(el not in X and not is_number(str(el)) and flux.subs(el, 0)==0):
+            return(el)
+    return(None)
+
 def GetAppearances(fp, fluxpars, SM):
     anz=0
     cols = [i for i, x in enumerate(fluxpars) if x == fp]
@@ -1070,6 +1092,26 @@ def _residual_is_zero_modp(expr, trials=3, primes=_MODP_PRIMES):
         if good == 0:
             return None
     return True
+
+def _finalSimplify(rs, full):
+    """One right-hand side through the final-simplification pipeline.
+
+    `full` selects cancel + posify + simplify(ratio=oo) + factor(num)/factor(den);
+    otherwise a single sympy.simplify. sqrt takes the (P + Q*sqrt(D))/R route
+    either way.
+    """
+    e_raw=parse_expr(rs)
+    if(e_raw.has(sympy.sqrt)):
+        e_pos, reps = posify(e_raw)
+        e_pos = _simplify_with_sqrt(e_pos)
+        return str(e_pos.subs(reps))
+    if(full):
+        e_pos, reps=posify(cancel(e_raw))
+        e_pos=_simplify(e_pos, ratio=oo, rational=True)
+        n, d=fraction(e_pos)
+        return str((factor(n)/factor(d)).subs(reps))
+    return str(_simplify(e_raw))
+
 
 def Alyssa(filename,
           injections=[],
@@ -1396,25 +1438,44 @@ def Alyssa(filename,
     else:
         CMbig=Matrix(CM)      
 
+#### Split purely additive fluxes
+    # fluxpars must stay column-aligned and the trafo bodies need
+    # flux = fluxpar * prefactor, which a sum like (k_basal + k_ind*C3) has no
+    # factor for. Give each summand its own column; SM*F is unchanged. Summands
+    # that could carry a minus sign are left alone -- that would put a negative
+    # flux in a positive-stoichiometry column.
+    col=0
+    nsplit=0
+    while col<len(F):
+        if(GetFluxParameter(F[col], X) is not None):
+            col=col+1
+            continue
+        summands=sympy.Add.make_args(F[col])
+        if(len(summands)<2 or
+           any(t.could_extract_minus_sign() for t in summands) or
+           any(GetFluxParameter(t, X) is None for t in summands)):
+            col=col+1
+            continue
+        for t in summands:
+            SM=SM.col_insert(SM.cols, SM.col(col))
+            F=F.row_insert(len(F), Matrix(1,1,[t]))
+        SM.col_del(col)
+        F.row_del(col)
+        nsplit=nsplit+1
+    if(nsplit>0):
+        print('Split '+str(nsplit)+' additive flux(es) into one column per summand.',flush=True)
+
 #### Save ODE equations for testing solutions at the end    
     print('Rank of SM is '+str(SM.rank()) + '!',flush=True)
     SMorig=SM.copy()
     ODE=SMorig*F
 #### Get Flux Parameters
-    fluxpars=[]
-    for flux in F:
-        if(flux.args!=()):
-            foundFluxpar=False
-            for el in flux.args:
-                if(not foundFluxpar and el not in X and not is_number(str(el))):
-                    if(flux.subs(el, 0)==0):
-                        fluxpars.append(el)
-                        foundFluxpar=True
-        else:
-            fluxpars.append(flux)
+    # None for an irreducible sum the split could not take apart; the entry is
+    # kept for column alignment and genPriorityTable refuses to pivot on it.
+    fluxpars=[GetFluxParameter(flux, X) for flux in F]
 
     if priority:
-        known={str(x) for x in Xo} | {str(fp) for fp in fluxpars}
+        known={str(x) for x in Xo} | {str(fp) for fp in fluxpars if fp is not None}
         unknown=[pr for pr in priority if pr not in known]
         if unknown:
             print('Warning: priority entries match no state or rate parameter '
@@ -1474,11 +1535,14 @@ def Alyssa(filename,
     # into a state's final expression -- reparameterizing them now would
     # create self-referential eqOut entries, see _try_positive_direct_solve).
     locked_fluxpars=set()
-    fluxpar_str_to_sym={str(fp): fp for fp in fluxpars}
+    fluxpar_str_to_sym={str(fp): fp for fp in fluxpars if fp is not None}
     priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
                                                   priority)
 #### Remove cycles step by step
     gesnew=0
+    # (name, numerator flux, reference flux) per r_*: a trafo splits the
+    # opposite side's total in the proportions 1 : r_1 : r_2 : ...
+    newvars=[]
     eqOut=[]
 
     def _apply_state_solve(row_idx, y, sol, label):
@@ -1550,6 +1614,8 @@ def Alyssa(filename,
         # introduces sqrt); each linear sweep may unblock a quadratic, and
         # each quadratic sweep may unblock further linears (the sqrt-bearing
         # substitution can simplify other states' ODEs to linear-in-self).
+        if not allow_positive_solves:
+            return False
         any_progress=False
         while True:
             lin=_do_direct_positive_solve()
@@ -1558,6 +1624,15 @@ def Alyssa(filename,
                 break
             any_progress=True
         return any_progress
+
+    # Every state the positive-solve pass resolves locks the flux parameters
+    # baked into its solution, and the pass is too greedy to see that a lock may
+    # remove a cycle's last positive pivot. Snapshot so that deadlock can be
+    # retried with the pass off.
+    allow_positive_solves=True
+    retried_without_positive_solves=False
+    _snapshot=(SM.copy(), F.copy(), X.copy(), list(fluxpars), list(LCLs),
+               counter, gesnew)
 
     if cycles_list:
         print('\nDirect positive-solve pass ...',flush=True)
@@ -1596,6 +1671,27 @@ def Alyssa(filename,
         printPriorityTable(priority_rows)
         # Unresolvable candidate: no usable side for the top priority row.
         if row['dontUseThisSide'] and minType != 0:
+            # Withholding only the blocking solves does find resolutions with
+            # no ratio parameter at all, but they cost two orders of magnitude in
+            # expression size (TGFb, Smad2: 869 -> 30164 chars) and stop
+            # simplifying. Hence all-or-nothing.
+            if locked_fluxpars and not retried_without_positive_solves:
+                allow_positive_solves=False
+                retried_without_positive_solves=True
+                print('   Every side is blocked by a flux parameter locked by the '
+                      'positive-solve',flush=True)
+                print('   pass -- rolling back and retrying without it.',flush=True)
+                SM, F, X = (_snapshot[0].copy(), _snapshot[1].copy(),
+                            _snapshot[2].copy())
+                fluxpars=list(_snapshot[3])
+                LCLs=list(_snapshot[4])
+                counter, gesnew = _snapshot[5], _snapshot[6]
+                eqOut=[]
+                locked_fluxpars=set()
+                SSgraph=DetermineGraphStructure(SM, F, X, neglect)
+                priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect,
+                                                              locked_fluxpars, priority)
+                continue
             # Take any simple cycle the state participates in for the
             # diagnostic. Falls back to a single-node "cycle" if the table
             # picked a non-cycle state (shouldn't happen when cycles_list is
@@ -1696,8 +1792,10 @@ def Alyssa(filename,
             )
             if cq_related:
                 print(f"      {nextItem()}. This model has bilinear coupling between conservation-law states.",flush=True)
-                print(f"         AlyssaPetit cannot express the steady state as manifestly positive",flush=True)
-                print(f"         rational functions for this class. Consider MiraHendrix for this model.",flush=True)
+                print(f"         No flux-parameter pivot keeps the steady state a manifestly",flush=True)
+                print(f"         positive rational function here. Try solveQuadratic = TRUE, which",flush=True)
+                print(f"         admits closed-form positive roots at the price of sqrt terms, or",flush=True)
+                print(f"         steer the pivot choice with 'priority' / 'neglect'.",flush=True)
             print("    ======================================================",flush=True)
             return(0)
         if(minType==0):
@@ -1734,6 +1832,7 @@ def Alyssa(filename,
                             trafoList.append(str(fp)+' = ('+str(sumposs)+')*1/('+str(nenner)+')*1/('+str(prefactor)+')')
                         else:
                             gesnew=gesnew+1
+                            newvars.append(('r_'+state2Rem+'_'+str(j), str(fp), str(negfps[0])))
                             trafoList.append(str(fp)+' = ('+str(sumposs)+')*'+'r_'+state2Rem+'_'+str(j)+'/('+str(nenner)+')*1/('+str(prefactor)+')')                        
                     print('   '+str(state2Rem)+' --> '+str(negfps),flush=True)
                     
@@ -1746,6 +1845,7 @@ def Alyssa(filename,
                             trafoList.append(str(fp)+' = ('+str(sumnegs)+')*1/('+str(nenner)+')*1/('+str(prefactor)+')')
                         else:
                             gesnew=gesnew+1
+                            newvars.append(('r_'+state2Rem+'_'+str(j), str(fp), str(posfps[0])))
                             trafoList.append(str(fp)+' = ('+str(sumnegs)+')*'+'r_'+state2Rem+'_'+str(j)+'/('+str(nenner)+')*1/('+str(prefactor)+')')
                     print('   '+str(state2Rem)+' --> '+str(posfps),flush=True)
                 for eq in trafoList:
@@ -1800,6 +1900,7 @@ def Alyssa(filename,
                             r_weight = parse_expr('1')
                         else:
                             gesnew=gesnew+1
+                            newvars.append(('r_'+state2Rem+'_'+str(j), str(fp), str(negfps[0])))
                             trafoList.append(str(fp)+' = ('+str(sumposs)+')*'+'r_'+state2Rem+'_'+str(j)+'/('+str(nenner)+')*1/('+str(prefactor)+')')
                             r_weight = parse_expr('r_'+state2Rem+'_'+str(j))
 
@@ -1825,6 +1926,7 @@ def Alyssa(filename,
                             r_weight = parse_expr('1')
                         else:
                             gesnew=gesnew+1
+                            newvars.append(('r_'+state2Rem+'_'+str(j), str(fp), str(posfps[0])))
                             trafoList.append(str(fp)+' = ('+str(sumnegs)+')*'+'r_'+state2Rem+'_'+str(j)+'/('+str(nenner)+')*1/('+str(prefactor)+')')
                             r_weight = parse_expr('r_'+state2Rem+'_'+str(j))
                         FsearchFlux = matrix_multiply_elementwise(abs(SM[index,:]),F.T)
@@ -1913,29 +2015,7 @@ def Alyssa(filename,
                 _simplify_aborted=True
                 break
             ls, rs = eqOut[i].split(' = ', 1)
-            e_raw = parse_expr(rs)
-            has_sqrt = e_raw.has(sympy.sqrt)
-            if _full:
-                if has_sqrt:
-                    # Decompose into (P + Q*sqrt(D))/R and factor each piece.
-                    e_pos, reps = posify(e_raw)
-                    e_pos = _simplify_with_sqrt(e_pos)
-                    rs_simp = str(e_pos.subs(reps))
-                else:
-                    e=cancel(e_raw)
-                    e_pos, reps=posify(e)
-                    e_pos=_simplify(e_pos, ratio=oo, rational=True)
-                    n, d=fraction(e_pos)
-                    e_pos=factor(n)/factor(d)
-                    rs_simp=str(e_pos.subs(reps))
-            else:
-                if has_sqrt:
-                    e_pos, reps = posify(e_raw)
-                    e_pos = _simplify_with_sqrt(e_pos)
-                    rs_simp = str(e_pos.subs(reps))
-                else:
-                    rs_simp=str(_simplify(e_raw))
-            eqOut[i]=ls+' = '+rs_simp
+            eqOut[i]=ls+' = '+_finalSimplify(rs, _full)
             print(f'   Simplified {ls}',flush=True)
     
 #### Test Solution
@@ -2015,6 +2095,36 @@ def Alyssa(filename,
             eqOutReturn.append(eq)            
         
     else:
+        # Resolve the recurrence before printing: a dMod trafo substitutes all
+        # entries at once ('M' above does the same inline). Textually, not via
+        # sympy -- subs() re-flattens the nested rational and throws away the
+        # factored form. \b works as a boundary because '_' is a word character,
+        # so 'R1' matches neither 'R1mRNA' nor 'R1_R2_TGFb'.
+        substituted=set()
+        for i in range(len(eqOut)):
+            ls, rs = eqOut[i].split(' = ', 1)
+            if(ls==rs):
+                continue
+            pattern=re.compile(r'\b'+re.escape(ls)+r'\b')
+            for j in range(i+1, len(eqOut)):
+                ls2, rs2 = eqOut[j].split(' = ', 1)
+                resolved=pattern.sub('('+rs+')', rs2)
+                if(resolved!=rs2):
+                    eqOut[j]=ls2+' = '+resolved
+                    substituted.add(j)
+        # Substituting nests two separately simplified expressions, so a factor
+        # can straddle the new boundary. Re-run what changed.
+        if(simplify and substituted):
+            print(('Full-simplifying' if _full else 'Simplifying')+
+                  ' resolved expressions ...',flush=True)
+            for j in sorted(substituted):
+                if _check_walltime():
+                    print('   Walltime exceeded -- leaving the remaining resolved '
+                          'expressions un-simplified.',flush=True)
+                    break
+                ls2, rs2 = eqOut[j].split(' = ', 1)
+                eqOut[j]=ls2+' = '+_finalSimplify(rs2, _full)
+                print(f'   Simplified {ls2}',flush=True)
         eqOutReturn=[]
         for state in zeroStates:
             print('\t'+str(state)+' = 0'+'\n',flush=True)
@@ -2026,4 +2136,6 @@ def Alyssa(filename,
     print('Number of Species:  '+str(nrspecies),flush=True)
     print('Number of Equations:  '+str(len(eqOut)+len(zeroStates)),flush=True)
     print('Number of new introduced variables:  '+str(gesnew),flush=True)
+    for nm, fp, ref in newvars:
+        print('\t'+nm+' = flux('+fp+') / flux('+ref+') > 0',flush=True)
     return(eqOutReturn)

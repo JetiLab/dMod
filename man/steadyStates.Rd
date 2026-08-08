@@ -20,7 +20,8 @@ steadyStates(
   positive = TRUE,
   branches = FALSE,
   priority = NULL,
-  version = "1.2"
+  version = "1.2",
+  resolve = TRUE
 )
 }
 \arguments{
@@ -97,6 +98,12 @@ Unmatched names are reported and ignored. Version \code{"1.2"} only.}
 \code{"1.2"} (default; sink-cluster detection, \code{walltime},
 priority-table cycle breaking, end-of-pipeline \code{simplify} toggle,
 optional quadratic state-side solve).}
+
+\item{resolve}{Logical. When \code{TRUE} (default), the equations are passed
+through \code{\link[=resolveRecurrence]{resolveRecurrence()}} so that none refers to another -- a dMod
+parameter transformation substitutes all entries at once. Version \code{"1.2"}
+already resolves on the backend side; this matters for \code{"1.0"} / \code{"1.1"}.
+\code{FALSE} keeps the compact recurrent form.}
 }
 \value{
 Named character vector of steady-state equations (dMod compatible).
