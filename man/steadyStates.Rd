@@ -25,94 +25,104 @@ steadyStates(
 )
 }
 \arguments{
-\item{model}{Either name of the csv-file or the eqnlist of the model.}
+\item{model}{An \code{eqnlist}, or the name of a csv file describing the model.}
 
-\item{file}{Name of the file to which the steady-state equations are saved.}
+\item{file}{Character, path the result is written to with \code{saveRDS()}, and
+base name of the intermediate csv handed to the backend. For an \code{eqnlist}
+model it defaults to \code{"reactions_for_Alyssa"}.}
 
-\item{rates}{Character vector, flux vector of the system}
+\item{rates}{Unused, retained for backward compatibility.}
 
-\item{forcings}{Character vector with the names of the forcings}
+\item{forcings}{Character vector, names of the forcings. These states are
+held at zero and treated as exogenous.}
 
-\item{givenCQs}{(Unnamed) Character vector with conserved quantities. Use the
-format c("A + pA = totA", "B + pB = totB"). The format c("A + pA", "B +
-pB") works also. If NULL, conserved quantities are automatically calculated.}
+\item{givenCQs}{Unnamed character vector of conserved quantities, either as
+\code{c("A + pA = totA", "B + pB = totB")} or as \code{c("A + pA", "B + pB")}. \code{NULL}
+(default) derives a basis automatically.}
 
-\item{neglect}{Character vector with names of states and parameters that must
-not be used for solving the steady-state equations. A neglected state stays
-a free parameter of the transformation; a neglected rate parameter is never
-used as a pivot.}
+\item{neglect}{Character vector, states and rate parameters the solver must
+not resolve. A neglected state stays a free parameter of the transformation;
+a neglected rate parameter is never used as a pivot.}
 
-\item{sparsifyLevel}{Numeric. Upper bound for length of linear combinations
-used to simplify the stoichiometric matrix. Used by versions \code{"1.0"}
-and \code{"1.1"}; ignored by \code{"1.2"}.}
+\item{sparsifyLevel}{Numeric, upper bound on the length of the linear
+combinations used to simplify the stoichiometric matrix. Versions \code{"1.0"}
+and \code{"1.1"} only.}
 
-\item{outputFormat}{Define the output format. By default "R" generating dMod
-compatible output. To obtain an output appropriate for d2d [3] "M" must be
-selected.}
+\item{outputFormat}{Character, \code{"R"} (default) for dMod-compatible output, or
+\code{"M"} for d2d [3].}
 
-\item{testSteady}{Character, how to verify the obtained steady states. One
-of \code{"fast"} (default; probabilistic check over a finite field GF(p) via
-Schwartz-Zippel, fast with negligible error probability), \code{"exact"}
-(symbolic substitution; correct but slow on large \code{sqrt} solutions), or
-\code{"skip"}. \code{"fast"} requires version "1.2" (falls back to \code{"exact"} on
-"1.1"); version "1.0" always tests.}
+\item{testSteady}{Character, how the solution is verified. One of \code{"fast"}
+(default; probabilistic Schwartz-Zippel check over GF(p), with negligible
+error probability), \code{"exact"} (symbolic substitution, slow on large \code{sqrt}
+solutions) or \code{"skip"}. \code{"fast"} requires version \code{"1.2"} and falls back to
+\code{"exact"} on \code{"1.1"}; version \code{"1.0"} always tests.}
 
-\item{walltime}{Integer, wall-clock budget in seconds for the solver
-(default \code{0} = unlimited). Version "1.2" only.}
+\item{walltime}{Integer, wall-clock budget in seconds for the solver, \code{0}
+(default) for unlimited. Version \code{"1.2"} only.}
 
-\item{simplify}{Final-simplification mode. One of \code{TRUE} (default,
-\code{sympy.simplify} once per expression), \code{FALSE} (skip; fastest, bulkier
-output), or \code{"full"} (aggressive \code{cancel}/\code{posify}/\code{simplify}/\code{factor}
-pipeline; slower but more compact). Version "1.2" only.}
+\item{simplify}{Final-simplification mode. \code{TRUE} (default) applies
+\code{sympy.simplify} once per expression, \code{FALSE} skips it and returns bulkier
+output, \code{"full"} adds a \code{cancel}/\code{posify}/\code{factor} pipeline that is slower
+but more compact. Version \code{"1.2"} only.}
 
-\item{solveQuadratic}{Logical. When \code{TRUE}, the solver attempts a closed-form
-quadratic state-side resolution (positive root of \code{a*X^2 + b*X + c = 0})
-before falling back to a flux-parameter pivot for any cycle whose final
-ODE is quadratic-in-self after upstream linear substitutions. Keeps the
-pivoted flux parameter (and the chain of substituted upstream rate
-constants) out of \code{mysteadies}, at the cost of emitting \code{sqrt(...)}
-expressions. Default \code{FALSE}; some workflows cannot consume \code{sqrt(...)}
-in their parameter trafos. Version "1.2" only.}
+\item{solveQuadratic}{Logical, whether a cycle whose final equation is
+quadratic in its own state may be closed by the positive root of
+\code{a*X^2 + b*X + c = 0} instead of by a rate-parameter pivot. This keeps the
+pivoted rate constants out of the result, at the price of \code{sqrt(...)} terms
+that some workflows cannot consume in a parameter transformation. Default
+\code{FALSE}. Version \code{"1.2"} only.}
 
-\item{positive}{Positivity assumption for the sign-based solvers, used to
-select roots. \code{TRUE} (default) treats all parameters, initial values and
-totals as positive; \code{FALSE} assumes nothing (ambiguous states are pivoted);
-a character vector names the symbols to treat as positive. Version "1.2"
-only.}
+\item{positive}{Positivity assumption used for root and pivot selection.
+\code{TRUE} (default) treats all parameters, initial values and totals as
+positive, \code{FALSE} assumes nothing, and a character vector names the symbols
+to treat as positive. Version \code{"1.2"} only.
 
-\item{branches}{Logical. When \code{TRUE} (with \code{solveQuadratic = TRUE}), a
-quadratic admitting two positive roots (bistability) is emitted with a
-selector symbol \verb{branch_<state>} taking \code{-1} or \code{+1} to recover the two
-steady states. \code{FALSE} (default) emits only the provably-unique positive
-root and pivots ambiguous cases. Version "1.2" only.}
+With \code{TRUE} the result is manifestly non-negative: no expression contains a
+subtraction, so no parameter choice can drive a state negative. Where
+solving for a state would yield a difference, its equation is spent on one
+of its own rate constants instead. That solve is linear and therefore has a
+unique root, which is why a pivot, not root selection, is the remedy. If no
+pivot succeeds either, a diagnosis is printed and \code{0} returned.}
 
-\item{priority}{Character vector of state and/or rate-parameter names,
-most-preferred first, biasing the order in which the solver resolves the
-system. A named state is resolved earlier; a named rate parameter is
-preferred as pivot, i.e. expressed in terms of the others. Structural
-constraints still win, so the order is a preference, not a guarantee.
+\item{branches}{Logical, whether a quadratic with two positive roots
+(bistability) is emitted with a selector symbol \verb{branch_<state>} taking
+\code{-1} or \code{+1} to recover both steady states. Requires
+\code{solveQuadratic = TRUE}. \code{FALSE} (default) emits only the provably unique
+positive root and pivots ambiguous cases. Version \code{"1.2"} only.}
+
+\item{priority}{Character vector of state and rate-parameter names,
+most-preferred first, biasing the resolution order: a named state is
+resolved earlier, a named rate parameter is preferred as pivot. Structural
+constraints take precedence, so this is a preference, not a guarantee.
 Unmatched names are reported and ignored. Version \code{"1.2"} only.}
 
-\item{version}{Character, AlyssaPetit backend version. One of
-\code{"1.0"} (original), \code{"1.1"} (adds \code{testSteady}), or
-\code{"1.2"} (default; sink-cluster detection, \code{walltime},
-priority-table cycle breaking, end-of-pipeline \code{simplify} toggle,
-optional quadratic state-side solve).}
+\item{version}{Character, backend version. One of \code{"1.0"} (original), \code{"1.1"}
+(adds \code{testSteady}), or \code{"1.2"} (default; sink-cluster detection,
+\code{walltime}, priority-table cycle breaking, \code{simplify} toggle, optional
+quadratic state-side solve).}
 
-\item{resolve}{Logical. When \code{TRUE} (default), the equations are passed
-through \code{\link[=resolveRecurrence]{resolveRecurrence()}} so that none refers to another -- a dMod
-parameter transformation substitutes all entries at once. Version \code{"1.2"}
-already resolves on the backend side; this matters for \code{"1.0"} / \code{"1.1"}.
-\code{FALSE} keeps the compact recurrent form.}
+\item{resolve}{Logical, whether the equations are passed through
+\code{\link[=resolveRecurrence]{resolveRecurrence()}} so that none refers to another, as a dMod parameter
+transformation substitutes all entries at once. \code{FALSE} keeps the compact
+recurrent form. Version \code{"1.2"} already resolves in the backend, so this
+matters for \code{"1.0"} and \code{"1.1"}.}
 }
 \value{
-Named character vector of steady-state equations (dMod compatible).
+Named character vector of steady-state equations in dMod format, or
+\code{0} if no solution was found. An entry whose value is its own name denotes a
+free parameter.
 }
 \description{
-Computes symbolic steady-state expressions tailored to parameter estimation
-via the AlyssaPetit method (see references). Calls a Python script via
-reticulate (Python 3.x). Three solver versions are selectable via the
-\code{version} argument; see that parameter for details.
+Computes symbolic steady-state expressions tailored to parameter estimation,
+following the AlyssaPetit method [1], [2]. The solver itself is a Python
+module (Python 3.x), called through reticulate.
+}
+\details{
+Rather than solving every balance equation for its own state, the solver
+spends each equation on whichever state or rate constant keeps the result a
+ratio of sums of positive terms. A state whose equation went to a rate
+constant is absent from the result and stays a free parameter of the
+transformation.
 }
 \examples{
 
@@ -150,14 +160,11 @@ reticulate (Python 3.x). Three solver versions are selectable via the
 }
 }
 \references{
-[1]
-\url{https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/}
+[1] \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/}
 
-[2]
-\url{https://github.com/marcusrosenblatt/AlyssaPetit}
+[2] \url{https://github.com/marcusrosenblatt/AlyssaPetit}
 
-[3]
-\url{https://github.com/Data2Dynamics/d2d}
+[3] \url{https://github.com/Data2Dynamics/d2d}
 }
 \author{
 Marcus Rosenblatt, \email{marcus.rosenblatt@fdm.uni-freiburg.de}

@@ -163,3 +163,77 @@ test_that("compartment volume ratios reach the steady-state backend", {
   expect_lt(max(abs(residual)), 1e-10)
 
 })
+
+test_that("positive = TRUE spends the row on a rate constant, not on a difference", {
+
+  # Rec's ODE is not affine in Rec, so the direct positive-solve pass skips it.
+  # By the time this phase reaches it Lig is substituted and the Lig-driven sink
+  # has become the constant secretion flux, so solving for Rec would give
+  # (k_pr_Rec - k_pr_Src)/k_dg_Rec. Linear in Rec, so there is no second root to
+  # pick: only the pivot onto k_pr_Rec keeps the result a sum.
+  withr::local_dir(tempdir())
+
+  reactions <- eqnlist()
+  reactions <- addReaction(reactions, "", "Src", "k_pr_Src", "Source production")
+  reactions <- addReaction(reactions, "Src", "Lig", "k_sec*Src", "Ligand secretion")
+  reactions <- addReaction(reactions, "", "Rec", "k_pr_Rec", "Receptor synthesis")
+  reactions <- addReaction(reactions, "Rec", "", "k_dg_Rec*Rec", "Receptor degradation")
+  reactions <- addReaction(reactions, "Lig + Rec", "Cpx", "k_form*Lig*Rec/(Km + Rec)",
+                           "Saturating complex formation")
+  reactions <- addReaction(reactions, "Cpx", "", "k_dg_Cpx*Cpx", "Complex degradation")
+
+  mysteadies <- steadyStates(reactions)
+
+  # The invariant: positive = TRUE (the default) must not emit a subtraction.
+  expect_false(any(grepl("-", mysteadies, fixed = TRUE)))
+
+  # The row was spent on the rate constant, so Rec stays a free parameter.
+  expect_true("k_pr_Rec" %in% names(mysteadies))
+  expect_false("Rec" %in% names(mysteadies))
+
+  # And it is still a steady state, at a random positive point.
+  odes <- as.eqnvec(reactions)
+  symbolsOf <- function(x) unique(unlist(lapply(x, function(e) all.vars(parse(text = e)))))
+  defs <- mysteadies[trimws(mysteadies) != names(mysteadies)]
+  set.seed(11)
+  free <- setdiff(symbolsOf(c(as.character(odes), mysteadies)), names(defs))
+  env <- as.list(stats::runif(length(free), 0.3, 2))
+  names(env) <- free
+
+  todo <- defs
+  while (length(todo)) {
+    ready <- vapply(todo, function(eqn) all(all.vars(parse(text = eqn)) %in% names(env)),
+                    logical(1))
+    if (!any(ready)) break
+    env[names(todo)[ready]] <- lapply(todo[ready], function(eqn) eval(parse(text = eqn), env))
+    todo <- todo[!ready]
+  }
+  expect_length(todo, 0)
+
+  expect_true(all(unlist(env[names(defs)]) > 0))
+  residual <- vapply(odes, function(e) eval(parse(text = e), env), numeric(1))
+  expect_lt(max(abs(residual)), 1e-10)
+
+})
+
+test_that("an unavoidable sign-indefinite fixed point is refused, not returned", {
+
+  # With a basal arm the additive flux is split, so no single rate constant can
+  # absorb the row and every candidate pivot is itself a difference. The backend
+  # must refuse rather than return a negative-capable trafo. The diagnosis goes
+  # to Python stdout, which R cannot capture, so only the return is asserted.
+  withr::local_dir(tempdir())
+
+  reactions <- eqnlist()
+  reactions <- addReaction(reactions, "", "Src", "k_pr_Src", "Source production")
+  reactions <- addReaction(reactions, "Src", "Lig", "k_sec*Src", "Ligand secretion")
+  reactions <- addReaction(reactions, "", "Rec", "(k_pr_Rec + k_basal_Rec)",
+                           "Receptor synthesis, basal plus induced")
+  reactions <- addReaction(reactions, "Rec", "", "k_dg_Rec*Rec", "Receptor degradation")
+  reactions <- addReaction(reactions, "Lig + Rec", "Cpx", "k_form*Lig*Rec/(Km + Rec)",
+                           "Saturating complex formation")
+  reactions <- addReaction(reactions, "Cpx", "", "k_dg_Cpx*Cpx", "Complex degradation")
+
+  expect_identical(steadyStates(reactions), 0)
+
+})

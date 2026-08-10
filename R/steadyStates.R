@@ -1,82 +1,88 @@
 #' Calculate analytical steady states
 #'
-#' Computes symbolic steady-state expressions tailored to parameter estimation
-#' via the AlyssaPetit method (see references). Calls a Python script via
-#' reticulate (Python 3.x). Three solver versions are selectable via the
-#' \code{version} argument; see that parameter for details.
+#' Computes symbolic steady-state expressions tailored to parameter estimation,
+#' following the AlyssaPetit method \[1\], \[2\]. The solver itself is a Python
+#' module (Python 3.x), called through reticulate.
 #'
-#' @param model Either name of the csv-file or the eqnlist of the model.
-#' @param file Name of the file to which the steady-state equations are saved.
-#' @param rates Character vector, flux vector of the system
-#' @param forcings Character vector with the names of the forcings
-#' @param givenCQs (Unnamed) Character vector with conserved quantities. Use the
-#'   format c("A + pA = totA", "B + pB = totB"). The format c("A + pA", "B +
-#'   pB") works also. If NULL, conserved quantities are automatically calculated.
-#' @param neglect Character vector with names of states and parameters that must
-#'   not be used for solving the steady-state equations. A neglected state stays
-#'   a free parameter of the transformation; a neglected rate parameter is never
-#'   used as a pivot.
-#' @param sparsifyLevel Numeric. Upper bound for length of linear combinations
-#'   used to simplify the stoichiometric matrix. Used by versions \code{"1.0"}
-#'   and \code{"1.1"}; ignored by \code{"1.2"}.
-#' @param outputFormat Define the output format. By default "R" generating dMod
-#'   compatible output. To obtain an output appropriate for d2d \[3\] "M" must be
-#'   selected.
-#' @param testSteady Character, how to verify the obtained steady states. One
-#'   of `"fast"` (default; probabilistic check over a finite field GF(p) via
-#'   Schwartz-Zippel, fast with negligible error probability), `"exact"`
-#'   (symbolic substitution; correct but slow on large `sqrt` solutions), or
-#'   `"skip"`. `"fast"` requires version "1.2" (falls back to `"exact"` on
-#'   "1.1"); version "1.0" always tests.
-#' @param walltime Integer, wall-clock budget in seconds for the solver
-#'   (default `0` = unlimited). Version "1.2" only.
-#' @param simplify Final-simplification mode. One of `TRUE` (default,
-#'   `sympy.simplify` once per expression), `FALSE` (skip; fastest, bulkier
-#'   output), or `"full"` (aggressive `cancel`/`posify`/`simplify`/`factor`
-#'   pipeline; slower but more compact). Version "1.2" only.
-#' @param solveQuadratic Logical. When `TRUE`, the solver attempts a closed-form
-#'   quadratic state-side resolution (positive root of `a*X^2 + b*X + c = 0`)
-#'   before falling back to a flux-parameter pivot for any cycle whose final
-#'   ODE is quadratic-in-self after upstream linear substitutions. Keeps the
-#'   pivoted flux parameter (and the chain of substituted upstream rate
-#'   constants) out of `mysteadies`, at the cost of emitting `sqrt(...)`
-#'   expressions. Default `FALSE`; some workflows cannot consume `sqrt(...)`
-#'   in their parameter trafos. Version "1.2" only.
-#' @param positive Positivity assumption for the sign-based solvers, used to
-#'   select roots. `TRUE` (default) treats all parameters, initial values and
-#'   totals as positive; `FALSE` assumes nothing (ambiguous states are pivoted);
-#'   a character vector names the symbols to treat as positive. Version "1.2"
-#'   only.
-#' @param branches Logical. When `TRUE` (with `solveQuadratic = TRUE`), a
-#'   quadratic admitting two positive roots (bistability) is emitted with a
-#'   selector symbol `branch_<state>` taking `-1` or `+1` to recover the two
-#'   steady states. `FALSE` (default) emits only the provably-unique positive
-#'   root and pivots ambiguous cases. Version "1.2" only.
-#' @param priority Character vector of state and/or rate-parameter names,
-#'   most-preferred first, biasing the order in which the solver resolves the
-#'   system. A named state is resolved earlier; a named rate parameter is
-#'   preferred as pivot, i.e. expressed in terms of the others. Structural
-#'   constraints still win, so the order is a preference, not a guarantee.
+#' Rather than solving every balance equation for its own state, the solver
+#' spends each equation on whichever state or rate constant keeps the result a
+#' ratio of sums of positive terms. A state whose equation went to a rate
+#' constant is absent from the result and stays a free parameter of the
+#' transformation.
+#'
+#' @param model An `eqnlist`, or the name of a csv file describing the model.
+#' @param file Character, path the result is written to with `saveRDS()`, and
+#'   base name of the intermediate csv handed to the backend. For an `eqnlist`
+#'   model it defaults to `"reactions_for_Alyssa"`.
+#' @param rates Unused, retained for backward compatibility.
+#' @param forcings Character vector, names of the forcings. These states are
+#'   held at zero and treated as exogenous.
+#' @param givenCQs Unnamed character vector of conserved quantities, either as
+#'   `c("A + pA = totA", "B + pB = totB")` or as `c("A + pA", "B + pB")`. `NULL`
+#'   (default) derives a basis automatically.
+#' @param neglect Character vector, states and rate parameters the solver must
+#'   not resolve. A neglected state stays a free parameter of the transformation;
+#'   a neglected rate parameter is never used as a pivot.
+#' @param sparsifyLevel Numeric, upper bound on the length of the linear
+#'   combinations used to simplify the stoichiometric matrix. Versions `"1.0"`
+#'   and `"1.1"` only.
+#' @param outputFormat Character, `"R"` (default) for dMod-compatible output, or
+#'   `"M"` for d2d \[3\].
+#' @param testSteady Character, how the solution is verified. One of `"fast"`
+#'   (default; probabilistic Schwartz-Zippel check over GF(p), with negligible
+#'   error probability), `"exact"` (symbolic substitution, slow on large `sqrt`
+#'   solutions) or `"skip"`. `"fast"` requires version `"1.2"` and falls back to
+#'   `"exact"` on `"1.1"`; version `"1.0"` always tests.
+#' @param walltime Integer, wall-clock budget in seconds for the solver, `0`
+#'   (default) for unlimited. Version `"1.2"` only.
+#' @param simplify Final-simplification mode. `TRUE` (default) applies
+#'   `sympy.simplify` once per expression, `FALSE` skips it and returns bulkier
+#'   output, `"full"` adds a `cancel`/`posify`/`factor` pipeline that is slower
+#'   but more compact. Version `"1.2"` only.
+#' @param solveQuadratic Logical, whether a cycle whose final equation is
+#'   quadratic in its own state may be closed by the positive root of
+#'   `a*X^2 + b*X + c = 0` instead of by a rate-parameter pivot. This keeps the
+#'   pivoted rate constants out of the result, at the price of `sqrt(...)` terms
+#'   that some workflows cannot consume in a parameter transformation. Default
+#'   `FALSE`. Version `"1.2"` only.
+#' @param positive Positivity assumption used for root and pivot selection.
+#'   `TRUE` (default) treats all parameters, initial values and totals as
+#'   positive, `FALSE` assumes nothing, and a character vector names the symbols
+#'   to treat as positive. Version `"1.2"` only.
+#'
+#'   With `TRUE` the result is manifestly non-negative: no expression contains a
+#'   subtraction, so no parameter choice can drive a state negative. Where
+#'   solving for a state would yield a difference, its equation is spent on one
+#'   of its own rate constants instead. That solve is linear and therefore has a
+#'   unique root, which is why a pivot, not root selection, is the remedy. If no
+#'   pivot succeeds either, a diagnosis is printed and `0` returned.
+#' @param branches Logical, whether a quadratic with two positive roots
+#'   (bistability) is emitted with a selector symbol `branch_<state>` taking
+#'   `-1` or `+1` to recover both steady states. Requires
+#'   `solveQuadratic = TRUE`. `FALSE` (default) emits only the provably unique
+#'   positive root and pivots ambiguous cases. Version `"1.2"` only.
+#' @param priority Character vector of state and rate-parameter names,
+#'   most-preferred first, biasing the resolution order: a named state is
+#'   resolved earlier, a named rate parameter is preferred as pivot. Structural
+#'   constraints take precedence, so this is a preference, not a guarantee.
 #'   Unmatched names are reported and ignored. Version `"1.2"` only.
-#' @param resolve Logical. When `TRUE` (default), the equations are passed
-#'   through [resolveRecurrence()] so that none refers to another -- a dMod
-#'   parameter transformation substitutes all entries at once. Version `"1.2"`
-#'   already resolves on the backend side; this matters for `"1.0"` / `"1.1"`.
-#'   `FALSE` keeps the compact recurrent form.
-#' @param version Character, AlyssaPetit backend version. One of
-#'   \code{"1.0"} (original), \code{"1.1"} (adds \code{testSteady}), or
-#'   \code{"1.2"} (default; sink-cluster detection, \code{walltime},
-#'   priority-table cycle breaking, end-of-pipeline \code{simplify} toggle,
-#'   optional quadratic state-side solve).
+#' @param resolve Logical, whether the equations are passed through
+#'   [resolveRecurrence()] so that none refers to another, as a dMod parameter
+#'   transformation substitutes all entries at once. `FALSE` keeps the compact
+#'   recurrent form. Version `"1.2"` already resolves in the backend, so this
+#'   matters for `"1.0"` and `"1.1"`.
+#' @param version Character, backend version. One of `"1.0"` (original), `"1.1"`
+#'   (adds `testSteady`), or `"1.2"` (default; sink-cluster detection,
+#'   `walltime`, priority-table cycle breaking, `simplify` toggle, optional
+#'   quadratic state-side solve).
 #'
-#' @return Named character vector of steady-state equations (dMod compatible).
+#' @return Named character vector of steady-state equations in dMod format, or
+#'   `0` if no solution was found. An entry whose value is its own name denotes a
+#'   free parameter.
 #'
-#' @references \[1\]
-#' <https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/>
-#' @references \[2\]
-#' <https://github.com/marcusrosenblatt/AlyssaPetit>
-#' @references \[3\]
-#' <https://github.com/Data2Dynamics/d2d>
+#' @references \[1\] <https://pmc.ncbi.nlm.nih.gov/articles/PMC4863410/>
+#' @references \[2\] <https://github.com/marcusrosenblatt/AlyssaPetit>
+#' @references \[3\] <https://github.com/Data2Dynamics/d2d>
 #'
 #' @author Marcus Rosenblatt, \email{marcus.rosenblatt@@fdm.uni-freiburg.de}
 #'

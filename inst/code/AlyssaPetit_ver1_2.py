@@ -302,6 +302,96 @@ def _rational_sign_class(expr, positive_syms=None):
         return '-'
     return '±'
 
+def _normalizeSign(expr):
+    # factor() normalises the sign of each irreducible factor, which can park a
+    # -1 in front of a quotient whose value is positive.
+    numer, denom=sympy.fraction(expr)
+    if _sign_class(denom)=='-':
+        return (-numer)/(-denom)
+    return expr
+
+
+def _exclusiveFluxPivots(SM, F, fluxpars, index, neglect):
+    """Rate constants that can absorb row `index`'s ODE without touching another.
+
+    The parameter must factor exactly one flux, whose column is confined to this
+    row and which occurs in no other flux. Influx sides come first: they give the
+    "production = consumption" form, which is a pure sum.
+    """
+    cands=[]
+    for k in range(SM.cols):
+        if SM[index,k]==0:
+            continue
+        fp=fluxpars[k]
+        if fp is None or str(fp) in neglect:
+            continue
+        if any(SM[r,k]!=0 for r in range(SM.rows) if r!=index):
+            continue
+        if any(fp in F[j].free_symbols for j in range(len(F)) if j!=k):
+            continue
+        cands.append((0 if SM[index,k]>0 else 1, fp))
+    cands.sort(key=lambda c: c[0])
+    return [fp for _, fp in cands]
+
+
+def _reportSignIndefinite(node, sol, sol_cls, positive_syms, solved,
+                          blocked, tried, solveQuadratic):
+    """Report a steady state that no pivot could make manifestly non-negative."""
+    numer, denom=sympy.fraction(cancel(sol))
+    print("",flush=True)
+    print("    ======================================================",flush=True)
+    print("    STEADY STATE IS NOT MANIFESTLY NON-NEGATIVE",flush=True)
+    print("    ======================================================",flush=True)
+    print(f"    State: {node}     sign class: {sol_cls}"
+          f"  (numerator {_sign_class(numer, positive_syms)},"
+          f" denominator {_sign_class(denom, positive_syms)})",flush=True)
+    print("",flush=True)
+    print(f"      {node} = {sol}",flush=True)
+    print("",flush=True)
+    negs=[t for t in sympy.Add.make_args(sympy.expand(numer))
+          if t.as_coeff_Mul()[0].is_negative]
+    if negs:
+        print("    Negative contributions in the numerator:",flush=True)
+        for t in negs[:6]:
+            via=sorted(str(sy) for sy in t.free_symbols if str(sy) in solved)
+            tag="   <-- via already-solved "+", ".join(via) if via else ""
+            print(f"      {t}{tag}",flush=True)
+        if len(negs)>6:
+            print(f"      ... and {len(negs)-6} more",flush=True)
+        print("",flush=True)
+    print("    Why:",flush=True)
+    print(f"      The direct positive-solve pass could not certify {node}, so it",flush=True)
+    print("      fell through to here. Upstream substitutions then left the",flush=True)
+    print(f"      numerator a difference rather than a sum of production terms --",flush=True)
+    print(f"      typically because a {node}-proportional consumption term was",flush=True)
+    print(f"      replaced by a constant sink. {node} > 0 is therefore a",flush=True)
+    print("      constraint on the parameters, not an identity, and the",flush=True)
+    print("      expression changes sign over parameter space.",flush=True)
+    print("",flush=True)
+    print("    What you can do:",flush=True)
+    _n=[0]
+    def nextItem():
+        _n[0]+=1
+        return str(_n[0])
+    if tried:
+        print(f"      {nextItem()}. These rate pivots were tried and are"
+              f" sign-indefinite too: {tried}",flush=True)
+    if blocked:
+        print(f"      {nextItem()}. Remove from 'neglect' to free a rate pivot:"
+              f" {blocked}",flush=True)
+    if not solveQuadratic:
+        print(f"      {nextItem()}. solveQuadratic = TRUE -- admits closed-form"
+              " positive roots at",flush=True)
+        print("         the price of sqrt terms.",flush=True)
+    print(f"      {nextItem()}. priority = ... to steer which state or rate is"
+          " resolved first.",flush=True)
+    print(f"      {nextItem()}. positive = FALSE to stop requiring sign-definiteness."
+          " Note this",flush=True)
+    print("         also changes which pivots get certified, so the whole",flush=True)
+    print("         resolution order may differ.",flush=True)
+    print("    ======================================================",flush=True)
+
+
 def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=()):
     # Find a state y whose own ODE is (a) linear in y and (b) has a
     # structurally positive closed-form steady-state solution y = -In/Out
@@ -1109,8 +1199,8 @@ def _finalSimplify(rs, full):
         e_pos, reps=posify(cancel(e_raw))
         e_pos=_simplify(e_pos, ratio=oo, rational=True)
         n, d=fraction(e_pos)
-        return str((factor(n)/factor(d)).subs(reps))
-    return str(_simplify(e_raw))
+        return str(_normalizeSign((factor(n)/factor(d)).subs(reps)))
+    return str(_normalizeSign(_simplify(e_raw)))
 
 
 def Alyssa(filename,
@@ -1142,6 +1232,8 @@ def Alyssa(filename,
         positive_syms = set(parse_expr(str(s)) for s in positive)
     else:
         positive_syms = None if bool(positive) else set()
+    # Sign-definiteness is only decidable when every symbol is known positive.
+    _enforcePositive = (positive_syms is None)
     # Names the solver must not spend on a state expression / flux pivot.
     # Kept as a set of plain strings: `str(sym) in neglect` is the only test
     # anywhere in the pipeline.
@@ -1978,9 +2070,47 @@ def Alyssa(filename,
             sol=xi
         else:
             sol=cancel(-In/Out)
-        eqOut.insert(0,node+' = '+str(sol))
-        for f in range(len(F)):
-            F[f]=cancel(F[f].subs(xi, sol))
+        # Unlike _try_positive_direct_solve this phase has no sign gate: an
+        # upstream substitution can turn an xi-proportional sink into a constant
+        # one, leaving `sol` a difference. The ODE is linear in xi, so -In/Out is
+        # the unique root -- the only way out is to spend the row on one of the
+        # state's own rate constants, which keeps xi free and the pivot a sum.
+        sol_cls=_rational_sign_class(sol, positive_syms) if _enforcePositive else '+'
+        pivoted=False
+        tried=[]
+        if node in neglect or sol_cls not in ('+','0'):
+            for fp in _exclusiveFluxPivots(SM, F, fluxpars, index, neglect):
+                psol=solve(expr, fp, simplify=False)
+                if not psol:
+                    continue
+                psol=cancel(psol[0])
+                if _enforcePositive and \
+                   _rational_sign_class(psol, positive_syms) not in ('+','0'):
+                    tried.append(str(fp))
+                    continue
+                eqOut.insert(0,str(fp)+' = '+str(psol))
+                print(f'   Solved {node} --> {fp}'
+                      +('  (neglect)' if node in neglect else '  (positivity)'),
+                      flush=True)
+                pivoted=True
+                break
+        if not pivoted:
+            if node in neglect:
+                print(f"   WARNING: {node} is in 'neglect' but no usable rate "
+                      f"pivot is left -- solving for {node} itself.",flush=True)
+            if sol_cls not in ('+','0'):
+                _reportSignIndefinite(
+                    node, sol, sol_cls, positive_syms,
+                    {e.split(' = ',1)[0] for e in eqOut},
+                    sorted({str(bfp) for bfp in
+                            _exclusiveFluxPivots(SM, F, fluxpars, index, ())
+                            if str(bfp) in neglect}),
+                    tried, solveQuadratic)
+                return(0)
+            eqOut.insert(0,node+' = '+str(sol))
+            for f in range(len(F)):
+                F[f]=cancel(F[f].subs(xi, sol))
+            print(f'   Solved {node}',flush=True)
         X.row_del(index)
         SM.row_del(index)
         # Incremental graph update: sol contains only parameters and earlier-
@@ -1990,7 +2120,6 @@ def Alyssa(filename,
         for k in SSgraph:
             if node in SSgraph[k]:
                 SSgraph[k].remove(node)
-        print(f'   Solved {node}',flush=True)
 
 #### Optional final simplification (applied once per expression, after the loop)
     # simplify:
