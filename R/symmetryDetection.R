@@ -3100,6 +3100,16 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     # candidates are validated against the nullspace N (which reflects propagation)
     modelLines <- lapply(multi$tapes, function(t) as.character(t$modelLines))
     obsLines   <- lapply(multi$tapes, function(t) as.character(t$obsLines))
+    # duplicate regimes (repeated doses, segments differing only in event values)
+    # add identical constraint blocks and only widen the stacked integer kernel
+    # with redundant intermediate columns; the kernel is the intersection of the
+    # per-condition scaling lattices, so the unique pairs span the same space
+    regimeKey <- vapply(seq_along(modelLines), function(i)
+      paste(c(modelLines[[i]], "\x1f", obsLines[[i]]), collapse = "\n"),
+      character(1))
+    keepRegime <- !duplicated(regimeKey)
+    modelLines <- modelLines[keepRegime]
+    obsLines   <- obsLines[keepRegime]
     inputs <- if (!is.null(multi$forcings)) as.character(multi$forcings) else NULL
     # baked (non-coordinate) leaves. In joint mode znames is the WIDE decorated set,
     # so measure against the original coordinate names (shared params/L + state bases)

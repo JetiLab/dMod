@@ -2413,6 +2413,9 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             extra += [str(k), str(v)]
     all_lines = (model + observation + [l for o in obsPerCond for l in o] +
                  _as_list(parameters) + extra)
+    # symbol collection is order-insensitive and conditions repeat the same
+    # trafo/IC strings, so tokenize each distinct line once
+    all_lines = list(dict.fromkeys(all_lines))
     local, parse = _make_local_parse(all_lines)
 
     variables, diffEquations, _ = _read_equations(model, parse)
@@ -2435,8 +2438,43 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             if not isConst[i]]
     nS = len(S)
 
+    parseCache = {}
+
     def pval(s):
-        return spy.sympify(parse(str(s)))
+        key = str(s)
+        e = parseCache.get(key)
+        if e is None:
+            e = spy.sympify(parse(key))
+            parseCache[key] = e
+        return e
+
+    # Memoized substitution. Conditions largely repeat the same replacement
+    # expressions (a shared trafo, per-segment switch regimes), so the result is
+    # cached on the transitively relevant subset of the map: an item whose symbol
+    # is not free in e and not introduced by another relevant value can never
+    # fire, and sympy orders unordered-dict items canonically PER ITEM, so
+    # substituting only the relevant subset is exact.
+    subsCache = {}
+
+    def subsMemo(e, smap):
+        e = spy.sympify(e)
+        rel, frontier = {}, set(e.free_symbols)
+        while True:
+            add = {k: v for k, v in smap.items() if k not in rel and k in frontier}
+            if not add:
+                break
+            rel.update(add)
+            for v in add.values():
+                frontier |= v.free_symbols
+        if not rel:
+            return e
+        key = (e, tuple(sorted(rel.items(),
+                               key=lambda kv: spy.default_sort_key(kv[0]))))
+        r = subsCache.get(key)
+        if r is None:
+            r = e.subs(rel)
+            subsCache[key] = r
+        return r
 
     perCond = []
     subsPer = []            # each condition's substitution map, aligned with perCond
@@ -2445,17 +2483,17 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
         for k, v in dict(conditionSubs[c]).items():
             subsMap[local.get(str(k), spy.Symbol(str(k)))] = pval(v)
         ic0 = dict(conditionIC0[c]) if c < len(conditionIC0) else {}
-        f_c = [e.subs(subsMap) for e in Srhs]
-        g_c = [spy.sympify(e).subs(subsMap) for e in obsRead[c][1]]
+        f_c = [subsMemo(e, subsMap) for e in Srhs]
+        g_c = [subsMemo(e, subsMap) for e in obsRead[c][1]]
         # resting-state model for the equilibrate solve: forcings at 0, no events,
         # non-forcing per-condition substitutions baked in
         forcZero = {local.get(nm, spy.Symbol(nm)): spy.Integer(0) for nm in forcings}
         subsMapNF = {k: v for k, v in subsMap.items() if str(k) not in forcings}
-        f_ss = [e.subs(subsMapNF).subs(forcZero) for e in Srhs]
+        f_ss = [subsMemo(subsMemo(e, subsMapNF), forcZero) for e in Srhs]
         ic_c = {}
         for X in S:
             e = pval(ic0[str(X)]) if str(X) in ic0 else X
-            ic_c[str(X)] = spy.sympify(e).subs(subsMap)
+            ic_c[str(X)] = subsMemo(e, subsMap)
         perCond.append((f_c, g_c, ic_c, f_ss))
         subsPer.append(subsMap)
 
@@ -2506,15 +2544,25 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
                 rc['inverted'] = False
 
     nonrational = []
+    ratOK = set()            # deduped exprs recur across conditions; check each once
+
+    def _rat(e):
+        if e in ratOK:
+            return True
+        ok = _is_rational_expr(e)
+        if ok:
+            ratOK.add(e)
+        return ok
+
     for c, (f_c, g_c, ic_c, f_ss) in enumerate(perCond):
         for X, e in zip(S, f_c):
-            if not _is_rational_expr(e):
+            if not _rat(e):
                 nonrational.append('d%s/dt = %s' % (X, e))
         for y, e in zip(obsVarsPer[c], g_c):
-            if not _is_rational_expr(e):
+            if not _rat(e):
                 nonrational.append('%s = %s' % (y, e))
         for X in S:
-            if not _is_rational_expr(ic_c[str(X)]):
+            if not _rat(ic_c[str(X)]):
                 nonrational.append('%s(0) = %s' % (X, ic_c[str(X)]))
     if nonrational:
         return {'ok': False, 'nonrational': nonrational}
@@ -2551,8 +2599,12 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
 
     # f_ss is included so parameters the perturbed dynamics drop still count
     paramset = set()
+    seenPS = set()           # deduped exprs recur across conditions; walk each once
     for (f_c, g_c, ic_c, f_ss) in perCond:
         for e in list(f_c) + list(g_c) + list(ic_c.values()) + list(f_ss):
+            if e in seenPS:
+                continue
+            seenPS.add(e)
             paramset |= set(spy.sympify(e).free_symbols)
     for vs in eventVals:
         for e in vs:
@@ -2583,12 +2635,27 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
     base = nLeaves + nS
 
     tapes = []
+    emitCache = {}   # (f_c, g_c, obs names) recur across segments/conditions
+    ssSolCache = {}  # linear resting-state solutions, keyed on the f_ss tuple
+    icCache = {}     # emitted IC tapes, keyed on the seed-expression tuple
     for c, (f_c, g_c, ic_c, f_ss) in enumerate(perCond):
         subsMap = subsPer[c]
-        try:
-            op, a, b, cnum, cden, outslots = _emit_tape_shared(f_c, g_c, slotOf, base)
-        except _NotRational:
-            return {'ok': False}
+        ekey = (tuple(f_c), tuple(g_c), tuple(str(v) for v in obsVarsPer[c]))
+        cached = emitCache.get(ekey)
+        if cached is None:
+            try:
+                emitted = _emit_tape_shared(f_c, g_c, slotOf, base)
+            except _NotRational:
+                return {'ok': False}
+            # substituted dynamics and observation of this segment, serialised
+            # for the multi-condition scaling peel
+            mLines = ['%s = %s' % (str(S[i]), spy.sympify(f_c[i]))
+                      for i in range(nS)]
+            oLines = ['%s = %s' % (str(obsVarsPer[c][j]), spy.sympify(g_c[j]))
+                      for j in range(len(g_c))]
+            cached = (emitted, mLines, oLines)
+            emitCache[ekey] = cached
+        (op, a, b, cnum, cden, outslots), mLines, oLines = cached
         fOut = outslots[:nS]
         tape = {
             'op': op, 'a': a, 'b': b, 'cnum': cnum, 'cden': cden,
@@ -2596,12 +2663,8 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             'fOut': fOut,
             'gOut': outslots[nS:nS + len(g_c)],
             'icLeaf': [-1] * nS, 'icNum': ['0'] * nS, 'icDen': ['1'] * nS,
-            # substituted dynamics and observation of this segment, for the
-            # multi-condition scaling peel
-            'modelLines': ['%s = %s' % (str(S[i]), spy.sympify(f_c[i]))
-                           for i in range(nS)],
-            'obsLines': ['%s = %s' % (str(obsVarsPer[c][j]), spy.sympify(g_c[j]))
-                         for j in range(len(g_c))],
+            'modelLines': mLines,
+            'obsLines': oLines,
         }
         if segEq[c] and jointSteadyState:
             # joint/implicit mode: every non-forcing state is a free leaf whose
@@ -2644,10 +2707,17 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             # point from the interior steady-state point and its IFT duals (icSeed).
             ssIC = None
             if not powerRecast and not _FORCE_CONSTRAINT_SEED:
-                solveS = [S[i] for i in range(nReal) if str(S[i]) not in forcings]
-                fssPolys = [spy.expand(spy.fraction(spy.together(spy.sympify(f_ss[i])))[0])
-                            for i in range(nReal) if str(S[i]) not in forcings]
-                ssSol = _linear_solution(fssPolys, solveS)
+                sskey = tuple(f_ss)
+                if sskey in ssSolCache:
+                    ssSol = ssSolCache[sskey]
+                else:
+                    solveS = [S[i] for i in range(nReal)
+                              if str(S[i]) not in forcings]
+                    fssPolys = [spy.expand(spy.fraction(spy.together(
+                                    spy.sympify(f_ss[i])))[0])
+                                for i in range(nReal) if str(S[i]) not in forcings]
+                    ssSol = _linear_solution(fssPolys, solveS)
+                    ssSolCache[sskey] = ssSol
                 if ssSol is not None:
                     # solved real states take their steady-state value; recast
                     # coordinates E = base^exp and L = log base (states beyond nReal)
@@ -2677,11 +2747,16 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
         else:
             # IC tape: seed each state from its initial-value expression in the
             # leaves (free initial values, carry coordinates, doses, resets).
-            try:
-                icOp, icA, icB, icCnum, icCden, icOut = _emit_tape_shared(
-                    [ic_c[str(X)] for X in S], [], leafSlot, nLeaves)
-            except _NotRational:
-                return {'ok': False}
+            ickey = tuple(ic_c[str(X)] for X in S)
+            icEmitted = icCache.get(ickey)
+            if icEmitted is None:
+                try:
+                    icEmitted = _emit_tape_shared(list(ickey), [], leafSlot,
+                                                  nLeaves)
+                except _NotRational:
+                    return {'ok': False}
+                icCache[ickey] = icEmitted
+            icOp, icA, icB, icCnum, icCden, icOut = icEmitted
             tape.update({'icOp': icOp, 'icA': icA, 'icB': icB,
                          'icCnum': icCnum, 'icCden': icCden, 'icOut': icOut})
         # state-dose event map at this segment's left boundary, applied by the
@@ -2693,7 +2768,7 @@ def compileObservabilityTapeMulti(model, observation, conditionSubs, conditionIC
             methodCode = {'replace': 0, 'add': 1, 'multiply': 2}
             keep = [e for e in evs if str(e['var']) in idxOfState]
             if keep:
-                vals = [spy.sympify(pval(e['value'])).subs(subsMap) for e in keep]
+                vals = [subsMemo(pval(e['value']), subsMap) for e in keep]
                 try:
                     evOp, evA, evB, evCnum, evCden, evO = _emit_tape_shared(
                         [], vals, leafSlot, nLeaves)

@@ -259,3 +259,62 @@ test_that("a sign-indefinite fixed point is refused (1.2) or repaired (1.3)", {
   expect_lt(max(abs(residual)), 1e-10)
 
 })
+
+test_that("a recycled pivot rate constant is resolved, not defined by itself", {
+
+  # Cpx_int is removed first and spends its row on its two out-fluxes, so the
+  # recycling column in Cpx's row is replaced by the influx it was solved
+  # against -- k_int*Cpx. Cpx's own influx sum then contains k_int, which is
+  # also the first pivot Cpx spends its row on, so distributing that sum used
+  # to emit k_int = f(..., k_int): a trafo defined in terms of itself. The sum
+  # is linear in k_int and has to be resolved against the pivot relations
+  # first.
+  withr::local_dir(tempdir())
+
+  reactions <- eqnlist()
+  reactions <- addReaction(reactions, "", "Lig", "k_pr_Lig", "Ligand production")
+  reactions <- addReaction(reactions, "Lig", "", "k_dg_Lig*Lig", "Ligand clearance")
+  reactions <- addReaction(reactions, "Lig", "Cpx", "k_form*Lig", "Complex formation")
+  reactions <- addReaction(reactions, "Cpx", "Cpx_int", "k_int*Cpx", "Internalisation")
+  reactions <- addReaction(reactions, "Cpx_int", "Cpx", "k_rec*Cpx_int", "Recycling")
+  reactions <- addReaction(reactions, "Cpx_int", "", "k_dg_int*Cpx_int", "Internalised degradation")
+  reactions <- addReaction(reactions, "Cpx", "", "k_dg_Cpx*Cpx", "Complex degradation")
+  reactions <- addReaction(reactions, "Cpx", "", "k_dg_Cpx_Inh*Cpx*Inh", "Inhibitor-driven removal")
+  reactions <- addReaction(reactions, "", "Inh", "k_pr_Inh*Cpx", "Inhibitor induction")
+  reactions <- addReaction(reactions, "Inh", "", "k_dg_Inh*Inh", "Inhibitor decay")
+
+  mysteadies <- steadyStates(reactions)
+
+  # The row was spent on the recycling loop's rate constants.
+  expect_true(all(c("k_int", "k_rec") %in% names(mysteadies)))
+
+  defs <- mysteadies[trimws(mysteadies) != names(mysteadies)]
+  # No definition may reference its own left-hand side.
+  selfref <- mapply(function(nm, eqn) nm %in% all.vars(parse(text = eqn)),
+                    names(defs), defs)
+  expect_false(any(selfref))
+  expect_false(any(grepl("-", mysteadies, fixed = TRUE)))
+
+  # And it is a steady state, at a random positive point.
+  odes <- as.eqnvec(reactions)
+  symbolsOf <- function(x) unique(unlist(lapply(x, function(e) all.vars(parse(text = e)))))
+  set.seed(13)
+  free <- setdiff(symbolsOf(c(as.character(odes), mysteadies)), names(defs))
+  env <- as.list(stats::runif(length(free), 0.3, 2))
+  names(env) <- free
+
+  todo <- defs
+  while (length(todo)) {
+    ready <- vapply(todo, function(eqn) all(all.vars(parse(text = eqn)) %in% names(env)),
+                    logical(1))
+    if (!any(ready)) break
+    env[names(todo)[ready]] <- lapply(todo[ready], function(eqn) eval(parse(text = eqn), env))
+    todo <- todo[!ready]
+  }
+  expect_length(todo, 0)
+
+  expect_true(all(unlist(env[names(defs)]) > 0))
+  residual <- vapply(odes, function(e) eval(parse(text = e), env), numeric(1))
+  expect_lt(max(abs(residual)), 1e-10)
+
+})

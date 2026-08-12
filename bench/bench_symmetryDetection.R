@@ -137,7 +137,7 @@ fingerprint <- function(o) {
 
 bench_one <- function(name, model, cores) {
   args <- c(list(f = model$f, g = model$g), model$args,
-            list(cores.conditions = cores, cores.GLp = cores))
+            list(cores = cores))
   gc()
   t <- system.time(o <- do.call(symmetryDetection, args))["elapsed"]
   cat(sprintf("  %-6s cores=%d  %8.2fs  rank %d/%d  ident=%s  #dir=%d\n",

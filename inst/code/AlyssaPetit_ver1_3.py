@@ -1086,6 +1086,38 @@ def GetInfluxes(node, X, SM, F, fluxpars):
             fps.append(fluxpars[i])
     return(out, outsum, fps)
 
+def _resolvePivotSum(sumOpp, fluxes, fps, nenner, state):
+    """Opposite-side flux sum with the pivot relations substituted into itself.
+
+    Cycle removal distributes the opposite-side sum S over the pivot fluxes,
+    fp_j * prefactor_j = S * r_j / nenner. S can contain one of those fp_j: an
+    earlier removal replaces the column of the flux it pivoted on by the sum it
+    was solved against, so a recycling loop (X -> X_int -> X) puts X's own
+    internalisation rate back onto X's influx side. S is then an equation, not
+    a value. It is linear in the fp_j, so substitute and solve once -- without
+    this the emitted trafo defines fp_0 in terms of itself.
+    """
+    fps_sym=[parse_expr(str(fp)) for fp in fps]
+    S_expr=sympy.sympify(sumOpp)
+    shared=S_expr.free_symbols & set(fps_sym)
+    if(not shared):
+        return(sumOpp)
+    S=sympy.Dummy('S_opp')
+    repl={}
+    for j, fp in enumerate(fps_sym):
+        weight=1 if j==0 else parse_expr('r_'+state+'_'+str(j))
+        repl[fp]=S*weight/(nenner*cancel(fluxes[j]/fp))
+    root=solve(S_expr.subs(repl, simultaneous=True)-S, S)
+    shared_str=sorted(str(s) for s in shared)
+    if(len(root)!=1):
+        print('   WARNING: '+str(shared_str)+' feed(s) back into the flux sum '
+              'balancing '+str(state)+' and could not be resolved -- the '
+              'equations stay recurrent. Please report this bug!',flush=True)
+        return(sumOpp)
+    print('   Recycled pivot rate constant(s) '+str(shared_str)+
+          ' resolved in the flux sum balancing '+str(state),flush=True)
+    return(cancel(root[0]))
+
 def FindNodeToSolve(graph, SM=None, F=None, X=None):
     leaves=[el for el in graph if graph[el]==[]]
     if not leaves:
@@ -1152,6 +1184,11 @@ def _eval_modp(expr, env, p):
     if expr.is_Rational:
         return (int(expr.p) * pow(int(expr.q), -1, p)) % p
     if expr.is_Symbol:
+        if expr not in env:
+            # Used before it is defined -- the equations are not resolvable in
+            # the given order (a self-referential entry). Hand the residual to
+            # the symbolic test instead of dying with a KeyError.
+            raise _UnsupportedModp()
         return env[expr] % p
     if expr.is_Add:
         return sum(_eval_modp(a, env, p) for a in expr.args) % p
@@ -1255,6 +1292,10 @@ def _topo_sort_eqs(eqs):
     parts=[eq.split(' = ', 1) for eq in eqs]
     patterns=[re.compile(r'\b'+re.escape(ls)+r'\b') if ls!=rs else None
               for ls, rs in parts]
+    for i, (ls, rs) in enumerate(parts):
+        if patterns[i] is not None and patterns[i].search(rs):
+            print('   WARNING: '+ls+' is defined in terms of itself -- no order '
+                  'resolves it. Please report this bug!',flush=True)
     deps=[set() for _ in range(n)]
     for i in range(n):
         for j in range(n):
@@ -2046,6 +2087,10 @@ def Alyssa(filename,
                         nenner=nenner+parse_expr('r_'+state2Rem+'_'+str(j))
                 trafoList=[]
                 if((sign=="minus" and not signChanged) or (sign=="plus" and signChanged)):
+                    # A pivot rate constant can sit on the opposite side as
+                    # well (recycling loops): resolve the sum against the pivot
+                    # relations before distributing it, see _resolvePivotSum.
+                    sumposs=_resolvePivotSum(sumposs, negs, negfps, nenner, state2Rem)
                     for j in range(len(negs)):
                         flux=negs[j]
                         fp=negfps[j]
@@ -2059,6 +2104,7 @@ def Alyssa(filename,
                     print('   '+str(state2Rem)+' --> '+str(negfps),flush=True)
                     
                 else:
+                    sumnegs=_resolvePivotSum(sumnegs, poss, posfps, nenner, state2Rem)
                     for j in range(len(poss)):
                         flux=poss[j]
                         fp=posfps[j]
@@ -2116,6 +2162,10 @@ def Alyssa(filename,
                 # needed for the pivot and non-pivot rows to stay
                 # consistent.
                 if((sign=="minus" and not signChanged) or (sign=="plus" and signChanged)):
+                    # A pivot rate constant can sit on the opposite side as
+                    # well (recycling loops): resolve the sum against the pivot
+                    # relations before distributing it, see _resolvePivotSum.
+                    sumposs=_resolvePivotSum(sumposs, negs, negfps, nenner, state2Rem)
                     for j in range(len(negs)):
                         flux=negs[j]
                         fp=negfps[j]
@@ -2142,6 +2192,7 @@ def Alyssa(filename,
                     print('   '+str(state2Rem)+' --> '+str(negfps),flush=True)
 
                 else:
+                    sumnegs=_resolvePivotSum(sumnegs, poss, posfps, nenner, state2Rem)
                     for j in range(len(poss)):
                         flux=poss[j]
                         fp=posfps[j]
