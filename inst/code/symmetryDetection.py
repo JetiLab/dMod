@@ -475,7 +475,7 @@ def _rref_mod_p(A, p):
 
 
 def _rational_reconstruct(a, m):
-    """Recover n/d with a ≡ n*d^{-1} (mod m), |n|,|d| bounded by sqrt(m/2)."""
+    """Recover n/d with a == n*d^{-1} (mod m), |n|,|d| bounded by sqrt(m/2)."""
     a %= m
     if a == 0:
         return spy.Integer(0)

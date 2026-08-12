@@ -270,7 +270,7 @@ def _mono_sign_definite(mono, positive_syms):
 
 def _sign_class(expr, positive_syms=None):
     # Sign of a polynomial under positive_syms (None = all symbols positive):
-    # '+'/'-' if all monomials share a provable sign, '0' if zero, else '±'.
+    # '+'/'-' if all monomials share a provable sign, '0' if zero, else '+/-'.
     expr=sympy.expand(expr)
     if expr==0:
         return '0'
@@ -279,15 +279,15 @@ def _sign_class(expr, positive_syms=None):
     for t in sympy.Add.make_args(expr):
         coeff, mono=t.as_coeff_Mul()
         if positive_syms is not None and not _mono_sign_definite(mono, positive_syms):
-            return '±'
+            return '+/-'
         if coeff.is_negative:
             has_neg=True
         elif coeff.is_positive:
             has_pos=True
         else:
-            return '±'
+            return '+/-'
     if has_pos and has_neg:
-        return '±'
+        return '+/-'
     if has_pos:
         return '+'
     if has_neg:
@@ -296,20 +296,20 @@ def _sign_class(expr, positive_syms=None):
 
 def _rational_sign_class(expr, positive_syms=None):
     # Sign of a rational function: cancel, then combine numerator/denominator
-    # signs. Returns '+'/'-'/'±'/'0'.
+    # signs. Returns '+'/'-'/'+/-'/'0'.
     expr=cancel(expr)
     numer, denom=sympy.fraction(expr)
     ns=_sign_class(numer, positive_syms)
     ds=_sign_class(denom, positive_syms)
     if ns=='0':
         return '0'
-    if ns=='±' or ds=='±':
-        return '±'
+    if ns=='+/-' or ds=='+/-':
+        return '+/-'
     if (ns=='+' and ds=='+') or (ns=='-' and ds=='-'):
         return '+'
     if (ns=='+' and ds=='-') or (ns=='-' and ds=='+'):
         return '-'
-    return '±'
+    return '+/-'
 
 def _normalizeSign(expr):
     # factor() normalises the sign of each irreducible factor, which can park a
@@ -2003,7 +2003,7 @@ def Alyssa(filename,
             # Extra note when the model has CQ-involved bilinear coupling that
             # the sign-preserving sparsify protection cannot resolve -- this is
             # the failure mode of models like TGFb (pSmad2/pSmad3/Smad4 linked
-            # by k_form*pSmad2*pSmad3*Smad4 → C3).
+            # by k_form*pSmad2*pSmad3*Smad4 -> C3).
             cq_related = any(
                 any(str(parse_expr(lcl.split(' = ')[0]).subs(parse_expr(n),1))
                     != lcl.split(' = ')[0] for lcl in LCLs_original)
@@ -2110,9 +2110,9 @@ def Alyssa(filename,
                 # columns (one per opposite-side flux), each new raw flux
                 # must therefore carry r_j / |SM[pivot,j]|, not just r_j.
                 # The pre-priority-table code dropped BOTH the r_j weight
-                # (masked when only ±1 stoichiometries were involved) and
+                # (masked when only +-1 stoichiometries were involved) and
                 # the stoichiometry division (masked further because
-                # sparsify tended to produce ±1 rows). Both factors are
+                # sparsify tended to produce +-1 rows). Both factors are
                 # needed for the pivot and non-pivot rows to stay
                 # consistent.
                 if((sign=="minus" and not signChanged) or (sign=="plus" and signChanged)):
