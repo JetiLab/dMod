@@ -31,24 +31,24 @@
 #' @param testSteady Character, how the solution is verified. One of `"fast"`
 #'   (default; probabilistic Schwartz-Zippel check over GF(p), with negligible
 #'   error probability), `"exact"` (symbolic substitution, slow on large `sqrt`
-#'   solutions) or `"skip"`. `"fast"` requires version `"1.2"` and falls back to
-#'   `"exact"` on `"1.1"`; version `"1.0"` always tests.
+#'   solutions) or `"skip"`. `"fast"` requires version `"1.2"` or later and
+#'   falls back to `"exact"` on `"1.1"`; version `"1.0"` always tests.
 #' @param walltime Integer, wall-clock budget in seconds for the solver, `0`
-#'   (default) for unlimited. Version `"1.2"` only.
+#'   (default) for unlimited. Version `"1.2"` and later.
 #' @param simplify Final-simplification mode. `TRUE` (default) applies
 #'   `sympy.simplify` once per expression, `FALSE` skips it and returns bulkier
 #'   output, `"full"` adds a `cancel`/`posify`/`factor` pipeline that is slower
-#'   but more compact. Version `"1.2"` only.
+#'   but more compact. Version `"1.2"` and later.
 #' @param solveQuadratic Logical, whether a cycle whose final equation is
 #'   quadratic in its own state may be closed by the positive root of
 #'   `a*X^2 + b*X + c = 0` instead of by a rate-parameter pivot. This keeps the
 #'   pivoted rate constants out of the result, at the price of `sqrt(...)` terms
 #'   that some workflows cannot consume in a parameter transformation. Default
-#'   `FALSE`. Version `"1.2"` only.
+#'   `FALSE`. Version `"1.2"` and later.
 #' @param positive Positivity assumption used for root and pivot selection.
 #'   `TRUE` (default) treats all parameters, initial values and totals as
 #'   positive, `FALSE` assumes nothing, and a character vector names the symbols
-#'   to treat as positive. Version `"1.2"` only.
+#'   to treat as positive. Version `"1.2"` and later.
 #'
 #'   With `TRUE` the result is manifestly non-negative: no expression contains a
 #'   subtraction, so no parameter choice can drive a state negative. Where
@@ -60,21 +60,24 @@
 #'   (bistability) is emitted with a selector symbol `branch_<state>` taking
 #'   `-1` or `+1` to recover both steady states. Requires
 #'   `solveQuadratic = TRUE`. `FALSE` (default) emits only the provably unique
-#'   positive root and pivots ambiguous cases. Version `"1.2"` only.
+#'   positive root and pivots ambiguous cases. Version `"1.2"` and later.
 #' @param priority Character vector of state and rate-parameter names,
 #'   most-preferred first, biasing the resolution order: a named state is
 #'   resolved earlier, a named rate parameter is preferred as pivot. Structural
 #'   constraints take precedence, so this is a preference, not a guarantee.
-#'   Unmatched names are reported and ignored. Version `"1.2"` only.
+#'   Unmatched names are reported and ignored. Version `"1.2"` and later.
 #' @param resolve Logical, whether the equations are passed through
 #'   [resolveRecurrence()] so that none refers to another, as a dMod parameter
 #'   transformation substitutes all entries at once. `FALSE` keeps the compact
-#'   recurrent form. Version `"1.2"` already resolves in the backend, so this
-#'   matters for `"1.0"` and `"1.1"`.
+#'   recurrent form. Versions `"1.2"` and later already resolve in the backend,
+#'   so this matters for `"1.0"` and `"1.1"`.
 #' @param version Character, backend version. One of `"1.0"` (original), `"1.1"`
-#'   (adds `testSteady`), or `"1.2"` (default; sink-cluster detection,
-#'   `walltime`, priority-table cycle breaking, `simplify` toggle, optional
-#'   quadratic state-side solve).
+#'   (adds `testSteady`), `"1.2"` (sink-cluster detection, `walltime`,
+#'   priority-table cycle breaking, `simplify` toggle, optional quadratic
+#'   state-side solve), or `"1.3"` (default; same interface as `"1.2"`, but
+#'   solutions are recorded lazily and resolved once at output time, with a
+#'   lock guard replacing most rollbacks -- typically orders of magnitude
+#'   faster on feedback-heavy networks).
 #'
 #' @return Named character vector of steady-state equations in dMod format, or
 #'   `0` if no solution was found. An entry whose value is its own name denotes a
@@ -94,11 +97,11 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                          outputFormat = "R", testSteady = c("fast", "exact", "skip"),
                          walltime = 0L, simplify = TRUE, solveQuadratic = FALSE,
                          positive = TRUE, branches = FALSE, priority = NULL,
-                         version = "1.2", resolve = TRUE) {
+                         version = "1.3", resolve = TRUE) {
 
   .require_ns("reticulate", "steadyStates()")
   # Validate version and verification mode
-  version <- match.arg(version, choices = c("1.0", "1.1", "1.2"))
+  version <- match.arg(version, choices = c("1.0", "1.1", "1.2", "1.3"))
   testSteady <- match.arg(testSteady)
 
   # Forward customTotals() as givenCQs (the CSV drops totals metadata, so the
@@ -110,9 +113,9 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   }
 
   # Default sparsifyLevel depends on version: v1.0/v1.1 still use sparsify
-  # (default 2), v1.2 ignores it (default 0, avoids the info print).
+  # (default 2), v1.2+ ignores it (default 0, avoids the info print).
   if (is.null(sparsifyLevel)) {
-    sparsifyLevel <- if (version == "1.2") 0 else 2
+    sparsifyLevel <- if (version %in% c("1.2", "1.3")) 0 else 2
   }
 
   # Check if model is an equation list
@@ -131,10 +134,10 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   # Ensure Python dependencies are available
   reticulate::py_require("numpy")
   reticulate::py_require("sympy")
-  # v1.2 uses scipy.optimize.linprog for structural sink-cluster detection
+  # v1.2+ uses scipy.optimize.linprog for structural sink-cluster detection
   # (states whose combined mass leaks monotonically and must therefore be 0).
   # Older versions don't need scipy.
-  if (version == "1.2") reticulate::py_require("scipy")
+  if (version %in% c("1.2", "1.3")) reticulate::py_require("scipy")
 
   pymodule <- paste0("AlyssaPetit_ver", gsub("\\.", "_", version))
   ap <- reticulate::import_from_path(pymodule,
@@ -143,10 +146,12 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
   # Version-specific Python signatures:
   #   v1.0: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat)
   #   v1.1: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady)
-  #   v1.2: Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady, walltime, simplify, solveQuadratic, positive, branches, priority)
+  #   v1.2/v1.3 (same signature): Alyssa(filename, injections, givenCQs, neglect, sparsifyLevel, outputFormat, testSteady, walltime, simplify, solveQuadratic, positive, branches, priority)
   #        -- v1.2 additionally runs structural sink-cluster detection a priori,
   #          and (when `solveQuadratic=TRUE`) attempts a closed-form quadratic
   #          state-side solve before resorting to flux-parameter pivots.
+  #        -- v1.3 records solutions lazily (one textual resolution at output
+  #          time) and guards direct solves against lock deadlocks.
   if (version == "1.0") {
     if (testSteady == "skip")
       message("Note: version 1.0 does not support testSteady='skip', test will always run.")
@@ -170,7 +175,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
                       if (testSteady == "skip") "F" else "T")
 
   } else {
-    # v1.2
+    # v1.2 / v1.3 (shared signature)
     # simplify can be TRUE / FALSE / "full" -- pass through untouched so the
     # Python side sees either a Python bool or the literal string "full".
     if (is.character(simplify)) {
@@ -208,7 +213,7 @@ steadyStates <- function(model, file = NULL, rates = NULL, forcings = NULL,
 
   if (length(m_ssChar) == 0) return(0)
 
-  # Version 1.2 resolves on the backend side; this covers the older ones. Only
+  # Versions 1.2+ resolve on the backend side; this covers the older ones. Only
   # rewrite when there is something to resolve -- resolveRecurrence() reformats
   # every equation it touches, which would break printed == returned.
   if (resolve && outputFormat == "R" && length(m_ssChar) > 1) {

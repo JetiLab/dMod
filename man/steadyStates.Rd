@@ -20,7 +20,7 @@ steadyStates(
   positive = TRUE,
   branches = FALSE,
   priority = NULL,
-  version = "1.2",
+  version = "1.3",
   resolve = TRUE
 )
 }
@@ -54,28 +54,28 @@ and \code{"1.1"} only.}
 \item{testSteady}{Character, how the solution is verified. One of \code{"fast"}
 (default; probabilistic Schwartz-Zippel check over GF(p), with negligible
 error probability), \code{"exact"} (symbolic substitution, slow on large \code{sqrt}
-solutions) or \code{"skip"}. \code{"fast"} requires version \code{"1.2"} and falls back to
-\code{"exact"} on \code{"1.1"}; version \code{"1.0"} always tests.}
+solutions) or \code{"skip"}. \code{"fast"} requires version \code{"1.2"} or later and
+falls back to \code{"exact"} on \code{"1.1"}; version \code{"1.0"} always tests.}
 
 \item{walltime}{Integer, wall-clock budget in seconds for the solver, \code{0}
-(default) for unlimited. Version \code{"1.2"} only.}
+(default) for unlimited. Version \code{"1.2"} and later.}
 
 \item{simplify}{Final-simplification mode. \code{TRUE} (default) applies
 \code{sympy.simplify} once per expression, \code{FALSE} skips it and returns bulkier
 output, \code{"full"} adds a \code{cancel}/\code{posify}/\code{factor} pipeline that is slower
-but more compact. Version \code{"1.2"} only.}
+but more compact. Version \code{"1.2"} and later.}
 
 \item{solveQuadratic}{Logical, whether a cycle whose final equation is
 quadratic in its own state may be closed by the positive root of
 \code{a*X^2 + b*X + c = 0} instead of by a rate-parameter pivot. This keeps the
 pivoted rate constants out of the result, at the price of \code{sqrt(...)} terms
 that some workflows cannot consume in a parameter transformation. Default
-\code{FALSE}. Version \code{"1.2"} only.}
+\code{FALSE}. Version \code{"1.2"} and later.}
 
 \item{positive}{Positivity assumption used for root and pivot selection.
 \code{TRUE} (default) treats all parameters, initial values and totals as
 positive, \code{FALSE} assumes nothing, and a character vector names the symbols
-to treat as positive. Version \code{"1.2"} only.
+to treat as positive. Version \code{"1.2"} and later.
 
 With \code{TRUE} the result is manifestly non-negative: no expression contains a
 subtraction, so no parameter choice can drive a state negative. Where
@@ -88,24 +88,27 @@ pivot succeeds either, a diagnosis is printed and \code{0} returned.}
 (bistability) is emitted with a selector symbol \verb{branch_<state>} taking
 \code{-1} or \code{+1} to recover both steady states. Requires
 \code{solveQuadratic = TRUE}. \code{FALSE} (default) emits only the provably unique
-positive root and pivots ambiguous cases. Version \code{"1.2"} only.}
+positive root and pivots ambiguous cases. Version \code{"1.2"} and later.}
 
 \item{priority}{Character vector of state and rate-parameter names,
 most-preferred first, biasing the resolution order: a named state is
 resolved earlier, a named rate parameter is preferred as pivot. Structural
 constraints take precedence, so this is a preference, not a guarantee.
-Unmatched names are reported and ignored. Version \code{"1.2"} only.}
+Unmatched names are reported and ignored. Version \code{"1.2"} and later.}
 
 \item{version}{Character, backend version. One of \code{"1.0"} (original), \code{"1.1"}
-(adds \code{testSteady}), or \code{"1.2"} (default; sink-cluster detection,
-\code{walltime}, priority-table cycle breaking, \code{simplify} toggle, optional
-quadratic state-side solve).}
+(adds \code{testSteady}), \code{"1.2"} (sink-cluster detection, \code{walltime},
+priority-table cycle breaking, \code{simplify} toggle, optional quadratic
+state-side solve), or \code{"1.3"} (default; same interface as \code{"1.2"}, but
+solutions are recorded lazily and resolved once at output time, with a
+lock guard replacing most rollbacks -- typically orders of magnitude
+faster on feedback-heavy networks).}
 
 \item{resolve}{Logical, whether the equations are passed through
 \code{\link[=resolveRecurrence]{resolveRecurrence()}} so that none refers to another, as a dMod parameter
 transformation substitutes all entries at once. \code{FALSE} keeps the compact
-recurrent form. Version \code{"1.2"} already resolves in the backend, so this
-matters for \code{"1.0"} and \code{"1.1"}.}
+recurrent form. Versions \code{"1.2"} and later already resolve in the backend,
+so this matters for \code{"1.0"} and \code{"1.1"}.}
 }
 \value{
 Named character vector of steady-state equations in dMod format, or

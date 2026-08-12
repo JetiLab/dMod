@@ -1,15 +1,18 @@
-# AlyssaPetit version 1.2
+# AlyssaPetit version 1.3
 # Use with python 3.x
 #
-# Based on v1.1. Changes:
-#   - Priority-table cycle breaking, globally ranked (after Severin Bang's
-#     Julia port); sparsification removed, sparsifyLevel ignored.
-#   - Manifestly non-negative output: direct positive-solve pass, optional
-#     closed-form quadratic roots (solveQuadratic/branches), rate-constant
-#     pivots, diagnosis report when positivity is impossible.
-#   - Structural sink-cluster detection via linear programming.
-#   - Probabilistic steady-state test in GF(p) (testSteady='fast').
-#   - walltime budget, simplify=False/'full' modes, user priority order.
+# Based on v1.2. Changes:
+#   - Lazy solves: solutions are recorded, never substituted into F or earlier
+#     equations; one textual resolution at output time (topological order).
+#     Removes the expression blowup that made cancel()/GCD dominate runtime.
+#   - Solved states enter the dependency graph as aliases, so cycle detection
+#     sees dependencies through recorded solutions.
+#   - Lock guard: a direct solve whose locked rate constants would strand a
+#     cycle state is skipped up front instead of found by rollback later.
+#   - Affinity test by polynomial degree instead of cancel(); rejections
+#     cached while F is unchanged; single-row SM*F products.
+#   - Steady-state test evaluates mod p by environment extension instead of
+#     symbolic substitution.
 
 import numpy
 import sympy
@@ -398,7 +401,8 @@ def _reportSignIndefinite(node, sol, sol_cls, positive_syms, solved,
     print("    ======================================================",flush=True)
 
 
-def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=()):
+def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=(),
+                               rejected=None, aliases=None):
     # Find a state y whose own ODE is (a) linear in y and (b) has a
     # structurally positive closed-form steady-state solution y = -In/Out
     # under positive_syms (None = all symbols positive). Returns
@@ -408,9 +412,17 @@ def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=()):
     # own ODE would otherwise have been positive by construction.
     # States in `neglect` are skipped: their ODE must be spent on a flux
     # pivot so they stay free parameters of the trafo.
+    #
+    # `rejected` (a set of state names) caches refusals: F does not change
+    # between solves (lazy scheme), so a refused row stays refused until the
+    # next cycle break. `aliases` are the recorded solutions' references; a
+    # state reached by its own equation through a solved state is a cycle in
+    # disguise and left to cycle breaking.
+    X_names={str(X[j]) for j in range(len(X))}
     for i in range(len(X)):
         y=X[i]
-        if str(y) in neglect:
+        nm=str(y)
+        if nm in neglect or (rejected is not None and nm in rejected):
             continue
         eq=sympy.S.Zero
         row=SM.row(i)
@@ -418,21 +430,38 @@ def _try_positive_direct_solve(SM, F, X, positive_syms=None, neglect=()):
             if row[k]!=0:
                 eq=eq+row[k]*F[k]
         if eq==0:
+            if rejected is not None: rejected.add(nm)
             continue
-        In=eq.subs(y, 0)
-        Out=sympy.diff(eq, y)
-        if Out==0:
+        if aliases:
+            eq_names={str(s) for s in eq.free_symbols}
+            if nm in _alias_closure(eq_names & set(aliases), aliases, X_names):
+                if rejected is not None: rejected.add(nm)
+                continue
+        # Affinity in y by polynomial degree -- no GCD. together() only
+        # collects; a y-bearing denominator means the row is genuinely
+        # rational in y and a direct solve does not apply.
+        num, den=sympy.fraction(sympy.together(eq))
+        if den.has(y):
+            if rejected is not None: rejected.add(nm)
             continue
-        residual=cancel(eq-In-y*Out)
-        if residual!=0:
+        try:
+            poly=sympy.Poly(num, y)
+        except sympy.PolynomialError:
+            if rejected is not None: rejected.add(nm)
             continue
-        In_cls=_rational_sign_class(In, positive_syms)
-        Out_cls=_rational_sign_class(Out, positive_syms)
+        if poly.degree()!=1:
+            if rejected is not None: rejected.add(nm)
+            continue
+        Out_n, In_n=poly.all_coeffs()
+        In_cls=_rational_sign_class(In_n/den, positive_syms)
+        Out_cls=_rational_sign_class(Out_n/den, positive_syms)
         if In_cls=='0' or Out_cls=='0':
+            if rejected is not None: rejected.add(nm)
             continue
         if (In_cls=='+' and Out_cls=='-') or (In_cls=='-' and Out_cls=='+'):
-            sol=cancel(-In/Out)
+            sol=cancel(-In_n/Out_n)
             return (i, y, sol)
+        if rejected is not None: rejected.add(nm)
     return None
 
 def _simplify_with_sqrt(expr):
@@ -472,17 +501,19 @@ def _simplify_with_sqrt(expr):
     return (factor(P_scaled) + factor(Q_scaled)*sq_factored) / factor(R)
 
 def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False,
-                                  neglect=()):
+                                  neglect=(), rejected=None, aliases=None):
     # Resolve a state y whose ODE is quadratic in y (a*y^2 + b*y + c = 0,
     # normalised to sign(a)=+) as a closed-form root, avoiding sympy.solve().
     # sign(c)=- gives the unique positive root (-b + sqrt(disc))/(2a); with
     # branches=True, sign(c)=+ & sign(b)=- gives two positive roots, emitted
     # with a selector branch_y in {-1,+1}. Other patterns pivot instead.
     # Returns (row_idx, y, sol, branch) or None. States in `neglect` are
-    # skipped (see _try_positive_direct_solve).
+    # skipped; `rejected` and `aliases` as in _try_positive_direct_solve.
+    X_names={str(X[j]) for j in range(len(X))}
     for i in range(len(X)):
         y=X[i]
-        if str(y) in neglect:
+        nm=str(y)
+        if nm in neglect or (rejected is not None and nm in rejected):
             continue
         eq=sympy.S.Zero
         row=SM.row(i)
@@ -490,14 +521,22 @@ def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False,
             if row[k]!=0:
                 eq=eq+row[k]*F[k]
         if eq==0:
+            if rejected is not None: rejected.add(nm)
             continue
+        if aliases:
+            eq_names={str(s) for s in eq.free_symbols}
+            if nm in _alias_closure(eq_names & set(aliases), aliases, X_names):
+                if rejected is not None: rejected.add(nm)
+                continue
         # SS denominators are positive sums, so zeros of eq and its numerator coincide.
         num, _den = sympy.fraction(sympy.together(eq))
         try:
             poly = sympy.Poly(num, y)
         except sympy.PolynomialError:
+            if rejected is not None: rejected.add(nm)
             continue
         if poly.degree() != 2:
+            if rejected is not None: rejected.add(nm)
             continue
         a, b, c = poly.all_coeffs()
         a_cls=_rational_sign_class(a, positive_syms)
@@ -506,6 +545,7 @@ def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False,
             a, b, c = -a, -b, -c
             a_cls, c_cls = '+', _flip_sign(c_cls)
         if a_cls!='+':
+            if rejected is not None: rejected.add(nm)
             continue
         disc = b**2 - 4*a*c
         if c_cls=='-':
@@ -513,6 +553,7 @@ def _try_positive_quadratic_solve(SM, F, X, positive_syms=None, branches=False,
         if branches and c_cls=='+' and _rational_sign_class(b, positive_syms)=='-':
             branch=sympy.Symbol('branch_'+str(y))
             return (i, y, cancel((-b + branch*sympy.sqrt(disc)) / (2*a)), branch)
+        if rejected is not None: rejected.add(nm)
     return None
 
 def checkNegRows(M):
@@ -543,10 +584,81 @@ def checkPosRows(M):
                 PosRows.append(i)    
         return(PosRows)             
 
-def DetermineGraphStructure(SM, F, X, neglect):
+def _alias_closure(names, aliases, keep):
+    # Expand `names` through `aliases` ({solved name -> referenced state
+    # names}) and return the reachable subset of `keep` (the unsolved
+    # states). A visited set guards against reference cycles.
+    out=set()
+    stack=list(names)
+    seen=set()
+    while stack:
+        nm=stack.pop()
+        if nm in seen:
+            continue
+        seen.add(nm)
+        if nm in keep:
+            out.add(nm)
+        if nm in aliases:
+            stack.extend(aliases[nm])
+    return out
+
+def _states_in_cycles(graph):
+    # Names on at least one directed cycle: members of a nontrivial strongly
+    # connected component, or self-looped. Iterative Tarjan.
+    index={}
+    low={}
+    onstack=set()
+    stack=[]
+    result=set()
+    counter=[0]
+    for root in graph:
+        if root in index:
+            continue
+        work=[(root, iter(graph.get(root, ())))]
+        index[root]=low[root]=counter[0]; counter[0]+=1
+        stack.append(root); onstack.add(root)
+        while work:
+            node, it=work[-1]
+            advanced=False
+            for nxt in it:
+                if nxt not in graph:
+                    continue
+                if nxt not in index:
+                    index[nxt]=low[nxt]=counter[0]; counter[0]+=1
+                    stack.append(nxt); onstack.add(nxt)
+                    work.append((nxt, iter(graph.get(nxt, ()))))
+                    advanced=True
+                    break
+                elif nxt in onstack:
+                    low[node]=min(low[node], index[nxt])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                parent=work[-1][0]
+                low[parent]=min(low[parent], low[node])
+            if low[node]==index[node]:
+                scc=[]
+                while True:
+                    w=stack.pop(); onstack.discard(w)
+                    scc.append(w)
+                    if w==node:
+                        break
+                if len(scc)>1:
+                    result.update(scc)
+                elif scc[0] in graph.get(scc[0], ()):
+                    result.add(scc[0])
+    return result
+
+def DetermineGraphStructure(SM, F, X, neglect, aliases=None):
+    # `aliases` maps an already-solved state to the state names its recorded
+    # solution references; a dependency through a solved state is still a
+    # dependency, so cycle detection stays sound under lazy solves.
     graph={}
     nrows=SM.rows
     ncols=SM.cols
+    aliases=aliases or {}
+    X_names={str(X[j]) for j in range(len(X))}
     # Precompute free_symbols per flux and nonzero columns per row
     F_syms=[F[k].free_symbols for k in range(ncols)]
     row_nz=[[k for k in range(ncols) if SM[i,k]!=0] for i in range(nrows)]
@@ -558,8 +670,11 @@ def DetermineGraphStructure(SM, F, X, neglect):
         ode_syms=set()
         for k in row_nz[i]:
             ode_syms|=F_syms[k]
+        ode_names={str(s) for s in ode_syms}
+        via_alias=_alias_closure(ode_names & set(aliases), aliases, X_names)
         for j in range(len(X)):
             xj=X[j]
+            nm_j=str(xj)
             if(xj in ode_syms):
                 if(j==i):
                     # Self-dependence: check if nonlinear (degree >= 2 in any flux)
@@ -569,13 +684,16 @@ def DetermineGraphStructure(SM, F, X, neglect):
                             if(xi in F[k].diff(xi).free_symbols):
                                 nonlinear=True
                                 break
-                    if(nonlinear):
-                        liste.append(str(xj))
+                    if(nonlinear or nm_j in via_alias):
+                        liste.append(nm_j)
                 else:
-                    liste.append(str(xj))
+                    liste.append(nm_j)
+            elif(nm_j in via_alias):
+                # Reached through a solved state's recorded solution.
+                liste.append(nm_j)
             else:
                 if(j==i):
-                    liste.append(str(xj))
+                    liste.append(nm_j)
         graph[str(X[i])]=liste
     for el in neglect:
         if(parse_expr(el) in X):
@@ -585,95 +703,6 @@ def DetermineGraphStructure(SM, F, X, neglect):
                 if(el not in graph[el]):
                     graph[el].append(el)
     return(graph)
-
-def FindCycle(graph, X):
-    for el in X:
-        cycle=find_cycle(graph, str(el), str(el), path=[])
-        if(cycle!=None):
-            return(cycle)
-    return(None)
-    
-def find_cycle(graph, start, end, path=[]):
-    path = path + [start]
-    if not start in graph:
-        return None
-    if ((start == end) & (path!=[start])):
-        return path    
-    for node in graph[start]:
-        if node==end: 
-            return (path+[end])
-        if node not in path:
-            #print(node)
-            newpath = find_cycle(graph, node, end, path)
-            if newpath: 
-                return newpath
-    return None
-    
-def GetBestPair(cycle, SM, fluxpars, X, LCLs, neglect):
-    for state in cycle:
-        for LCL in LCLs:
-            ls=parse_expr(LCL.split(' = ')[0])
-            if(ls.subs(parse_expr(state),1)!=ls):
-                return(0, state, None, False)
-    dimList=[]
-    signList=[]
-    for state in cycle:
-        dim, sign = GetDimension(state, X, SM, True)
-        signList.append(sign)
-        dimList.append(dim)
-    #minOfDimList=min(dimList)
-    beststate=None
-    bestflux=None
-    besttype=-1
-    n2beat=1000
-    signChanged=False
-    min2beat=max(dimList)+1
-    for i in range(len(dimList)):
-        if(dimList[i] > 0 and dimList[i] < min2beat):
-            min2beat=dimList[i]
-            sign=signList[i]
-            appearList=[]
-            #print(sign)
-            if(sign=="minus"):
-                fluxpars2use=GetNegFluxParameters(SM, fluxpars, X, cycle[i])                
-            else:
-                fluxpars2use=GetPosFluxParameters(SM, fluxpars, X, cycle[i])
-            abort_flux=False
-            for fp in fluxpars2use:
-                if(str(fp) not in neglect):
-                    appearList.append(GetAppearances(fp, fluxpars, SM))
-                else:
-                    abort_flux=True
-            if(abort_flux):
-                ##### Change sign
-                print("Sign changed!",flush=True)
-                signChanged=True
-                if((sign=="minus" and not signChanged) or (sign=="plus" and signChanged)):
-                    fluxpars2use=GetNegFluxParameters(SM, fluxpars, X, cycle[i])                
-                else:
-                    fluxpars2use=GetPosFluxParameters(SM, fluxpars, X, cycle[i])
-                abort_flux=False
-                for fp in fluxpars2use:
-                    if(str(fp) not in neglect):
-                        appearList.append(GetAppearances(fp, fluxpars, SM))
-                    else:
-                        abort_flux=True
-            if(sum(appearList) < n2beat and not abort_flux):
-                n2beat=sum(appearList)
-                beststate=cycle[i]
-                if((sign=="minus" and not signChanged) or (sign=="plus" and signChanged)):
-                    bestflux=GetNegFluxParameters(SM, fluxpars, X, cycle[i])[0]
-                else:
-                    bestflux=GetPosFluxParameters(SM, fluxpars, X, cycle[i])[0]
-                if(min2beat==1 and max(appearList)==1):
-                    besttype=1
-                else:
-                    if(max(appearList)==1 and min2beat>1):
-                        besttype=2
-                    else:
-                        besttype=3
-    return(besttype, beststate, bestflux, signChanged)
-
 
 def find_all_simple_cycles(graph, max_cycles=20000):
     """Enumerate all simple directed cycles in `graph`.
@@ -831,10 +860,11 @@ def genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars
         return min((prio_index[nm] for nm in names if nm in prio_index),
                    default=prio_none)
 
+    _lcl_lhs = [parse_expr(lcl.split(' = ')[0]) for lcl in LCLs]
+
     def _state_in_active_cq(nm):
         parsed = parse_expr(nm)
-        for lcl in LCLs:
-            lhs = parse_expr(lcl.split(' = ')[0])
+        for lhs in _lcl_lhs:
             if lhs.subs(parsed, 1) != lhs:
                 return True
         return False
@@ -1062,16 +1092,19 @@ def FindNodeToSolve(graph, SM=None, F=None, X=None):
         return(None)
     if len(leaves)==1 or SM is None or F is None or X is None:
         return(leaves[0])
-    # Among all solvable leaf nodes, pick the one whose ODE expression
-    # (SM*F)[index] has the fewest symbolic operations.  Solving a
-    # "small" equation first keeps substitutions into the remaining
-    # fluxes compact and delays expression blowup.
+    # Among all solvable leaf nodes, pick the one whose ODE row has the
+    # fewest symbolic operations. Solving a "small" equation first keeps
+    # the recorded solutions compact. Only leaf rows are assembled -- no
+    # full SM*F product.
     best=None
     best_cost=float('inf')
-    SMF=SM*F
     for el in leaves:
         idx=list(X).index(parse_expr(el))
-        cost=SMF[idx].count_ops()
+        expr=sympy.S.Zero
+        for k in range(SM.cols):
+            if SM[idx,k]!=0:
+                expr=expr+SM[idx,k]*F[k]
+        cost=expr.count_ops()
         if cost<best_cost:
             best_cost=cost
             best=el
@@ -1154,40 +1187,94 @@ def _eval_modp(expr, env, p):
             return (int(v.p) * pow(int(v.q), -1, p)) % p
     raise _UnsupportedModp()
 
-def _residual_is_zero_modp(expr, trials=3, primes=_MODP_PRIMES):
-    # Returns True (almost surely == 0), False (definitely != 0), or None
-    # (could not test -> caller should use the symbolic fallback).
-    expr=sympy.sympify(expr)
-    if expr == 0:
-        return True
-    exp_syms=_collect_exponent_syms(expr)
-    fsyms=list(expr.free_symbols)
+def _steady_test_fast(ODE, eqOut, zeroStates, trials=3, primes=_MODP_PRIMES):
+    # Schwartz-Zippel steady-state check WITHOUT symbolic substitution: the
+    # solved symbols are evaluated in dependency order (eqOut is
+    # topologically sorted, definitions first) into the same environment,
+    # then every residual is evaluated at that point. Returns the sorted
+    # list of indices of ODEs with a provably nonzero residual, or None if
+    # a node is unsupported / no valid sample point was found (caller falls
+    # back to the exact symbolic test).
+    pairs=[]
+    for eq in eqOut:
+        ls, rs=eq.split(' = ', 1)
+        if ls==rs:
+            continue
+        pairs.append((parse_expr(ls), parse_expr(rs)))
+    odes=[sympy.sympify(o) for o in ODE]
+    all_exprs=[r for _, r in pairs]+odes
+    exp_syms=set()
+    for e in all_exprs:
+        exp_syms|=_collect_exponent_syms(e)
+    defined={l for l, _ in pairs}
+    zero_syms=set(zeroStates)
+    base=set()
+    for e in all_exprs:
+        base|=e.free_symbols
+    base-=defined
+    bad=set()
     for p in primes:
         good=0
         attempts=0
         while good < trials and attempts < trials*30:
             attempts+=1
             env={}
-            for s in fsyms:
+            for s in base:
                 name=str(s)
-                if name.startswith('branch_'):
+                if s in zero_syms:
+                    env[s]=0
+                elif name.startswith('branch_'):
                     env[s]=random.choice([1, p-1])
                 elif s in exp_syms:
                     env[s]=random.randint(2, 5)
                 else:
                     env[s]=random.randint(1, p-1)
             try:
-                val=_eval_modp(expr, env, p)
+                for l, r in pairs:
+                    env[l]=_eval_modp(r, env, p)
+                vals=[_eval_modp(o, env, p) for o in odes]
             except _ResampleModp:
                 continue
             except _UnsupportedModp:
                 return None
             good+=1
-            if val % p != 0:
-                return False
+            for i, v in enumerate(vals):
+                if v % p != 0:
+                    bad.add(i)
         if good == 0:
             return None
-    return True
+    return sorted(bad)
+
+def _topo_sort_eqs(eqs):
+    # Order 'lhs = rhs' entries so every definition precedes its uses -- the
+    # textual resolution substitutes entry i into entries j > i, so a
+    # reference must point backwards. Free-parameter entries (lhs == rhs)
+    # define nothing. Stable: among ready entries the earliest wins. Falls
+    # back to the given order if the entries reference each other cyclically.
+    n=len(eqs)
+    parts=[eq.split(' = ', 1) for eq in eqs]
+    patterns=[re.compile(r'\b'+re.escape(ls)+r'\b') if ls!=rs else None
+              for ls, rs in parts]
+    deps=[set() for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i==j or patterns[j] is None:
+                continue
+            if patterns[j].search(parts[i][1]):
+                deps[i].add(j)
+    order=[]
+    emitted=set()
+    while len(order) < n:
+        pick=next((i for i in range(n)
+                   if i not in emitted and deps[i] <= emitted), None)
+        if pick is None:
+            print('   Warning: steady-state equations reference each other '
+                  'cyclically; output may stay recurrent.', flush=True)
+            return eqs
+        emitted.add(pick)
+        order.append(pick)
+    return [eqs[i] for i in order]
+
 
 def _finalSimplify(rs, full):
     """One right-hand side through the final-simplification pipeline.
@@ -1240,6 +1327,9 @@ def Alyssa(filename,
         positive_syms = None if bool(positive) else set()
     # Sign-definiteness is only decidable when every symbol is known positive.
     _enforcePositive = (positive_syms is None)
+    # States certified positive by a lazy solve join positive_syms (rolled
+    # back with the snapshot below).
+    _added_positive=set()
     # Names the solver must not spend on a state expression / flux pivot.
     # Kept as a set of plain strings: `str(sym) in neglect` is the only test
     # anywhere in the pipeline.
@@ -1420,16 +1510,14 @@ def Alyssa(filename,
     
     nrspecies=nrspecies+len(zeroStates)
 
-##### Identify linearities, bilinearities and multilinearities        
-    Xsquared=[]
-    for i in range(len(X)):
-        Xsquared.append(X[i]*X[i])        
-    Xsquared=Matrix(Xsquared)
-      
+##### Identify linearities, bilinearities and multilinearities
+    SMF=SM*F
+    SMF_exp=[expand(e) for e in SMF]
+
     BLList=[]
     MLList=[]
-    for i in range(len(SM*F)):
-        LHS=str(expand((SM*F)[i]))
+    for i in range(len(SMF)):
+        LHS=str(SMF_exp[i])
         LHS=LHS.replace(' ','')
         LHS=LHS.replace('-','+')
         LHS=LHS.replace('**2','tothepowerof2')
@@ -1474,10 +1562,10 @@ def Alyssa(filename,
                     MLList.append(string)
         
     COPlusLIPlusBL=[]
-    for i in range(len(SM*F)):
-        COPlusLIPlusBL.append((SM*F)[i])
+    for i in range(len(SMF)):
+        COPlusLIPlusBL.append(SMF[i])
         for j in range(len(MLList)):
-            ToSubs=expand((SM*F)[i]).coeff(MLList[j])
+            ToSubs=SMF_exp[i].coeff(MLList[j])
             COPlusLIPlusBL[i]=expand(COPlusLIPlusBL[i]-ToSubs*parse_expr(MLList[j]))
             
     COPlusLI=[]
@@ -1494,7 +1582,7 @@ def Alyssa(filename,
     		C[i*len(X)+j]=expand((COPlusLI)[i]).coeff(X[j])
         
 ##### ML contains multilinearities
-    ML=expand(Matrix(SM*F)-Matrix(COPlusLIPlusBL))
+    ML=expand(Matrix(SMF)-Matrix(COPlusLIPlusBL))
 ##### BL contains bilinearities
     BL=expand(Matrix(COPlusLIPlusBL)-Matrix(COPlusLI))    
 #### CM is coefficient matrix of linearities
@@ -1634,6 +1722,11 @@ def Alyssa(filename,
     # create self-referential eqOut entries, see _try_positive_direct_solve).
     locked_fluxpars=set()
     fluxpar_str_to_sym={str(fp): fp for fp in fluxpars if fp is not None}
+    # Lazy-solve bookkeeping: recorded solutions are NOT substituted into F
+    # or earlier equations. solved_refs[name] holds the state names a
+    # recorded solution references, feeding the alias-aware graph.
+    solved_refs={}
+    Xo_names={str(s) for s in Xo}
     priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
                                                   priority)
 #### Remove cycles step by step
@@ -1644,109 +1737,132 @@ def Alyssa(filename,
     eqOut=[]
 
     def _apply_state_solve(row_idx, y, sol, label):
-        # Shared post-solve bookkeeping: back-substitute earlier solves into
-        # `sol`, record `sol` in eqOut, lock baked-in flux parameters,
-        # forward-substitute into prior eqOut entries, and propagate into F.
-        # `label` is just for the log line.
-        for prev_eq in eqOut:
-            lhs_str, rhs_str = prev_eq.split(' = ', 1)
-            lhs_sym=parse_expr(lhs_str)
-            if sol.has(lhs_sym):
-                sol=cancel(sol.subs(lhs_sym, parse_expr(rhs_str)))
+        # Lazy: record the solution, lock its rate constants, remember which
+        # states it references, and drop the row. F and earlier eqOut entries
+        # stay untouched -- the one textual resolution at output time
+        # substitutes everything, so every affine/sign test in between runs
+        # on small expressions. Locks are transitive already: a referenced
+        # solved state locked its own rate constants when it was recorded.
         eqOut.append(str(y)+' = '+str(sol))
         print('   Solved '+label+': '+str(y),flush=True)
         sol_sym_names={str(s) for s in sol.free_symbols}
         for nm, sym in fluxpar_str_to_sym.items():
             if nm in sol_sym_names:
                 locked_fluxpars.add(sym)
-        for i in range(len(eqOut)):
-            lhs_str, rhs_str = eqOut[i].split(' = ', 1)
-            rhs_expr=parse_expr(rhs_str)
-            if rhs_expr.has(y):
-                rhs_expr=cancel(rhs_expr.subs(y, sol))
-                eqOut[i]=lhs_str+' = '+str(rhs_expr)
-        for k in range(len(F)):
-            F[k]=cancel(F[k].subs(y, sol))
+        solved_refs[str(y)]=sol_sym_names & Xo_names
+        if positive_syms is not None:
+            positive_syms.add(y)
+            _added_positive.add(y)
         X.row_del(row_idx)
         SM.row_del(row_idx)
 
-    def _do_direct_positive_solve():
-        # Run one sweep of direct-positive-solves until no more applicable
-        # states remain, updating F, SM, X, SSgraph, and locked_fluxpars.
-        # Returns True if at least one state was solved this sweep.
-        # See _try_positive_direct_solve for why back-substitution matters:
-        # without it, sol would reference a state name that dMod's P() treats
-        # as its init-default parameter instead of the SS expression --
-        # producing initial conditions that are not actually at steady state.
-        found=False
-        while True:
-            direct=_try_positive_direct_solve(SM, F, X, positive_syms, neglect)
-            if direct is None:
-                break
-            row_idx, y, sol = direct
-            _apply_state_solve(row_idx, y, sol, 'directly')
-            found=True
-        return found
+    def _in_active_cq(nm):
+        parsed=parse_expr(nm)
+        for lcl in LCLs:
+            lhs=parse_expr(lcl.split(' = ')[0])
+            if lhs.subs(parsed, 1)!=lhs:
+                return True
+        return False
 
-    def _do_quadratic_state_solve():
-        # Resolve quadratic-in-self states as closed-form roots (e.g. the last
-        # state of an R1<->R2<->R1_R2 cycle) instead of pivoting on a flux
-        # parameter. Off by default: emits sqrt. Opt in via solveQuadratic=True.
-        if not solveQuadratic:
-            return False
-        found=False
-        while True:
-            quad=_try_positive_quadratic_solve(SM, F, X, positive_syms, branches,
-                                               neglect)
-            if quad is None:
-                break
-            row_idx, y, sol, branch = quad
-            label='quadratically' + (' (2 branches)' if branch is not None else '')
-            _apply_state_solve(row_idx, y, sol, label)
-            found=True
-        return found
+    def _usable_side_exists(i, locked_names):
+        # A pivot side of row i is usable if it has fluxes and none of its
+        # rate constants is missing, neglected, or locked. Mirrors the
+        # dontUseThisSide rule of genPriorityTable.
+        row=SM.row(i)
+        for want_pos in (True, False):
+            ids=[c for c in range(SM.cols)
+                 if (row[c]>0 if want_pos else row[c]<0)]
+            if ids and all(fluxpars[c] is not None
+                           and str(fluxpars[c]) not in neglect
+                           and str(fluxpars[c]) not in locked_names
+                           for c in ids):
+                return True
+        return False
+
+    def _strands_cycle_state(new_lock_names, solving_name, cyc_states):
+        # Would adding new_lock_names to the locked set leave a cycle state
+        # without any usable pivot side (and no rescuing conservation law)?
+        # Pure integer/graph work -- this is the up-front replacement for
+        # discovering the deadlock via rollback after the fact.
+        locked_now={str(fp) for fp in locked_fluxpars}
+        prospective=locked_now | set(new_lock_names)
+        name_to_row={str(X[i]): i for i in range(len(X))}
+        for nm in cyc_states:
+            if nm==solving_name or nm not in name_to_row:
+                continue
+            if _in_active_cq(nm):
+                continue
+            i=name_to_row[nm]
+            if _usable_side_exists(i, locked_now) and \
+               not _usable_side_exists(i, prospective):
+                return nm
+        return None
 
     def _drain_positive_solves():
-        # Alternate linear and quadratic positive-solves until neither
-        # finds anything new. Linear is tried first (it's cheap and never
-        # introduces sqrt); each linear sweep may unblock a quadratic, and
-        # each quadratic sweep may unblock further linears (the sqrt-bearing
-        # substitution can simplify other states' ODEs to linear-in-self).
+        # Solve states with a certified-positive closed form until none is
+        # left. Linear is tried first (cheap, no sqrt), quadratic only when
+        # solveQuadratic is on. F never changes here (lazy), so rejections
+        # are cached for the whole sweep; each accepted solve is vetoed if
+        # its locks would strand a cycle state.
+        nonlocal SSgraph
         if not allow_positive_solves:
             return False
-        any_progress=False
+        rejected_lin=set()
+        rejected_quad=set()
+        cyc_states=_states_in_cycles(SSgraph)
+        progress=False
         while True:
-            lin=_do_direct_positive_solve()
-            quad=_do_quadratic_state_solve()
-            if not lin and not quad:
+            cand=_try_positive_direct_solve(SM, F, X, positive_syms, neglect,
+                                            rejected_lin, solved_refs)
+            label='directly'
+            if cand is None and solveQuadratic:
+                quad=_try_positive_quadratic_solve(SM, F, X, positive_syms,
+                                                   branches, neglect,
+                                                   rejected_quad, solved_refs)
+                if quad is not None:
+                    row_idx, y, sol, branch=quad
+                    cand=(row_idx, y, sol)
+                    label='quadratically' + (' (2 branches)'
+                                             if branch is not None else '')
+            if cand is None:
                 break
-            any_progress=True
-        return any_progress
+            row_idx, y, sol=cand
+            new_locks={str(s) for s in sol.free_symbols} & set(fluxpar_str_to_sym)
+            victim=_strands_cycle_state(new_locks, str(y), cyc_states)
+            if victim is not None:
+                print('   Skipping direct solve of '+str(y)+': locking its '
+                      'rate constants would leave '+victim+' without a '
+                      'usable pivot side.',flush=True)
+                rejected_lin.add(str(y))
+                rejected_quad.add(str(y))
+                continue
+            _apply_state_solve(row_idx, y, sol, label)
+            progress=True
+            SSgraph=DetermineGraphStructure(SM, F, X, neglect, solved_refs)
+            cyc_states=_states_in_cycles(SSgraph)
+        return progress
 
-    # Every state the positive-solve pass resolves locks the flux parameters
-    # baked into its solution, and the pass is too greedy to see that a lock may
-    # remove a cycle's last positive pivot. Snapshot so that deadlock can be
-    # retried with the pass off.
+    # The lock guard in _drain_positive_solves refuses solves that would
+    # strand a cycle state, but it reasons on the current graph -- keep the
+    # snapshot/rollback as a safety net for deadlocks it cannot foresee.
     allow_positive_solves=True
     retried_without_positive_solves=False
     _snapshot=(SM.copy(), F.copy(), X.copy(), list(fluxpars), list(LCLs),
-               counter, gesnew)
+               counter, gesnew, list(newvars))
 
     if cycles_list:
         print('\nDirect positive-solve pass ...',flush=True)
         if _drain_positive_solves():
-            SSgraph=DetermineGraphStructure(SM, F, X, neglect)
             priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
                                                           priority)
         else:
             print('   (nothing resolvable positively up-front)',flush=True)
 
     while cycles_list:
-        # Re-check positive-solves before every cycle-break: an earlier
-        # pivot's substitution may have turned a previously-nonlinear state
-        # into a linear-in-itself or quadratic-with-positive-root one.
+        # Re-check positive-solves before every cycle-break: a break's trafo
+        # rewrites fluxes, which may have turned a previously-unsolvable
+        # state into a linear-in-itself or quadratic-with-positive-root one.
         if _drain_positive_solves():
-            SSgraph=DetermineGraphStructure(SM, F, X, neglect)
             priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
                                                           priority)
             if not cycles_list:
@@ -1784,8 +1900,13 @@ def Alyssa(filename,
                 fluxpars=list(_snapshot[3])
                 LCLs=list(_snapshot[4])
                 counter, gesnew = _snapshot[5], _snapshot[6]
+                newvars=list(_snapshot[7])
                 eqOut=[]
                 locked_fluxpars=set()
+                solved_refs.clear()
+                for s in _added_positive:
+                    positive_syms.discard(s)
+                _added_positive.clear()
                 SSgraph=DetermineGraphStructure(SM, F, X, neglect)
                 priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect,
                                                               locked_fluxpars, priority)
@@ -1905,7 +2026,10 @@ def Alyssa(filename,
             eqOut.append(state2Rem+' = '+state2Rem)
             print('   '+str(state2Rem)+' --> '+'Done by CQ',flush=True)
         if(minType==1):
-            eq=(SM*F)[index]
+            eq=sympy.S.Zero
+            for k in range(SM.cols):
+                if SM[index,k]!=0:
+                    eq=eq+SM[index,k]*F[k]
             sol=solve(eq, fp2Rem, simplify=False)[0]
             eqOut.append(str(fp2Rem)+' = '+str(sol))
             print('   '+str(state2Rem)+' --> '+str(fp2Rem),flush=True)
@@ -1958,7 +2082,10 @@ def Alyssa(filename,
                 else:
                     fp2Rem=posfps[0]
                     flux=poss[0]
-                eq=(SM*F)[index]
+                eq=sympy.S.Zero
+                for k in range(SM.cols):
+                    if SM[index,k]!=0:
+                        eq=eq+SM[index,k]*F[k]
                 sol=solve(eq, fp2Rem, simplify=False)[0]
                 eqOut.append(str(fp2Rem)+' = '+str(sol))
                 FsearchFlux = matrix_multiply_elementwise(abs(SM[index,:]),F.T)
@@ -2042,7 +2169,7 @@ def Alyssa(filename,
                     eqOut.append(eq)
         X.row_del(index)
         SM.row_del(index)
-        SSgraph=DetermineGraphStructure(SM, F, X, neglect)
+        SSgraph=DetermineGraphStructure(SM, F, X, neglect, solved_refs)
         priority_rows, cycles_list = genPriorityTable(SM, F, fluxpars, X, LCLs, SSgraph, neglect, locked_fluxpars,
                                                       priority)
         counter=counter+1
@@ -2051,15 +2178,19 @@ def Alyssa(filename,
 #### Solve remaining equations
     eqOut.reverse()
     print('Solving remaining equations ...\n',flush=True)
-    while(SSgraph!={}):
+    while len(X)>0:
+        # Rebuild with aliases each round: a recorded solution's references
+        # count as dependencies, so leaf order stays a valid resolution
+        # order even though nothing is substituted into F.
+        SSgraph=DetermineGraphStructure(SM, F, X, neglect, solved_refs)
         node=FindNodeToSolve(SSgraph, SM, F, X)
         if node is None:
             print('   WARNING: no solvable leaf left -- aborting solve phase.',flush=True)
             break
         xi=parse_expr(node)
         index=list(X).index(xi)
-        # After cycle-breaking, (SM*F)[index] is guaranteed linear in xi.
-        # Compute just that row (avoids a full SM*F).
+        # After cycle-breaking, this row is guaranteed linear in xi.
+        # Compute just the row (avoids a full SM*F).
         expr=sympy.S.Zero
         for k in range(SM.cols):
             if SM[index,k]!=0:
@@ -2114,18 +2245,18 @@ def Alyssa(filename,
                     tried, solveQuadratic)
                 return(0)
             eqOut.insert(0,node+' = '+str(sol))
-            for f in range(len(F)):
-                F[f]=cancel(F[f].subs(xi, sol))
+            if sol is not xi:
+                solved_refs[node]={str(s) for s in sol.free_symbols} & Xo_names
+                if positive_syms is not None:
+                    positive_syms.add(xi)
             print(f'   Solved {node}',flush=True)
         X.row_del(index)
         SM.row_del(index)
-        # Incremental graph update: sol contains only parameters and earlier-
-        # solved symbols, never other unknown states, so the only change is
-        # that `node` is gone -- both as a key and as a dependency.
-        del SSgraph[node]
-        for k in SSgraph:
-            if node in SSgraph[k]:
-                SSgraph[k].remove(node)
+
+#### Order equations: definitions before uses
+    # Solutions are recorded lazily (in terms of each other), so the
+    # resolution below and the mod-p test both need a topological order.
+    eqOut=_topo_sort_eqs(eqOut)
 
 #### Optional final simplification (applied once per expression, after the loop)
     # simplify:
@@ -2159,27 +2290,30 @@ def Alyssa(filename,
         fast = testSteady in ('fast', 'modp')
         print('Testing Steady State'+(' (probabilistic mod p)' if fast else '')+'...\n',flush=True)
         NonSteady=False
-        subs_pairs=[(parse_expr(ls), parse_expr(rs))
-                    for ls, rs in (eq.split(' = ', 1) for eq in reversed(eqOut))]
-        for i in range(len(ODE)):
-            expr=parse_expr(str(ODE[i]))
-            for zs in zeroStates:
-                expr=expr.subs(zs, 0)
-            for lsym, rexpr in subs_pairs:
-                expr=expr.subs(lsym, rexpr)
-            if fast:
-                verdict=_residual_is_zero_modp(expr)
-                if verdict is False:
+        bad=None
+        if fast:
+            # Environment extension over the topologically sorted equations;
+            # no symbolic substitution into the ODEs at all.
+            bad=_steady_test_fast(ODE, eqOut, zeroStates)
+            if bad:
+                for i in bad:
                     print('   Equation '+str(ODE[i]),flush=True)
                     print('   is nonzero at a random point in GF(p)',flush=True)
-                    NonSteady=True
-                elif verdict is None:
-                    res=_simplify(expr)
-                    if res!=0:
-                        print('   Equation '+str(ODE[i]),flush=True)
-                        print('   results (exact fallback):'+str(res),flush=True)
-                        NonSteady=True
-            else:
+                NonSteady=True
+            elif bad is None:
+                print('   (falling back to the exact symbolic test)',flush=True)
+        if not fast or bad is None:
+            # Exact test: substitute dependents before their dependencies
+            # (reverse topological order), so every reference resolves.
+            subs_pairs=[(parse_expr(ls), parse_expr(rs))
+                        for ls, rs in (eq.split(' = ', 1) for eq in reversed(eqOut))
+                        if ls!=rs]
+            for i in range(len(ODE)):
+                expr=parse_expr(str(ODE[i]))
+                for zs in zeroStates:
+                    expr=expr.subs(zs, 0)
+                for lsym, rexpr in subs_pairs:
+                    expr=expr.subs(lsym, rexpr)
                 expr=_simplify(expr)
                 if(expr!=0):
                     print('   Equation '+str(ODE[i]),flush=True)

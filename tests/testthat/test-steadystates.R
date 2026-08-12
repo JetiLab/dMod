@@ -216,12 +216,15 @@ test_that("positive = TRUE spends the row on a rate constant, not on a differenc
 
 })
 
-test_that("an unavoidable sign-indefinite fixed point is refused, not returned", {
+test_that("a sign-indefinite fixed point is refused (1.2) or repaired (1.3)", {
 
-  # With a basal arm the additive flux is split, so no single rate constant can
-  # absorb the row and every candidate pivot is itself a difference. The backend
-  # must refuse rather than return a negative-capable trafo. The diagnosis goes
-  # to Python stdout, which R cannot capture, so only the return is asserted.
+  # With a basal arm the additive flux is split, so no single rate constant
+  # can absorb the row. Version 1.2 substitutes solutions eagerly: by the
+  # time Rec is reached, the Lig-driven sink has become a constant, every
+  # candidate pivot is a difference, and the backend must refuse rather than
+  # return a negative-capable trafo. Version 1.3 keeps the fluxes symbolic,
+  # so the two production arms are still available as a ratio-parameter
+  # pivot and the model is solved manifestly positively.
   withr::local_dir(tempdir())
 
   reactions <- eqnlist()
@@ -234,6 +237,25 @@ test_that("an unavoidable sign-indefinite fixed point is refused, not returned",
                            "Saturating complex formation")
   reactions <- addReaction(reactions, "Cpx", "", "k_dg_Cpx*Cpx", "Complex degradation")
 
-  expect_identical(steadyStates(reactions), 0)
+  # The diagnosis goes to Python stdout, which R cannot capture, so only the
+  # return is asserted.
+  expect_identical(steadyStates(reactions, version = "1.2"), 0)
+
+  mysteadies <- steadyStates(reactions)
+  expect_false(any(grepl("-", mysteadies, fixed = TRUE)))
+  expect_true("k_pr_Rec" %in% names(mysteadies))
+
+  # And it is a steady state, at a random positive point (r_Rec_1 included).
+  odes <- as.eqnvec(reactions)
+  symbolsOf <- function(x) unique(unlist(lapply(x, function(e) all.vars(parse(text = e)))))
+  defs <- mysteadies[trimws(mysteadies) != names(mysteadies)]
+  set.seed(12)
+  free <- setdiff(symbolsOf(c(as.character(odes), mysteadies)), names(defs))
+  env <- as.list(stats::runif(length(free), 0.3, 2))
+  names(env) <- free
+  for (nm in names(defs)) env[[nm]] <- eval(parse(text = defs[[nm]]), env)
+
+  residual <- vapply(odes, function(e) eval(parse(text = e), env), numeric(1))
+  expect_lt(max(abs(residual)), 1e-10)
 
 })
