@@ -110,13 +110,21 @@
 #'       `type` (`"scaling"`, `"translation"`, `"affine"`, `"polynomial"` or
 #'       `"general"`), `degree`, `support` (the coordinates involved -- the only field
 #'       set when no closed form was reached), `explicit`, `reason`, `certified`,
-#'       `transformation` (the finite map, polynomial engine) and `verified`.}
+#'       `transformation` (the finite map, polynomial engine), `verified` and
+#'       `display` (the same components factored for printing; `generator` stays in
+#'       the canonical expanded form).}
 #'     \item{`info`}{`engine`, `lieOrderUsed`, `gapOrderUsed`, `conditions`, `segments`,
-#'       the `settings` used, `elapsed` seconds and the `verification` guard.}
+#'       `coordinates` (the full coordinate list of the analysis), the `settings` used,
+#'       `elapsed` seconds and the `verification` guard.}
 #'     \item{`call`}{the matched call.}
 #'   }
-#'   `print()` shows the verdict and generators, `summary()` adds the computation block,
-#'   and `summary(x, verbose = TRUE)` the settings and guard detail.
+#'   `print()` shows the verdict, the generators as a component table (one coordinate
+#'   per line) and what can be fixed; `summary()` adds the computation block, and
+#'   `summary(x, verbose = TRUE)` the settings and guard detail. Both take `fixed =`
+#'   to test a candidate set of fixings against the result without recomputing it: a
+#'   set removes all scaling directions exactly when it selects independent columns of
+#'   their weight matrix, which is reported as a rank. `width =` overrides the wrapping
+#'   width (default `getOption("width")`).
 #'
 #' @details Two behaviours are worth knowing before reading a result. Events after the
 #'   earliest one split the timeline into segments, so a parameter that enters only
@@ -207,9 +215,10 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   # every engine return funnels through here: normalise to the public object,
   # print the report unless verbose = FALSE (so `out <- symmetryDetection(...)`
   # still shows it), and return it invisibly to avoid a double print at top level.
-  deliver <- function(raw, method) {
+  deliver <- function(raw, method, coordinates = NULL) {
     res <- .symFinalize(raw, method, .symSettings, .symCall,
-                         elapsed = as.numeric(Sys.time() - .symT0, units = "secs"))
+                         elapsed = as.numeric(Sys.time() - .symT0, units = "secs"),
+                         coordinates = coordinates)
     if (isTRUE(verbose)) print(res)
     invisible(res)
   }
@@ -701,7 +710,11 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
       parameters  = if (length(parameters)) parameters else NULL,
       method      = "liesym"
     ))
-  deliver(res, "polynomial")
+  polyCoords <- setdiff(unique(c(states,
+                                  getSymbols(c(as.character(fdyn), gChar())),
+                                  parameters)),
+                         c(forcings, fixed))
+  deliver(res, "polynomial", coordinates = polyCoords)
 }
 
 
@@ -2097,6 +2110,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   physNull <- if (length(physCols) && ncol(N))
     .symRrefModp(N[physCols, , drop = FALSE], P)$rank else 0L
   result$dim <- length(physCoords)
+  result$coordinates <- physCoords
   result$rank <- as.integer(length(physCoords) - physNull)
   result$identifiable <- (physNull == 0L)
   result$nonIdentifiable <- lapply(result$nonIdentifiable, function(d) {
@@ -3063,6 +3077,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   result <- list(method = "observability", engine = "analytic",
                  conditions = if (is.null(nConditions)) nSegmentTapes
                               else as.integer(nConditions),
+                 coordinates = znames,
                  segments = nSegmentTapes, gapOrderUsed = MtotUsed,
                  identifiable = (sc$rank == nz), rank = as.integer(sc$rank),
                  dim = as.integer(nz), lieOrderUsed = as.integer(sc$NtUsed),
@@ -4560,93 +4575,244 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # multibyte d/d glyph (U+2202, 3 bytes) breaks; nchar() counts display columns.
 .symLjust <- function(x, w) paste0(x, strrep(" ", pmax(0L, w - nchar(x))))
 
-# Render one generator sum_i xi_i d/dz_i as aligned text lines: `perRow` terms per
-# line (so the coefficients stay readable), the d/d operators padded into columns
-# so they sit directly under each other down the block. Returns a character vector
-# of lines; the first carries `prefix` ("Xk = "), the rest its blank indent.
-.symFormatGenerator <- function(generator, prefix, perRow = 3L) {
-  nm <- names(generator)
-  cells <- character(0); ops <- character(0)
-  for (i in seq_along(nm)) {
-    comp <- trimws(as.character(generator[[i]]))
-    neg  <- startsWith(comp, "-")
-    mag  <- if (neg) trimws(sub("^-", "", comp)) else comp
-    bare <- gsub("\\*\\*", "^", mag)                    # exponents are not sums
-    coef <- if (mag == "1") ""
-            else if (grepl("[+]", bare) || grepl(".[-]", bare)) paste0("(", mag, ")")
-            else mag
-    conn <- if (i == 1L) { if (neg) "-" else "" } else if (neg) "- " else "+ "
-    cells <- c(cells, paste0(conn, coef))
-    ops   <- c(ops, .symPartial(nm[i]))
-  }
-  n <- length(cells)
-  if (!n) return(paste0(prefix, "0"))
-  cw <- ow <- integer(perRow)                           # per-column cell / op widths
-  for (c in seq_len(perRow)) {
-    idx <- if (c <= n) seq.int(c, n, by = perRow) else integer(0)
-    if (length(idx)) { cw[c] <- max(nchar(cells[idx])); ow[c] <- max(nchar(ops[idx])) }
-  }
-  cont <- strrep(" ", nchar(prefix))
-  vapply(seq_len(ceiling(n / perRow)), function(r) {
-    parts <- character(0)
-    for (c in seq_len(perRow)) {
-      i <- (r - 1L) * perRow + c
-      if (i > n) break
-      parts <- c(parts, paste0(.symLjust(cells[i], cw[c]), " ", .symLjust(ops[i], ow[c])))
+
+# ---- one generator as a component table ----------------------------------------
+
+# Split a component into its top-level signed terms, so a long sum can be wrapped.
+# Scans with a parenthesis depth counter and cuts at a depth-0 '+'/'-' that is a
+# BINARY operator, i.e. one that follows a value: after '*', '(' or '**' the sign
+# belongs to the next factor, and in "1e-5" it belongs to the exponent.
+.symSplitTerms <- function(s) {
+  if (!nzchar(s)) return("0")
+  ch <- strsplit(s, "")[[1]]
+  depth <- 0L; start <- 1L; out <- character(0)
+  for (i in seq_along(ch)) {
+    if (ch[i] == "(") depth <- depth + 1L
+    else if (ch[i] == ")") depth <- depth - 1L
+    else if (depth == 0L && (ch[i] == "+" || ch[i] == "-") && i > start) {
+      j <- i - 1L
+      while (j >= 1L && ch[j] == " ") j <- j - 1L
+      prev <- if (j >= 1L) ch[j] else ""
+      if (grepl("^[A-Za-z0-9_.)]$", prev) &&
+          !(prev %in% c("e", "E") && j > 1L && grepl("^[0-9.]$", ch[j - 1L]))) {
+        out <- c(out, paste(ch[start:(i - 1L)], collapse = "")); start <- i
+      }
     }
-    paste0(if (r == 1L) prefix else cont, trimws(paste(parts, collapse = "  "), "right"))
-  }, character(1))
+  }
+  trimws(c(out, paste(ch[start:length(ch)], collapse = "")))
 }
 
-# Print the symmetries grouped by type (Scalings / Affine / ...), each generator
-# labelled X1, X2, ... contiguously, with a trailing flag block for a degree /
-# certificate / verification note. In verbose mode the finite transformation of a
-# polynomial generator and the reason a closed form was missed are shown below it.
-.symCatGenerators <- function(object, verbose = FALSE) {
+# every term as "<sign> <magnitude>", so the signs sit in one column and a wrapped
+# continuation line still opens with its operator
+.symSignedTerms <- function(s) {
+  vapply(.symSplitTerms(s), function(x)
+    paste0(if (startsWith(x, "-")) "- " else "+ ", trimws(sub("^[+-]", "", x))),
+    character(1), USE.NAMES = FALSE)
+}
+
+# One generator as a component table: the coordinate's d/d operator in a left column,
+# its component xi_i to the right, ONE COORDINATE PER LINE. Padding is therefore local
+# to the operator column, so a long polynomial component can no longer stretch the gaps
+# of an unrelated line -- the failure mode of a packed layout. The left column is also
+# the list to choose a fixing from, which is what the reader is here for. A component
+# too wide for the terminal wraps at its top-level '+'/'-' and continues under the
+# component column; a single term wider than that overflows, since breaking inside a
+# product reads worse than a long line.
+.symFormatGenerator <- function(generator, indent, width = getOption("width")) {
+  nm <- names(generator)
+  if (!length(nm)) return(paste0(indent, "0"))
+  ops <- vapply(nm, .symPartial, character(1), USE.NAMES = FALSE)
+  ow  <- max(nchar(ops))
+  pad <- strrep(" ", nchar(indent) + ow + 4L)
+  room <- max(24L, width - nchar(pad))
+  unlist(lapply(seq_along(nm), function(i) {
+    rows <- character(0); cur <- ""
+    for (t in .symSignedTerms(trimws(as.character(generator[[i]])))) {
+      if (!nzchar(cur)) cur <- t
+      else if (nchar(cur) + 1L + nchar(t) <= room) cur <- paste(cur, t)
+      else { rows <- c(rows, cur); cur <- t }
+    }
+    rows <- c(rows, cur)
+    paste0(c(paste0(indent, .symLjust(ops[i], ow), " :  "), rep(pad, length(rows) - 1L)),
+           rows)
+  }), use.names = FALSE)
+}
+
+# The ordered directions with their display labels. The generator listing groups by
+# type and numbers X1, X2, ... contiguously within the groups; the fixing report has to
+# name the SAME directions, so both read their order from here.
+.symOrdered <- function(object) {
   syms <- object$symmetries
-  if (!length(syms)) return(invisible())
+  if (!length(syms)) return(list(syms = list(), labels = character(0)))
   types <- vapply(syms, function(d) as.character(d$type), character(1))
-  ord <- order(match(types, c("scaling", "affine", "translation", "polynomial", "general")),
-               seq_along(syms))                          # contiguous numbering per group
-  syms <- syms[ord]; types <- types[ord]
-  labels <- vapply(seq_along(syms), function(i) paste0("X", .symSubscript(i)),
-                   character(1))
-  lw <- max(nchar(labels))
-  cur <- ""
-  for (i in seq_along(syms)) {
-    d <- syms[[i]]
-    if (types[i] != cur) { cur <- types[i]; cat(.symTypeLabel(cur), ":\n", sep = "") }
-    prefix <- paste0("  ", .symLjust(labels[i], lw), " = ")
+  syms <- syms[order(match(types, c("scaling", "affine", "translation",
+                                    "polynomial", "general")), seq_along(syms))]
+  list(syms = syms,
+       labels = vapply(seq_along(syms), function(i) paste0("X", .symSubscript(i)),
+                       character(1)))
+}
+
+# the type plus the degree / certificate / verification notes, as one label-line tag.
+# On the label line rather than trailing the generator, where a wrapped block used to
+# bury it in the middle.
+.symFlags <- function(d) {
+  f <- as.character(d$type)
+  if (isTRUE(d$type == "polynomial") && !is.null(d$degree))
+    f <- c(f, sprintf("degree %d", d$degree))
+  if (isTRUE(d$certified)) f <- c(f, "certified")
+  if (isFALSE(d$verified)) f <- c(f, "unverified")
+  paste(f, collapse = ", ")
+}
+
+# the display components of a direction: the factored form when finalisation reached
+# one, else the canonical components
+.symShown <- function(d) if (!is.null(d$display)) d$display else d$generator
+
+# Print the directions grouped by type (Scalings / Affine / ...), each a label line
+# carrying the class flags followed by its component table. In verbose mode the finite
+# transformation of a polynomial generator and the reason a closed form was missed are
+# shown below it.
+.symCatGenerators <- function(object, verbose = FALSE, width = getOption("width")) {
+  o <- .symOrdered(object)
+  if (!length(o$syms)) return(invisible())
+  lw <- max(nchar(o$labels)); cur <- ""
+  for (i in seq_along(o$syms)) {
+    d <- o$syms[[i]]
+    if (d$type != cur) { cur <- d$type; cat(.symTypeLabel(cur), ":\n", sep = "") }
+    lab <- paste0("  ", .symLjust(o$labels[i], lw), "  ")
+    ind <- strrep(" ", nchar(lab) + 2L)
     if (is.null(d$generator)) {
-      cat(prefix, paste(d$support, collapse = ", "), "   [support only]\n", sep = "")
+      cat(lab, .symFlags(d), ", support only\n", ind,
+          paste(d$support, collapse = ", "), "\n", sep = "")
       if (isTRUE(verbose) && !is.null(d$reason))
-        cat(strrep(" ", nchar(prefix)), "reason: ", d$reason, "\n", sep = "")
+        cat(ind, "reason: ", d$reason, "\n", sep = "")
       next
     }
-    lines <- .symFormatGenerator(d$generator, prefix)
-    flag <- character(0)
-    if (isTRUE(d$type == "polynomial") && !is.null(d$degree)) flag <- c(flag, sprintf("deg %d", d$degree))
-    if (isTRUE(d$certified)) flag <- c(flag, "certified")
-    if (isFALSE(d$verified)) flag <- c(flag, "unverified")
-    if (length(flag)) lines[1] <- paste0(lines[1], "   [", paste(flag, collapse = ", "), "]")
-    cat(lines, sep = "\n"); cat("\n")
+    cat(lab, .symFlags(d), "\n", sep = "")
+    cat(.symFormatGenerator(.symShown(d), ind, width), sep = "\n")
+    cat("\n")
     if (isTRUE(verbose) && !is.null(d$transformation)) {
       tr <- d$transformation
-      cat(strrep(" ", nchar(prefix)), "transformation: ",
+      cat(ind, "transformation: ",
           paste(vapply(names(tr), function(k) paste0(k, " -> ", tr[[k]]), character(1)),
                 collapse = ",  "), "\n", sep = "")
     }
   }
 }
 
+# ---- the fixing report ---------------------------------------------------------
+
+# The integer weight matrix of the scaling directions, one row per scaling. Holding a
+# set S of coordinates fixed leaves exactly those combinations of the scalings whose
+# weight vanishes on all of S -- the kernel of W[, S] -- so S removes every scaling iff
+# rank(W[, S]) equals the number of scalings. That is the whole arithmetic behind the
+# fixing report, and it is why "one coordinate per direction" is necessary but not
+# sufficient: the chosen columns must also be independent.
+.symWeights <- function(syms) {
+  isScal <- vapply(syms, function(d) isTRUE(d$type == "scaling") && !is.null(d$weights),
+                   logical(1))
+  if (!any(isScal)) return(NULL)
+  cols <- unique(unlist(lapply(syms[isScal], function(d) names(d$weights))))
+  W <- matrix(0, nrow = sum(isScal), ncol = length(cols), dimnames = list(NULL, cols))
+  k <- 0L
+  for (i in which(isScal)) {
+    k <- k + 1L; w <- syms[[i]]$weights
+    W[k, names(w)] <- suppressWarnings(as.numeric(unlist(w)))
+  }
+  if (anyNA(W)) return(NULL)
+  list(W = W, rows = which(isScal))
+}
+
+.symRank <- function(M) if (!length(M)) 0L else qr(M, tol = 1e-7)$rank
+
+# the coordinates a direction lives on, whether or not it reached a closed form
+.symCoords <- function(d) if (!is.null(d$generator)) names(d$generator) else d$support
+
+# What to fix, left as the reader's decision: which coordinates each direction offers
+# (that is the component table above), which of them are shared between directions, and
+# -- given a candidate `fixed` -- whether it actually removes everything.
+.symCatFixing <- function(object, fixed = NULL, width = getOption("width")) {
+  o <- .symOrdered(object)
+  if (!length(o$syms)) return(invisible())
+  syms <- o$syms; labels <- o$labels
+  wm <- .symWeights(syms)
+  nScal <- if (is.null(wm)) 0L else nrow(wm$W)
+  other <- setdiff(seq_along(syms), if (is.null(wm)) integer(0) else wm$rows)
+  supp <- lapply(syms, .symCoords)
+  cat("Fixing:\n")
+
+  if (is.null(fixed)) {
+    if (nScal)
+      cat(strwrap(paste0("A scaling goes when any one of its coordinates is held fixed",
+                         " -- which one is yours to pick. A set of fixings removes all ",
+                         nScal, " scalings exactly when the weight columns it selects",
+                         " are independent."),
+                  width = max(40L, width - 2L), prefix = "  "), sep = "\n")
+    tab <- table(unlist(supp))
+    shared <- sort(names(tab)[tab > 1L])
+    if (length(shared)) {
+      cat("  Shared coordinates -- fixing one of these settles only one direction:\n")
+      for (s in shared)
+        cat("    ", .symLjust(s, max(nchar(shared))), "  ",
+            paste(labels[vapply(supp, function(v) s %in% v, logical(1))], collapse = ", "),
+            "\n", sep = "")
+    }
+    if (length(other))
+      cat(strwrap(paste0(paste(labels[other], collapse = ", "),
+                         if (length(other) == 1L) " is not a scaling. Fixing a"
+                         else " are not scalings. Fixing a",
+                         " coordinate still removes such a direction, but only at a value",
+                         " its orbit reaches -- a scaling admits any value, a curved orbit",
+                         " does not. Reparametrise onto the invariants, or verify the fit",
+                         " is unchanged after fixing."),
+                  width = max(40L, width - 2L), prefix = "  "), sep = "\n")
+    cat("  Test a candidate set with  summary(<result>, fixed = c(...)), or derive a\n",
+        " reparametrisation with  reduceSymmetry(<result>).\n", sep = "")
+    return(invisible())
+  }
+
+  fixed <- unique(as.character(fixed))
+  cat("  candidate: ", .symPlural(length(fixed), "coordinate", "coordinates"), "\n", sep = "")
+  if (nScal) {
+    inW <- intersect(fixed, colnames(wm$W))
+    r <- .symRank(wm$W[, inW, drop = FALSE])
+    cat(sprintf("  scalings:   %d of %d removed (weight rank %d / %d)%s\n",
+                r, nScal, r, nScal,
+                if (r == nScal) "" else sprintf("  --  %d survive", nScal - r)))
+    red <- character(0); acc <- character(0)
+    for (cn in inW)
+      if (.symRank(wm$W[, c(acc, cn), drop = FALSE]) == .symRank(wm$W[, acc, drop = FALSE]))
+        red <- c(red, cn) else acc <- c(acc, cn)
+    if (length(red))
+      cat("              redundant (raise no rank): ", paste(red, collapse = ", "),
+          "\n", sep = "")
+  }
+  if (length(other)) {
+    untouched <- other[vapply(other, function(i) !any(supp[[i]] %in% fixed), logical(1))]
+    if (length(untouched))
+      cat("  untouched:  ", paste(labels[untouched], collapse = ", "),
+          " -- no fixed coordinate in the support\n", sep = "")
+    hit <- setdiff(other, untouched)
+    if (length(hit))
+      cat("  reduced:    ", paste(labels[hit], collapse = ", "),
+          " -- not a scaling, so the rank argument does not settle these\n", sep = "")
+  }
+  unknown <- setdiff(fixed, unique(unlist(supp)))
+  if (length(unknown))
+    cat("  no effect:  ", paste(unknown, collapse = ", "),
+        " -- not a coordinate of any direction\n", sep = "")
+  invisible()
+}
+
 # "<n> <singular|plural>", picking the number-agreeing noun explicitly (nicer than
 # a "(s)" suffix)
 .symPlural <- function(n, one, many) sprintf("%d %s", n, if (n == 1L) one else many)
 
-# The result section (shared by print() and summary()): the one-line verdict, then
-# the grouped generators. This is all print() shows -- summary() prints the header
-# and computation block above it.
-.symCatResult <- function(object, verbose = FALSE) {
+# The result section (shared by print() and summary()): the one-line verdict, the
+# grouped generators, then what can be fixed. This is all print() shows -- summary()
+# prints the header and computation block above it.
+.symCatResult <- function(object, verbose = FALSE, fixed = NULL,
+                          width = getOption("width")) {
   m <- object$method; isObs <- m == "observability"
   n <- length(object$symmetries)
   if (isObs && isTRUE(object$identifiable)) {
@@ -4670,8 +4836,10 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
                 .symPlural(n, "polynomial Lie-symmetry generator",
                             "polynomial Lie-symmetry generators")))
   }
-  .symCatGenerators(object, verbose)
+  .symCatGenerators(object, verbose, width)
+  .symCatFixing(object, fixed, width)
 }
+
 
 # ---- finalisation: normalise every engine's raw result into the public object -----
 # Turn one raw engine direction/generator into the public $symmetries element.
@@ -4708,17 +4876,43 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   ), class = "symmetrygenerator")
 }
 
+# Display form of the components. sympy's factor() pulls the repeated factors out of
+# an expanded polynomial component, which is where most of the width of a high-degree
+# direction sits, and '**' becomes '^'. Kept SEPARATE from $generator, which stays in
+# the canonical expanded form every downstream consumer (verification, .symTangent,
+# the cross-engine comparison in .symDirectionLine) reads, and only adopted when it
+# actually gets shorter. Scalings have nothing to factor. Silently skipped when sympy
+# is unavailable, so a hand-built or reloaded object still prints.
+.symDisplayForm <- function(syms) {
+  if (!length(syms)) return(syms)
+  spy <- tryCatch(reticulate::import("sympy", convert = TRUE), error = function(e) NULL)
+  if (is.null(spy)) return(syms)
+  lapply(syms, function(d) {
+    if (is.null(d$generator) || isTRUE(d$type == "scaling")) return(d)
+    d$display <- lapply(d$generator, function(x) {
+      x <- as.character(x)
+      if (nchar(x) > 4000L) return(gsub("\\*\\*", "^", x))
+      y <- tryCatch(as.character(spy$factor(spy$sympify(x))), error = function(e) x)
+      if (length(y) != 1L || is.na(y) || nchar(y) >= nchar(x)) y <- x
+      gsub("\\*\\*", "^", y)
+    })
+    d
+  })
+}
+
+
 # Assemble the class-"symmetrydetection" object every engine return funnels
 # through. Top level carries only the verdict (method / identifiable / rank /
 # dim / symmetries); everything about *how* it was computed lives in $info.
 # `identifiable` is a real rank verdict only for observability; the scaling and
 # polynomial engines are non-exhaustive (they find only scalings, or only
 # generators up to pMax), so there "nothing found" is no proof -> NA.
-.symFinalize <- function(raw, method, settings, call, elapsed = NA_real_) {
+.symFinalize <- function(raw, method, settings, call, elapsed = NA_real_,
+                          coordinates = NULL) {
   isObs   <- method == "observability"
   rawSyms <- if (isObs || method == "scaling") raw$nonIdentifiable else raw
   if (is.null(rawSyms)) rawSyms <- list()
-  syms    <- lapply(rawSyms, .symPublicSymmetry)
+  syms    <- .symDisplayForm(lapply(rawSyms, .symPublicSymmetry))
 
   rank <- if (!is.null(raw$rank)) as.integer(raw$rank) else NA_integer_
   dim  <- if (!is.null(raw$dim))  as.integer(raw$dim)  else NA_integer_
@@ -4735,6 +4929,11 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     gapOrderUsed = raw$gapOrderUsed,
     conditions   = raw$conditions,
     segments     = raw$segments,
+    # the full coordinate list of the analysis (states + unknown parameters), so a
+    # consumer (reduceSymmetry) can build a complete identity-based trafo; engines
+    # deliver it in raw$coordinates, the polynomial dispatcher passes it explicitly
+    coordinates  = if (!is.null(raw$coordinates)) as.character(raw$coordinates)
+                   else coordinates,
     settings     = settings,
     elapsed      = elapsed,
     verification = raw$verification)
@@ -4784,7 +4983,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   out
 }
 
-.symReport <- function(object, verbose = FALSE) {
+.symReport <- function(object, verbose = FALSE, fixed = NULL,
+                       width = getOption("width")) {
   m    <- object$method
   info <- object$info
   s    <- info$settings
@@ -4821,7 +5021,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     for (l in comp) cat("  ", l, "\n", sep = "")
   }
   cat("\n")
-  .symCatResult(object, verbose)
+  .symCatResult(object, verbose, fixed, width)
   invisible(object)
 }
 
@@ -4829,7 +5029,12 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # print() is deliberately terse: just the verdict and the grouped generators
 # (the "Result" section), no header or computation block -- that is what
 # summary() adds.
-print.symmetrydetection <- function(x, ...) { .symCatResult(x); invisible(x) }
+print.symmetrydetection <- function(x, fixed = NULL, width = getOption("width"), ...) {
+  .symCatResult(x, fixed = fixed, width = width)
+  invisible(x)
+}
 
 #' @export
-summary.symmetrydetection <- function(object, verbose = FALSE, ...) .symReport(object, verbose)
+summary.symmetrydetection <- function(object, verbose = FALSE, fixed = NULL,
+                                      width = getOption("width"), ...)
+  .symReport(object, verbose, fixed, width)

@@ -616,6 +616,26 @@ def _modular_nullspace_int(rowsInt, ncols):
     return basis
 
 
+def exactIntKernel(rows, ncols):
+    """Primitive integer basis of the kernel of an integer matrix, as plain int
+    lists (R-friendly): exactNullspace + the _scaling_gens content clearing."""
+    basis = exactNullspace([[int(x) for x in r] for r in rows], int(ncols),
+                           integer=True)
+    out = []
+    for v in basis:
+        L = 1
+        for e in v:
+            L = spy.ilcm(L, spy.Rational(e).q)
+        w = [int(spy.Rational(e) * L) for e in v]
+        G = 0
+        for e in w:
+            G = spy.igcd(G, abs(e))
+        if G > 1:
+            w = [e // G for e in w]
+        out.append(w)
+    return out
+
+
 def exactNullspace(rows, ncols, integer=False):
     """Return basis vectors (list of sympy column vectors). With integer=True the rows
     are known to be integer (the scaling determining matrix): the nullspace is computed
@@ -3018,6 +3038,7 @@ def scalingSymmetries(allVariables, diffEquations, obsFunctions, m, params,
         'method': 'scaling',
         'count': len(nonId),
         'nonIdentifiable': nonId,
+        'coordinates': znames,
     }
 
 
@@ -3036,7 +3057,8 @@ def scalingSymmetriesMulti(perCondModel, perCondObs, inputs=None, fixed=None,
     fixedset = set(_as_list(fixed))
     K = len(perCondModel)
     if K == 0:
-        return {'method': 'scaling', 'count': 0, 'nonIdentifiable': []}
+        return {'method': 'scaling', 'count': 0, 'nonIdentifiable': [],
+                'coordinates': []}
 
     all_lines = [l for lines in perCondModel + perCondObs for l in lines]
     local, parse = _make_local_parse(all_lines)
@@ -3102,7 +3124,8 @@ def scalingSymmetriesMulti(perCondModel, perCondObs, inputs=None, fixed=None,
         nonId = _scaling_nonid(physical, znames, nz)
     else:
         nonId = _scaling_nonid(gens, znames, nz)
-    return {'method': 'scaling', 'count': len(nonId), 'nonIdentifiable': nonId}
+    return {'method': 'scaling', 'count': len(nonId), 'nonIdentifiable': nonId,
+            'coordinates': znames}
 
 
 ###########################################################################
@@ -3203,7 +3226,7 @@ def observabilitySympyMulti(model, observation, conditionSubs=None, conditionIC0
     nz = len(z)
     if nz == 0:
         return {'ok': True, 'rank': 0, 'dim': 0, 'lieOrder': 0,
-                'nonIdentifiable': [], 'identifiable': True}
+                'nonIdentifiable': [], 'identifiable': True, 'coordinates': []}
 
     # stacked observability rows: at each Lie order, append every condition's row
     # d/dz[ L_{f_c}^order g_c evaluated at that condition's initial state ic_c ];
@@ -3236,7 +3259,8 @@ def observabilitySympyMulti(model, observation, conditionSubs=None, conditionIC0
                           'vector': {znames[i]: str(v[i]) for i in nz_i},
                           'type': 'general', 'closedForm': True})
     return {'ok': True, 'rank': int(rank), 'dim': int(nz), 'lieOrder': int(order),
-            'nonIdentifiable': nonId, 'identifiable': bool(rank >= nz)}
+            'nonIdentifiable': nonId, 'identifiable': bool(rank >= nz),
+            'coordinates': znames}
 
 
 ###########################################################################

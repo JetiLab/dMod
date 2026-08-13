@@ -1287,6 +1287,38 @@ admissible as long as it keeps the right-hand sides rational (Section \ref{sec-t
 The cascade observed dynamically from a free initial state, rather than at rest,
 gives the rate curve worked out below under *Two rates on a curve*.
 
+### Automated reduction
+
+`reduceSymmetry()` mechanises the recipe above -- and extends it beyond scalings.
+Scaling directions are gauged exactly through their integer weight lattice: the
+function reports the invariant monomials, pins a certified transversal (one
+coordinate per independent weight row, set to one) and, because the gauge choice
+is yours, lists the whole admissible family instead of hiding the choice. Curved
+directions go through a support-minimising module reduction followed by an
+escalating exact invariant search -- Laurent monomials, polynomials up to
+`dPoly`, rational invariants via Darboux factors up to `dDarboux` -- and each
+failed stage leaves a precise negative certificate. Solved invariants are carried
+under the name of the coordinate solved for, exactly as in the manual recipe.
+
+```{r reduce, eval = haveSympy}
+res <- symmetryDetection(eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p"),
+                         eqnvec(y = "p"), method = "observability",
+                         reconstruct = TRUE, verbose = FALSE)
+red <- reduceSymmetry(res)
+red$trafo
+symmetryDetection(eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p"), eqnvec(y = "p"),
+                  method = "observability", trafo = red$trafo,
+                  verbose = FALSE)$identifiable
+```
+
+A candidate fixing of your own goes in through `fixed = `; the reduction then
+only treats what your choice leaves over. Directions the search cannot resolve
+within its degree caps are reported with their certificates and the remaining
+options (a structural assumption, a separating experiment, or prediction
+profiles) -- `reduceSymmetry` never pins a curved coordinate unless the full
+invariant set is in hand, since a partial gauge would discard identifiable
+structure.
+
 ## Closed-form directions and a known input
 
 A non-identifiable direction is a vector in parameter space, but its components

@@ -4,7 +4,14 @@
 \alias{compile}
 \title{Compile model-related C/C++ code}
 \usage{
-compile(..., output = NULL, args = NULL, cores = 1, verbose = FALSE)
+compile(
+  ...,
+  output = NULL,
+  args = NULL,
+  cores = 1,
+  chunkSize = 100,
+  verbose = FALSE
+)
 }
 \arguments{
 \item{...}{One or more model objects.}
@@ -16,6 +23,9 @@ applied.}
 \item{args}{Additional compiler/linker flags applied to every file.}
 
 \item{cores}{Parallel compilation jobs (Unix only, requires \code{cores > 1}).}
+
+\item{chunkSize}{Maximum number of files handed to a single archiver call
+when the combined link goes through a static archive (see Details).}
 
 \item{verbose}{If \code{TRUE}, print compiler commands.}
 }
@@ -35,3 +45,18 @@ libraries reach only the files that need them. Objects without
 \code{compileInfo} fall back to modelname-based file discovery in the current
 working directory.
 }
+\section{Many conditions}{
+
+Objects built per condition -- e.g. a \link{parfn} summed over a few thousand
+experiments -- carry one source file per condition. Sources are always
+compiled one file per command, so that side scales, but naming every object
+on the final \verb{R CMD SHLIB} command line does not: the command travels as a
+single argument to the shell and overruns the OS limit (128 KiB on Linux,
+32 KiB on Windows) somewhere around a thousand files. Past that limit
+\code{compile()} bundles the objects into a static archive instead, appended in
+chunks of \code{chunkSize}, and links that archive whole into the shared object.
+The result is identical; only the command lines get shorter. This requires
+\code{output} to be set -- without it every source becomes its own shared object
+and R's \code{R_MAX_NUM_DLLS} cap (614 by default) is hit first.
+}
+

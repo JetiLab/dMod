@@ -14,46 +14,10 @@
 symdet <- function(...) symmetryDetection(..., verbose = FALSE)
 
 
-.sympy_works <- function() {
-  if (!requireNamespace("reticulate", quietly = TRUE)) return(FALSE)
-  isTRUE(tryCatch({
-    sympy <- reticulate::import("sympy", convert = TRUE)
-    nzchar(sympy[["__version__"]])
-  }, error = function(e) FALSE))
-}
-
-
-.sd_module <- function() {
-  code_dir <- system.file("code", package = "dMod")
-  sysmod <- reticulate::import("sys", convert = TRUE)
-  if (!(code_dir %in% sysmod$path)) sysmod$path <- c(code_dir, sysmod$path)
-  reticulate::import("symmetryDetection", convert = TRUE)
-}
-
-
 .canonical <- function() {
   eqnlist() |>
     addReaction("A", "B", "k1 * A") |>
     addReaction("B", "A", "k2 * B")
-}
-
-
-# exact symbolic equality of two expression strings via sympy
-.symExprEqual <- function(a, b) {
-  spy <- reticulate::import("sympy", convert = TRUE)
-  as.character(spy$simplify(spy$sympify(paste0("(", a, ") - (", b, ")")))) == "0"
-}
-
-
-# numeric tangent of a reported direction at point `pt` over `coords`. $generator
-# always holds the tangent components xi_i directly (a scaling's integer weight
-# w_i is expanded to xi_i = w_i * z_i at the finalisation boundary), so evaluating
-# each component at the point gives the tangent.
-.symTangent <- function(d, pt, coords) {
-  v <- setNames(numeric(length(coords)), coords)
-  for (nm in names(d$generator))
-    v[nm] <- eval(parse(text = d$generator[[nm]]), pt)
-  v
 }
 
 
@@ -558,7 +522,7 @@ test_that("the analytic-segment kernel agrees across thread counts", {
                       conditions = grid, forcings = "u",
                       reconstruct = TRUE, reduceCQ = FALSE, cores = cores)
   serial <- run(1L)
-  parallel <- run(4L)
+  parallel <- run(if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else 4L)
   expect_identical(serial$rank, parallel$rank)
   expect_identical(serial$identifiable, parallel$identifiable)
   expect_equal(length(serial$symmetries), length(parallel$symmetries))
@@ -622,7 +586,8 @@ test_that("the parallel steady-state fill matches the serial path (joint)", {
   lineOf <- function(o) sort(vapply(o$symmetries, dMod:::.symDirectionLine,
                                     character(1)))
   serial <- run(1L)
-  forked <- run(4L)
+  # R CMD check caps cores at 2 via _R_CHECK_LIMIT_CORES_, so honour that
+  forked <- run(if (nzchar(Sys.getenv("_R_CHECK_LIMIT_CORES_"))) 2L else 4L)
   pooled <- run(2L, pool = TRUE)
   for (par in list(forked, pooled)) {
     expect_identical(par$rank, serial$rank)

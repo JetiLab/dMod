@@ -141,13 +141,21 @@ keyed by coordinate), \code{weights} (a scaling's integer weights, else \code{NU
 \code{type} (\code{"scaling"}, \code{"translation"}, \code{"affine"}, \code{"polynomial"} or
 \code{"general"}), \code{degree}, \code{support} (the coordinates involved -- the only field
 set when no closed form was reached), \code{explicit}, \code{reason}, \code{certified},
-\code{transformation} (the finite map, polynomial engine) and \code{verified}.}
+\code{transformation} (the finite map, polynomial engine), \code{verified} and
+\code{display} (the same components factored for printing; \code{generator} stays in
+the canonical expanded form).}
 \item{\code{info}}{\code{engine}, \code{lieOrderUsed}, \code{gapOrderUsed}, \code{conditions}, \code{segments},
-the \code{settings} used, \code{elapsed} seconds and the \code{verification} guard.}
+\code{coordinates} (the full coordinate list of the analysis), the \code{settings} used,
+\code{elapsed} seconds and the \code{verification} guard.}
 \item{\code{call}}{the matched call.}
 }
-\code{print()} shows the verdict and generators, \code{summary()} adds the computation block,
-and \code{summary(x, verbose = TRUE)} the settings and guard detail.
+\code{print()} shows the verdict, the generators as a component table (one coordinate
+per line) and what can be fixed; \code{summary()} adds the computation block, and
+\code{summary(x, verbose = TRUE)} the settings and guard detail. Both take \verb{fixed =}
+to test a candidate set of fixings against the result without recomputing it: a
+set removes all scaling directions exactly when it selects independent columns of
+their weight matrix, which is reported as a rank. \verb{width =} overrides the wrapping
+width (default \code{getOption("width")}).
 }
 \description{
 Detects structural non-identifiabilities of a reaction network and its
