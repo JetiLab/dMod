@@ -43,11 +43,14 @@
 
 ## Pull every archive member into the shared object: R resolves the entry points
 ## by name at run time, so unreferenced members would otherwise be dropped.
+## Windows needs --export-all-symbols on top: R writes the export .def with
+## `nm` over the objects it is handed -- only the anchor -- and a .def file
+## switches ld's auto-export off, so the members would link in unexported.
 .compileWholeArchive <- function(lib) {
   if (Sys.info()[["sysname"]] == "Darwin")
-    paste0("-Wl,-force_load,", shQuote(lib))
-  else
-    paste("-Wl,--whole-archive", shQuote(lib), "-Wl,--no-whole-archive")
+    return(paste0("-Wl,-force_load,", shQuote(lib)))
+  paste(c(if (.Platform$OS.type == "windows") "-Wl,--export-all-symbols",
+          "-Wl,--whole-archive", shQuote(lib), "-Wl,--no-whole-archive"), collapse = " ")
 }
 
 ## `R CMD config` values, read once per session with a single `--all` call:

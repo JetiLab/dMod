@@ -94,8 +94,10 @@ test_that("the remote build script builds a shared object through the archive", 
   skip_if_not_installed("cppDE")
   withr::local_dir(withr::local_tempdir())
 
+  ## <vector> ahead of the R headers: libc++ has a member `length`, which the
+  ## Rf_ remapping macro would swallow.
   for (i in 1:5)
-    writeLines(c("#include <R.h>", "#include <Rinternals.h>", "#include <vector>",
+    writeLines(c("#include <vector>", "#include <R.h>", "#include <Rinternals.h>",
                  sprintf('extern "C" SEXP rmt_%d(SEXP x) { std::vector<double> v(2, %d.0); return Rf_ScalarReal(v[0]); }', i, i)),
                sprintf("rmt_%d.cpp", i))
   writeLines(c("#include <R.h>", "#include <Rinternals.h>",
