@@ -22,7 +22,8 @@ distributedComputing(
   link = FALSE,
   custom_folders = NULL,
   resetSeeds = TRUE,
-  returnAll = TRUE
+  returnAll = TRUE,
+  input = ls(.GlobalEnv, all.names = TRUE)
 )
 }
 \arguments{
@@ -67,7 +68,8 @@ generated shell script that resolves all path-valued compiler flags
 (cppDE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
 sparse models) on the cluster, so \code{cppDE} has to be installed for the R
 that \verb{module load math/R} provides there. The job is only submitted if the
-build succeeds.}
+build succeeds. Beyond the shell's argument limit the script switches to the
+chunked static-archive build of \code{\link[=compile]{compile()}}.}
 
 \item{link}{Logical; if \code{TRUE}, only existing object files (\verb{*.o}) are
 transferred to the cluster and linked into shared objects (\code{.so}),
@@ -86,16 +88,22 @@ If \code{NULL}, all operations occur in the current working directory.}
 \item{resetSeeds}{Logical; if \code{TRUE} (default), removes \code{.Random.seed}
 from the transferred workspace to ensure each node has independent random seeds.}
 
-\item{returnAll}{Logical; if \code{TRUE} (default), retrieves all remote files.
-If \code{FALSE}, only result files (\verb{*result.RData}) are fetched.}
+\item{returnAll}{Logical; if \code{TRUE} (default), retrieves everything the job
+produced, excluding the uploaded workspace and the build artefacts, which
+are already local. If \code{FALSE}, only result files (\verb{*result.RData}) are
+fetched.}
+
+\item{input}{Character vector of object names in the global environment to
+transfer. Defaults to the whole workspace; naming only what the expression
+uses keeps the transferred \code{.RData} small.}
 }
 \value{
 A list containing three functions:
 \itemize{
-\item \code{check()} – Checks whether all remote results are complete.
-\item \code{get()} – Downloads results and loads them into
+\item \code{check()} - Checks whether all remote results are complete.
+\item \code{get()} - Downloads results and loads them into
 \code{cluster_result} in the local workspace.
-\item \code{purge()} – Deletes temporary remote files; optionally removes local ones.
+\item \code{purge()} - Deletes temporary remote files; optionally removes local ones.
 }
 }
 \description{

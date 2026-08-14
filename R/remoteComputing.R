@@ -119,13 +119,22 @@ detectFreeCores <- function(machine = NULL) {
        needsKLU    = needsKLU)
 }
 
+## TRUE when naming every file on one command line would overrun the shell's
+## argument limit; same test as compile() applies locally.
+.remoteNeedsChunking <- function(files)
+  sum(nchar(files) + 1L) > .compileCmdLimit()
+
 ## Generate the bash script that builds the shared object on the remote machine.
-## `files` is the (space separated) list of sources -- or of object files when
-## `link = TRUE`.
+## `files` are the sources, or the object files when `link = TRUE`. Beyond the
+## argument limit the script switches to the chunked archive build compile()
+## uses locally, reading its inputs from `filelist`.
 .remoteBuildScript <- function(files, output, compileArgs = "",
                                needsCVODE = FALSE, needsKLU = FALSE,
                                link = FALSE, cxx = FALSE, cores = 1,
-                               workdir = NULL) {
+                               workdir = NULL, filelist = NULL, chunkSize = 100) {
+
+  files <- unlist(strsplit(trimws(files), "\\s+"))
+  files <- files[nzchar(files)]
 
   cflags <- trimws(paste("-O2 -DNDEBUG -w -fPIC", compileArgs,
                          if (needsKLU) "-DKLU"))
@@ -163,6 +172,76 @@ detectFreeCores <- function(machine = NULL) {
     paste0("PKG_CPPFLAGS=\"$PKG_CPPFLAGS $(Rscript -e '",
            cfgExpr("\"klu_cflags\""), "')\"")
 
+  ## Job count: a fixed `cores`, or whatever the remote machine reports.
+  nproc <- if (is.null(cores)) "$NPROC" else as.character(max(1L, as.integer(cores)))
+  detect <- if (is.null(cores))
+    c("NPROC=$(nproc 2>/dev/null || echo 1)",
+      "if [ \"$NPROC\" -gt 16 ]; then NPROC=16; fi", "")
+
+  ## Precompiled header, decided here because the prologue check needs the
+  ## sources. A missing .gch is harmless -- the header then just includes what
+  ## the sources include anyway.
+  cxxSrc <- files[grepl("\\.cpp$", files, ignore.case = TRUE)]
+  pchInc <- if (!link && length(cxxSrc) >= 8L) .compilePCHIncludes(cxxSrc)
+  toolchain <- if (!is.null(filelist) || !is.null(pchInc)) c(
+    "CC=$(R CMD config CC);   CFLAGS=$(R CMD config CFLAGS)",
+    "CXX=$(R CMD config CXX); CXXFLAGS=$(R CMD config CXXFLAGS)",
+    "CPICFLAGS=$(R CMD config CPICFLAGS); CXXPICFLAGS=$(R CMD config CXXPICFLAGS)",
+    "RINC=\"-I$(R RHOME)/include\"",
+    "AR=$(R CMD config AR); RANLIB=$(R CMD config RANLIB)",
+    "export CC CXX CFLAGS CXXFLAGS CPICFLAGS CXXPICFLAGS RINC", "")
+  pchBlock <- if (!is.null(pchInc)) c(
+    "cat > dMod_pch.hpp <<'DMOD_PCH_EOF'", pchInc, "DMOD_PCH_EOF",
+    paste("$CXX $RINC $PKG_CPPFLAGS $PKG_CXXFLAGS $CXXPICFLAGS $CXXFLAGS",
+          "-x c++-header dMod_pch.hpp -o dMod_pch.hpp.gch || true"),
+    "PKG_CXXFLAGS=\"$PKG_CXXFLAGS -include dMod_pch.hpp\"", "")
+
+  ## Compile off the file list in parallel, then link. Asking make to
+  ## parallelise R CMD SHLIB via MAKEFLAGS does not work, so the objects are
+  ## built here and SHLIB only links them.
+  compileBlock <- if (!is.null(filelist)) c(
+    paste0("FILELIST=", shQuote(filelist)), "",
+    "dmod_compile_one() {",
+    "  src=\"$1\"",
+    "  case \"$src\" in",
+    "    *.o)   : ;;                                   # link-only: already built",
+    "    *.cpp) $CXX $RINC $PKG_CPPFLAGS $PKG_CXXFLAGS $CXXPICFLAGS $CXXFLAGS \\",
+    "             -c \"$src\" -o \"${src%.*}.o\" ;;",
+    "    *)     $CC  $RINC $PKG_CPPFLAGS $PKG_CFLAGS  $CPICFLAGS   $CFLAGS \\",
+    "             -c \"$src\" -o \"${src%.*}.o\" ;;",
+    "  esac",
+    "}",
+    "export -f dmod_compile_one", "",
+    paste0("xargs -r -P ", nproc,
+           " -I '{}' bash -c 'dmod_compile_one \"$@\"' _ '{}' < \"$FILELIST\""), "")
+
+  ## Past the argument limit the objects go into a static archive and SHLIB gets
+  ## one anchor plus the archive. The anchor is a C++ source when there is one,
+  ## so SHLIB still selects the C++ linker and runtime.
+  linkBlock <- if (!(!is.null(filelist) && .remoteNeedsChunking(files))) {
+    paste0("R CMD SHLIB ", paste(files, collapse = " "), " -o ", output)
+  } else {
+    isCxx <- grepl("\\.cpp$", files, ignore.case = TRUE)
+    c(paste0("ANCHOR=", shQuote(files[if (any(isCxx)) which(isCxx)[1] else 1L])),
+      paste0("LIB=\"$PWD/", sub("\\.so$", "", output), "_objects.a\""), "",
+      "# The anchor is linked directly; in the archive too it would define its",
+      "# symbols twice.",
+      "rm -f \"$LIB\"",
+      paste0("grep -v -x -F \"$ANCHOR\" \"$FILELIST\" | sed 's/\\.[^.]*$/.o/' |",
+             " xargs -r -n ", max(1L, as.integer(chunkSize)), " \"$AR\" qc \"$LIB\""),
+      "\"$RANLIB\" \"$LIB\"", "",
+      "# R resolves the entry points by name at run time, so unreferenced archive",
+      "# members have to be kept.",
+      "case \"$(uname -s)\" in",
+      "  Darwin) PKG_LIBS=\"-Wl,-force_load,$LIB $PKG_LIBS\" ;;",
+      "  *)      PKG_LIBS=\"-Wl,--whole-archive $LIB -Wl,--no-whole-archive $PKG_LIBS\" ;;",
+      "esac",
+      "export PKG_LIBS", "",
+      paste0("R CMD SHLIB \"$ANCHOR\" -o ", output),
+      "rm -f \"$LIB\"")
+  }
+  buildlines <- c(compileBlock, linkBlock)
+
   paste(c(
     "#!/bin/bash",
     "# Generated by dMod -- rebuilds the model shared object on this machine.",
@@ -188,10 +267,12 @@ detectFreeCores <- function(machine = NULL) {
     extra_libs,
     if (length(ldflags))
       paste0("PKG_LIBS=\"", paste(ldflags, collapse = " "), " $PKG_LIBS\""),
+    detect,
+    toolchain,
+    pchBlock,
     "export PKG_CPPFLAGS PKG_CFLAGS PKG_CXXFLAGS PKG_LIBS",
     "",
-    paste0("MAKEFLAGS=\"-j", max(1L, as.integer(cores)), "\" R CMD SHLIB ",
-           files, " -o ", output)
+    buildlines
   ), collapse = "\n")
 }
 
@@ -228,7 +309,9 @@ detectFreeCores <- function(machine = NULL) {
 #' the local library paths do not carry over. The model-specific `-D` macros
 #' are read from the `"compileInfo"` attribute of the model objects in the
 #' workspace. `cppDE` therefore has to be installed for the R that is on
-#' `PATH` on the remote machine.
+#' `PATH` on the remote machine. Only the files the chosen mode consumes are
+#' transferred, and beyond the shell's argument limit the script switches to
+#' the chunked static-archive build of [compile()].
 #' @param ... Some R code.
 #' @param machine Character vector, e.g. `"localhost"` or `"knecht1.fdm.uni-freiburg.de"`
 #' or `c("localhost", "localhost")`.
@@ -442,15 +525,13 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
     has_cxx <- length(list.files(pattern = glob2rx("*.cpp"))) > 0
 
     if (compile) {
-      sourcefiles <- paste(
-        c(list.files(pattern = glob2rx("*.c")), list.files(pattern = glob2rx("*.cpp"))),
-        collapse = " "
-      )
+      sourcefiles <- c(list.files(pattern = glob2rx("*.c")),
+                       list.files(pattern = glob2rx("*.cpp")))
     } else {
       object_files <- Sys.glob("*.o")
       if (length(object_files) == 0)
         stop("No .o files found for linking! You must compile first.")
-      sourcefiles <- paste(object_files, collapse = " ")
+      sourcefiles <- object_files
       message("runbg(): linking pre-compiled .o files remotely. This requires the ",
               "remote toolchain to be ABI-compatible with the local one; if the ",
               "link or dyn.load() fails, resubmit with compile = TRUE.")
@@ -514,29 +595,23 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
     # Transfer R script
     system(paste0("scp ", getwd(), "/", filename[m], ".R* ", machine[m], ":", filename[m], "_folder/"))
     
-    # Transfer C/C++ source and object files (always; harmless if none exist)
-    system(paste0("scp ", getwd(), "/*.c ", machine[m], ":", filename[m], "_folder/"),
-           ignore.stdout = TRUE, ignore.stderr = TRUE)
-    system(paste0("scp ", getwd(), "/*.cpp ", machine[m], ":", filename[m], "_folder/"),
-           ignore.stdout = TRUE, ignore.stderr = TRUE)
-    system(paste0("scp ", getwd(), "/*.o ", machine[m], ":", filename[m], "_folder/"),
-           ignore.stdout = TRUE, ignore.stderr = TRUE)
-    
-    # Transfer shared objects only when no remote build is requested
-    if (!compile && !link) {
-      system(paste0("scp ", getwd(), "/*.so ", machine[m], ":", filename[m], "_folder/"),
+    # Only the payload the requested mode consumes. Globs are expanded by the
+    # local shell, so the command string stays short at any file count.
+    payload <- if (compile) c("*.c", "*.cpp") else if (link) "*.o" else "*.so"
+    payload <- payload[vapply(payload, function(g) length(Sys.glob(g)) > 0L, logical(1))]
+    if (length(payload))
+      system(paste0("scp ", paste0(getwd(), "/", payload, collapse = " "), " ",
+                    machine[m], ":", filename[m], "_folder/"),
              ignore.stdout = TRUE, ignore.stderr = TRUE)
-    }
     
-    # When recompiling, remove stale .o files so R CMD SHLIB starts clean
-    if (compile) {
-      system(paste0("ssh ", machine[m], " 'rm -f ", filename[m], "_folder/*.o'"),
-             ignore.stdout = TRUE, ignore.stderr = TRUE)
-    }
     
     # Write and transfer compile script per machine, then build the remote command
     compile_cmd <- ""
     if (compile || link) {
+      ## The build script reads its inputs from this list, not from its own
+      ## command line.
+      filelist_file <- paste0(filename[m], "_files.txt")
+      writeLines(sourcefiles, filelist_file)
       compile_script_content <- .remoteBuildScript(
         files       = sourcefiles,
         output      = paste0(filename0, "_shared_object.so"),
@@ -545,12 +620,14 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
         needsKLU    = buildinfo$needsKLU,
         link        = link,
         cxx         = has_cxx,
-        cores       = 1,
-        workdir     = paste0(filename[m], "_folder")
+        cores       = NULL,
+        workdir     = paste0(filename[m], "_folder"),
+        filelist    = filelist_file
       )
       compile_script_file <- paste0(filename[m], "_compile.sh")
       cat(compile_script_content, file = compile_script_file)
-      system(paste0("scp ", getwd(), "/", compile_script_file, " ", machine[m], ":", filename[m], "_folder/"))
+      system(paste0("scp ", getwd(), "/", compile_script_file, " ", getwd(), "/", filelist_file,
+                    " ", machine[m], ":", filename[m], "_folder/"))
       compile_cmd <- paste0("bash ", filename[m], "_folder/", compile_script_file)
     }
     
@@ -628,7 +705,8 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 #' (cppDE include directory, BLAS/LAPACK, and Sundials/KLU for CVODE and
 #' sparse models) on the cluster, so `cppDE` has to be installed for the R
 #' that `module load math/R` provides there. The job is only submitted if the
-#' build succeeds.
+#' build succeeds. Beyond the shell's argument limit the script switches to the
+#' chunked static-archive build of [compile()].
 #' @param link Logical; if `TRUE`, only existing object files (`*.o`) are
 #' transferred to the cluster and linked into shared objects (`.so`),
 #' skipping compilation. If no `.o` files are found, an error is raised.
@@ -641,18 +719,23 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 #' `"output"`, and `"tmp"`. Each value is a relative path specifying where
 #' compiled files, temporary data, and output results should be stored.
 #' If `NULL`, all operations occur in the current working directory.
+#' @param input Character vector of object names in the global environment to
+#' transfer. Defaults to the whole workspace; naming only what the expression
+#' uses keeps the transferred `.RData` small.
 #' @param resetSeeds Logical; if `TRUE` (default), removes `.Random.seed`
 #' from the transferred workspace to ensure each node has independent random seeds.
-#' @param returnAll Logical; if `TRUE` (default), retrieves all remote files.
-#' If `FALSE`, only result files (`*result.RData`) are fetched.
+#' @param returnAll Logical; if `TRUE` (default), retrieves everything the job
+#' produced, excluding the uploaded workspace and the build artefacts, which
+#' are already local. If `FALSE`, only result files (`*result.RData`) are
+#' fetched.
 #'
 #' @return
 #' A list containing three functions:
 #' \itemize{
-#'   \item `check()` – Checks whether all remote results are complete.
-#'   \item `get()` – Downloads results and loads them into
+#'   \item `check()` - Checks whether all remote results are complete.
+#'   \item `get()` - Downloads results and loads them into
 #'         `cluster_result` in the local workspace.
-#'   \item `purge()` – Deletes temporary remote files; optionally removes local ones.
+#'   \item `purge()` - Deletes temporary remote files; optionally removes local ones.
 #' }
 #'
 #' @examples
@@ -757,7 +840,8 @@ distributedComputing <- function(
     link = FALSE,
     custom_folders = NULL,
     resetSeeds = TRUE,
-    returnAll = TRUE
+    returnAll = TRUE,
+    input = ls(.GlobalEnv, all.names = TRUE)
 ){
   original_wd <- getwd()
   if (is.null(custom_folders)) {
@@ -846,7 +930,14 @@ distributedComputing <- function(
         paste0(
           "mkdir -p ", output_folder_abs, "/", jobname,"_folder/results/; ",
           ssh_command, "-n ", machine, # go to remote
-          " 'ZSTD_NBTHREADS=0 tar -C ", jobname, "_folder", " -I zstd -cf - ./'", # compress all files on remote)
+          # Everything the job produced, but not what was uploaded or built from
+          # it. Patterns are double-quoted so the remote shell passes them to
+          # tar instead of globbing them.
+          " 'ZSTD_NBTHREADS=0 tar -C ", jobname, "_folder ",
+          paste0("--exclude=\"", c("*_workspace.RData", "*_files.txt",
+                                   "*.c", "*.cpp", "*.o", "*.a", "*.so"),
+                 "\"", collapse = " "),
+          " -I zstd -cf - ./'", # compress the remaining files on remote
           " | ", # pipe to local
           "",
           "tar -C ", output_folder_abs, "/", jobname,"_folder/results/ -I zstd -xf -"
@@ -931,8 +1022,11 @@ distributedComputing <- function(
   
   
   
-  # export current workspace
-  save.image(file = paste0(wd_path,jobname, "_workspace.RData"), compress = FALSE)
+  # Export the workspace the job needs. The default covers hidden names too,
+  # because resetSeeds acts on a transferred .Random.seed.
+  input <- intersect(input, ls(.GlobalEnv, all.names = TRUE))
+  save(list = input, file = paste0(wd_path, jobname, "_workspace.RData"),
+       envir = .GlobalEnv, compress = FALSE)
   
   
   # WRITE R
@@ -1095,21 +1189,29 @@ distributedComputing <- function(
   # BLAS/LAPACK libraries. The script is chained with `&&` so a failed build
   # skips the sbatch instead of queueing a job that cannot run.
   build_script_file <- paste0(jobname, "_build.sh")
+  filelist_file <- paste0(jobname, "_files.txt")
   module_cmd <- "module load compiler/gnu/13.3 2>/dev/null; module load math/R; "
+
+  ## Names travel as a list, not on the command line: tar and its remote
+  ## counterpart share one `system()` string. The list lives in the job folder
+  ## and therefore ships inside the same archive.
+  transferCmds <- function(files) {
+    writeLines(files, paste0(wd_path, filelist_file))
+    list(locale = paste0("tar -I 'zstd -T0' -cf - -T ", wd_path, filelist_file,
+                         " ", wd_path, "*"),
+         remote = paste0("tar -C ./ -I zstd -xf - ; xargs -r -n 100 mv -t ./",
+                         jobname, "_folder < ./", jobname, "_folder/",
+                         filelist_file, "; "))
+  }
 
   if (compile) {
     # --- FULL RECOMPILATION (.cpp/.c -> .so) ---
-    compile_files <- Sys.glob(paste0("*.cpp"))
-    compile_files <- append(compile_files, Sys.glob(paste0("*.c")))
-    compile_files <- paste(compile_files, collapse = " ")
+    sourcefiles <- c(list.files(pattern = glob2rx("*.c")),
+                     list.files(pattern = glob2rx("*.cpp")))
 
-    tar_locale <- paste0("tar -I 'zstd -T0' -cf - ", compile_files, " ", wd_path, "*")
-    tar_remote <- paste0("tar -C ./ -I zstd -xf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
-
-    sourcefiles <- paste(
-      c(list.files(pattern = glob2rx("*.c")), list.files(pattern = glob2rx("*.cpp"))),
-      collapse = " "
-    )
+    tarCmds    <- transferCmds(sourcefiles)
+    tar_locale <- tarCmds$locale
+    tar_remote <- tarCmds$remote
 
     buildinfo <- .remoteBuildInfo()
     cat(.remoteBuildScript(
@@ -1119,8 +1221,9 @@ distributedComputing <- function(
       needsCVODE  = buildinfo$needsCVODE,
       needsKLU    = buildinfo$needsKLU,
       link        = FALSE,
-      cxx         = grepl("\\.cpp", sourcefiles),
-      cores       = cores
+      cxx         = any(grepl("\\.cpp$", sourcefiles)),
+      cores       = cores,
+      filelist    = filelist_file
     ), file = paste0(wd_path, build_script_file))
 
     compile_remote <- paste0(module_cmd, "bash ", build_script_file, " && ")
@@ -1138,32 +1241,30 @@ distributedComputing <- function(
     # Remove any old .so files before linking
     # unlink(list.files(pattern = "(\\.so)$"))
 
-    compile_files <- paste(object_files, collapse = " ")
-    tar_locale <- paste0("tar -I 'zstd -T0' -cf - ", compile_files, " ", wd_path, "*")
-    tar_remote <- paste0("tar -C ./ -I zstd -xf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
+    tarCmds    <- transferCmds(object_files)
+    tar_locale <- tarCmds$locale
+    tar_remote <- tarCmds$remote
 
     buildinfo <- .remoteBuildInfo()
     cat(.remoteBuildScript(
-      files       = compile_files,
+      files       = object_files,
       output      = paste0(jobname, "_shared_object.so"),
       compileArgs = buildinfo$compileArgs,
       needsCVODE  = buildinfo$needsCVODE,
       needsKLU    = buildinfo$needsKLU,
       link        = TRUE,
       cxx         = length(Sys.glob("*.cpp")) > 0,
-      cores       = cores
+      cores       = cores,
+      filelist    = filelist_file
     ), file = paste0(wd_path, build_script_file))
 
     compile_remote <- paste0(module_cmd, "bash ", build_script_file, " && ")
 
   } else {
-    # --- NO BUILD ACTION (.so/.o already available) ---
-    compile_files <- Sys.glob(paste0("*.so"))
-    compile_files <- append(compile_files, Sys.glob(paste0("*.o")))
-    compile_files <- paste(compile_files, collapse = " ")
-    
-    tar_locale <- paste0("tar -I 'zstd -T0' -cf - ", compile_files, " ", wd_path, "*")
-    tar_remote <- paste0("tar -C ./ -I zstd -xf - ; mv -t ./", jobname, "_folder ", compile_files, "; ")
+    # --- NO BUILD ACTION (shared objects already available) ---
+    tarCmds    <- transferCmds(Sys.glob("*.so"))
+    tar_locale <- tarCmds$locale
+    tar_remote <- tarCmds$remote
     compile_remote <- ""
   }
   

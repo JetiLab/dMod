@@ -2670,8 +2670,9 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       # covered. A job the map did not answer is simply left uncached -- jointSolveCond
       # then solves it serially on demand -- so a dead worker costs time, never a
       # wrong verdict.
-      warmSolves <- function(pts, primes, conds = equilConds) {
+      warmSolves <- function(pts, primes, conds = NULL) {
         if (warmOff || coresGLp <= 1L) return(invisible())
+        if (is.null(conds)) conds <- equilConds
         jobs <- list(); seen <- new.env(parent = emptyenv())
         for (idx in seq_along(pts)) {
           p <- primes[[idx]]; pt <- pts[[idx]]

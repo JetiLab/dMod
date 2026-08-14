@@ -17,25 +17,20 @@
 
 
 
-## Largest command string we hand to system()/system2(). Both route the whole
-## command through a single `sh -c <cmd>` argument (CreateProcess on Windows),
-## so the ceiling is the per-argument limit -- 128 KiB on Linux
-## (MAX_ARG_STRLEN), ~32 KiB for a Windows command line -- not ARG_MAX. A model
-## with a few thousand conditions blows past it, so we stay well below either.
-## `dMod.compile.cmdlimit` lowers the threshold so the archive route can be
-## exercised without generating a thousand source files.
+## Command strings reach the shell as a single argument, so the ceiling is the
+## per-argument limit (128 KiB on Linux, 32 KiB on Windows), not ARG_MAX. The
+## option lowers it for tests.
 .compileCmdLimit <- function() {
   lim <- suppressWarnings(as.integer(getOption("dMod.compile.cmdlimit")))
   if (length(lim) == 1L && !is.na(lim)) return(lim)
   if (.Platform$OS.type == "windows") 24000L else 96000L
 }
 
-## Split `x` into chunks whose quoted length stays under `maxChars` and whose
-## element count stays at or below `maxN`, so each chunk can be passed to one
-## compiler/archiver invocation.
+## Chunks of at most `maxN` elements and `maxChars` quoted characters, each
+## short enough for one compiler/archiver invocation.
 .compileChunks <- function(x, maxChars = .compileCmdLimit(), maxN = 100L) {
   if (!length(x)) return(list())
-  n <- nchar(x) + 3L                    # shell quotes plus separator
+  n <- nchar(x) + 3L                    # quotes plus separator
   grp <- integer(length(x)); g <- 1L; acc <- 0L; cnt <- 0L
   for (i in seq_along(x)) {
     if (cnt >= maxN || (cnt > 0L && acc + n[i] > maxChars)) {
@@ -46,10 +41,8 @@
   unname(split(x, factor(grp, levels = seq_len(g))))
 }
 
-## Linker incantation that pulls *every* member of a static archive into the
-## shared object. Without it the linker keeps only members that resolve an
-## undefined symbol, and R looks up all model entry points by name at run time
-## -- so nothing at all would be kept.
+## Pull every archive member into the shared object: R resolves the entry points
+## by name at run time, so unreferenced members would otherwise be dropped.
 .compileWholeArchive <- function(lib) {
   if (Sys.info()[["sysname"]] == "Darwin")
     paste0("-Wl,-force_load,", shQuote(lib))
@@ -57,8 +50,54 @@
     paste("-Wl,--whole-archive", shQuote(lib), "-Wl,--no-whole-archive")
 }
 
-## Budget of additional shared objects R can still dyn.load(); R caps the
-## number of simultaneously loaded DLLs at R_MAX_NUM_DLLS (614 by default).
+## `R CMD config` values, read once per session with a single `--all` call:
+## one subprocess per variable costs ~2.5 s on every compile().
+.dmodConfig <- new.env(parent = emptyenv())
+
+.compileConfig <- function(var) {
+  Rbin <- shQuote(file.path(R.home("bin"), "R"))
+  if (!length(ls(.dmodConfig, all.names = TRUE))) {
+    out <- tryCatch(system(paste(Rbin, "CMD config --all"), intern = TRUE),
+                    error = function(e) "", warning = function(w) "")
+    for (m in regmatches(out, regexec("^([A-Za-z_0-9]+) *= ?(.*)$", out)))
+      if (length(m) == 3L) assign(m[2], trimws(m[3]), envir = .dmodConfig)
+    assign(".read", TRUE, envir = .dmodConfig)
+  }
+  if (!is.null(v <- .dmodConfig[[var]])) return(v)
+  assign(var, trimws(system(paste(Rbin, "CMD config", var), intern = TRUE)),
+         envir = .dmodConfig)
+  .dmodConfig[[var]]
+}
+
+## Include block shared by `sources`, or NULL when any prologue holds more than
+## comments and #includes -- prepending it must not change how they expand.
+.compilePCHIncludes <- function(sources) {
+  includes <- character(0)
+  for (f in sources) {
+    top <- readLines(f, n = 200L, warn = FALSE)
+    inc <- grep("^\\s*#\\s*include", top)
+    if (!length(inc)) return(NULL)
+    top <- trimws(top[seq_len(max(inc))])
+    if (!all(grepl("^$|^//|^/\\*|^\\*|^#\\s*include", top))) return(NULL)
+    includes <- union(includes, grep("^#", top, value = TRUE))
+  }
+  includes
+}
+
+## Precompile that block once: the generated sources are a few lines of
+## arithmetic around template-heavy headers, so parsing them dominates.
+.compilePCH <- function(sources, cmdPrefix, outdir, verbose = FALSE) {
+  includes <- .compilePCHIncludes(sources)
+  if (is.null(includes)) return(NULL)
+  hdr <- file.path(outdir, "dMod_pch.hpp")
+  writeLines(includes, hdr)
+  cmd <- paste(cmdPrefix, "-x c++-header", shQuote(hdr), "-o", shQuote(paste0(hdr, ".gch")))
+  if (verbose) cat(cmd, "\n")
+  if (system(cmd, ignore.stdout = TRUE, ignore.stderr = TRUE) != 0) return(NULL)
+  hdr
+}
+
+## How many more shared objects R can dyn.load() (R_MAX_NUM_DLLS, 614 default).
 .compileDLLBudget <- function() {
   lim <- suppressWarnings(as.integer(Sys.getenv("R_MAX_NUM_DLLS", "614")))
   if (is.na(lim)) lim <- 614L
@@ -87,27 +126,29 @@
 #'   applied.
 #' @param args Additional compiler/linker flags applied to every file.
 #' @param cores Parallel compilation jobs (Unix only, requires `cores > 1`).
-#' @param chunkSize Maximum number of files handed to a single archiver call
-#'   when the combined link goes through a static archive (see Details).
+#'   Defaults to [detectFreeCores()].
+#' @param chunkSize Maximum number of files per archiver call, see Details.
 #' @param verbose If `TRUE`, print compiler commands.
 #'
 #' @section Many conditions:
-#' Objects built per condition -- e.g. a [parfn] summed over a few thousand
-#' experiments -- carry one source file per condition. Sources are always
-#' compiled one file per command, so that side scales, but naming every object
-#' on the final `R CMD SHLIB` command line does not: the command travels as a
-#' single argument to the shell and overruns the OS limit (128 KiB on Linux,
-#' 32 KiB on Windows) somewhere around a thousand files. Past that limit
-#' `compile()` bundles the objects into a static archive instead, appended in
-#' chunks of `chunkSize`, and links that archive whole into the shared object.
-#' The result is identical; only the command lines get shorter. This requires
-#' `output` to be set -- without it every source becomes its own shared object
-#' and R's `R_MAX_NUM_DLLS` cap (614 by default) is hit first.
+#' Sources are always compiled one file per command, but naming every object on
+#' the final `R CMD SHLIB` command line overruns the shell's argument limit at
+#' roughly a thousand files. Beyond that, `compile()` bundles the objects into a
+#' static archive in chunks of `chunkSize` and links it whole; the result is
+#' identical. This needs `output` to be set, since one shared object per source
+#' would exceed `R_MAX_NUM_DLLS` first.
+#'
+#' Objects are reused when the source bytes and the compile command are
+#' unchanged, recorded in a `.dMod_objects` index next to them: the code
+#' generators rewrite every source on each run, so file times say nothing about
+#' whether a recompile is needed. Where the sources share their include block,
+#' it is precompiled once and prepended, which is what dominates the compile of
+#' the short generated files.
 #'
 #' @return Invisibly `TRUE` on success.
 #' @export
-compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
-                    verbose = FALSE) {
+compile <- function(..., output = NULL, args = NULL, cores = detectFreeCores(),
+                    chunkSize = 100, verbose = FALSE) {
 
   ## save & restore env
   old <- Sys.getenv(c("PKG_CFLAGS","PKG_CXXFLAGS","PKG_CPPFLAGS","PKG_LIBS"), unset = NA)
@@ -121,7 +162,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
   obj.names <- as.character(substitute(list(...)))[-1]
   Rbin  <- shQuote(file.path(R.home("bin"), "R"))
   so    <- .Platform$dynlib.ext
-  cfg   <- function(x) trimws(system(paste(Rbin, "CMD config", x), intern = TRUE))
+  cfg   <- .compileConfig
   strip <- function(x) trimws(gsub("(^| )-std=[^ ]+", "", x))
 
   ## classify objects
@@ -223,10 +264,10 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
   ## final g++ invocation comes out without any BLAS libs. We sidestep that
   ## by building an absolute -L path here and skipping `R CMD config`.
   if (.Platform$OS.type == "windows") {
-    ## R.home("bin") already resolves to the arch-specific bin dir (…/bin/x64)
+    ## R.home("bin") already resolves to the arch-specific bin dir (.../bin/x64)
     ## on R >= 4.2, which is where Rblas.dll / Rlapack.dll live. Appending
-    ## .Platform$r_arch again produced a bogus …/bin/x64/x64 -L path (it only
-    ## ever linked by accident, via the default -L…/bin/x64 that -lR adds).
+    ## .Platform$r_arch again produced a bogus .../bin/x64/x64 -L path (it only
+    ## ever linked by accident, via the default -L.../bin/x64 that -lR adds).
     ## dMod requires R >= 4.5.0, so R.home("bin") is always the correct dir.
     r_bin   <- R.home("bin")
     blaslapack <- paste0("-L", shQuote(r_bin), " -lRlapack -lRblas")
@@ -294,44 +335,32 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
       stop("Compilation failed: ", entry$srcfile)
   }
 
-  ## Compile a single source to a .o object only, via a direct $CC/$CXX -c
-  ## invocation. Used by the combined-output path so the per-file compile
-  ## phase can run in parallel; the subsequent R CMD SHLIB link then sees
-  ## the .o files are up-to-date and skips recompilation.
-  compile_one_obj <- function(entry) {
+  ## Command compiling a single source to a .o via a direct $CC/$CXX -c call.
+  ## The combined-output path runs these in parallel; the subsequent
+  ## R CMD SHLIB link then sees the objects are up to date and only links.
+  obj_cmd <- function(entry, pch = NULL) {
     src     <- entry$srcfile
     extra_c <- entry$compileArgs %||% ""
-    is_cpp  <- grepl("\\.cpp$", src, ignore.case = TRUE)
     obj     <- sub("\\.[^.]+$", ".o", src)
+    if (grepl("\\.cpp$", src, ignore.case = TRUE))
+      paste(cxx_bin, r_inc, cppflags, trimws(paste(cxx_base, extra_c)),
+            if (!is.null(pch)) paste("-Winvalid-pch -include", shQuote(pch)),
+            cxxpicflags, cxxflags_R, "-c", shQuote(src), "-o", shQuote(obj))
+    else
+      paste(cc_bin, r_inc, cppflags, trimws(paste(base, extra_c)),
+            cpicflags, cflags_R, "-c", shQuote(src), "-o", shQuote(obj))
+  }
 
-    if (is_cpp) {
-      cmd <- paste(
-        cxx_bin, r_inc, cppflags,
-        trimws(paste(cxx_base, extra_c)),
-        cxxpicflags, cxxflags_R,
-        "-c", shQuote(src),
-        "-o", shQuote(obj)
-      )
-    } else {
-      cmd <- paste(
-        cc_bin, r_inc, cppflags,
-        trimws(paste(base, extra_c)),
-        cpicflags, cflags_R,
-        "-c", shQuote(src),
-        "-o", shQuote(obj)
-      )
-    }
-
-    if (verbose) cat(cmd, "\n")
-    if (system(cmd, ignore.stdout = !verbose, ignore.stderr = !verbose) != 0)
-      stop("Compilation failed: ", src)
-    obj
+  compile_one_obj <- function(job) {
+    if (verbose) cat(job$cmd, "\n")
+    if (system(job$cmd, ignore.stdout = !verbose, ignore.stderr = !verbose) != 0)
+      stop("Compilation failed: ", job$srcfile)
+    job$srcfile
   }
 
   if (is.null(output)) {
-    ## One shared object per source, all of them dyn.load()ed. R caps how many
-    ## DLLs it can hold, so refuse up front with an actionable message instead
-    ## of failing halfway through a long build.
+    ## One shared object per source, all dyn.load()ed -- refuse up front rather
+    ## than failing halfway through a long build.
     budget <- .compileDLLBudget()
     if (length(info) > budget)
       stop(length(info), " source files would need as many shared objects, but R can ",
@@ -352,10 +381,45 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
     ## one go) was occasionally producing .dll files that LoadLibrary
     ## couldn't resolve when the source pulled in BLAS via the symbolic-
     ## mode chain wrapper -- splitting compile and link sidesteps that.
-    if (.Platform$OS.type == "unix" && cores > 1)
-      parallel::mclapply(info, compile_one_obj, mc.cores = cores)
-    else
-      for (e in info) compile_one_obj(e)
+    ## A precompiled header is keyed to one flag set, so it is only built when
+    ## every C++ source shares its compile arguments and there are enough of
+    ## them to amortise it.
+    is_cxx <- grepl("\\.cpp$", files, ignore.case = TRUE)
+    cxxArgs <- unique(vapply(info[is_cxx], function(e) e$compileArgs %||% "", ""))
+    pch <- NULL
+    if (sum(is_cxx) >= 8L && length(cxxArgs) == 1L) {
+      pchdir <- tempfile("dMod_pch"); dir.create(pchdir, showWarnings = FALSE)
+      on.exit(unlink(pchdir, recursive = TRUE), add = TRUE)
+      pch <- .compilePCH(files[is_cxx],
+                         paste(cxx_bin, r_inc, cppflags, trimws(paste(cxx_base, cxxArgs)),
+                               cxxpicflags, cxxflags_R), pchdir, verbose)
+    }
+
+    ## Reuse objects whose source bytes and compile command are unchanged: the
+    ## generators rewrite every source each run, so file times say nothing.
+    ## Touching a reused object keeps it newer than its source for the link.
+    objs <- sub("\\.[^.]+$", ".o", files)
+    keys <- structure(paste(tools::md5sum(files), vapply(info, obj_cmd, "")), names = files)
+    cachefile <- file.path(dirname(files[1]), ".dMod_objects")
+    prev <- if (file.exists(cachefile))
+      tryCatch(readRDS(cachefile), error = function(e) NULL) else NULL
+    hit <- if (length(prev)) match(files, names(prev)) else rep(NA_integer_, length(files))
+    fresh <- !is.na(hit) & file.exists(objs)
+    fresh[fresh] <- prev[hit[fresh]] == keys[fresh]
+    if (any(fresh)) {
+      Sys.setFileTime(objs[fresh], Sys.time())
+      cat(sprintf("reusing %d unchanged object(s)\n", sum(fresh)))
+    }
+
+    jobs <- lapply(which(!fresh), function(i)
+      list(srcfile = files[i], cmd = obj_cmd(info[[i]], if (is_cxx[i]) pch)))
+    res <- if (.Platform$OS.type == "unix" && cores > 1)
+      parallel::mclapply(jobs, compile_one_obj, mc.cores = cores)
+    else lapply(jobs, compile_one_obj)
+    ## mclapply returns a failing fork as a try-error instead of raising it.
+    bad <- vapply(res, inherits, logical(1), "try-error")
+    if (any(bad)) stop(as.character(res[bad][[1]]), call. = FALSE)
+    try(saveRDS(keys, cachefile), silent = TRUE)
 
     ## Link step: union of every entry's linkArgs (dedup) so Sundials-dependent
     ## files still pull their libs.
@@ -366,30 +430,22 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
 
     output <- sub(paste0("\\", so, "$"), "", output)
 
-    ## Link inputs. Naming every source on the SHLIB command line is the direct
-    ## route, but that command is passed to the shell as one argument, so a few
-    ## thousand conditions overrun the per-argument limit. Past that point the
-    ## objects go into a static archive -- appended in chunks so no single `ar`
-    ## call overruns it either -- and SHLIB gets one anchor source plus the
-    ## archive. Anchor on a C++ source whenever there is one: SHLIB picks the
-    ## C++ linker (and libstdc++) from the sources it is handed, never from the
-    ## archive contents.
+    ## Past the argument limit the objects go into a static archive, appended in
+    ## chunks, and SHLIB gets one anchor source plus the archive. The anchor is a
+    ## C++ source when there is one: SHLIB picks the C++ linker from the sources
+    ## it is handed, not from the archive contents.
     link_files <- files
     if (nchar(paste(shQuote(files), collapse = " ")) > .compileCmdLimit()) {
-      is_cxx  <- grepl("\\.cpp$", files, ignore.case = TRUE)
-      anchor  <- if (any(is_cxx)) which(is_cxx)[1] else 1L
-      objects <- sub("\\.[^.]+$", ".o", files)
-      lib     <- file.path(dirname(files[1]), paste0(output, "_objects.a"))
+      anchor <- if (any(is_cxx)) which(is_cxx)[1] else 1L
+      lib    <- file.path(dirname(files[1]), paste0(output, "_objects.a"))
       unlink(lib)
       on.exit(try(unlink(lib), silent = TRUE), add = TRUE)
-      ## Route the archiver through `R CMD` rather than calling it directly:
-      ## on Windows that is what puts the Rtools toolchain on PATH, exactly as
-      ## it does for the R CMD SHLIB call below.
+      ## Via `R CMD`, which puts the Rtools toolchain on PATH under Windows.
       ar_bin     <- cfg("AR");     if (!nzchar(ar_bin))     ar_bin     <- "ar"
       ranlib_bin <- cfg("RANLIB"); if (!nzchar(ranlib_bin)) ranlib_bin <- "ranlib"
-      chunks <- .compileChunks(objects[-anchor], maxN = as.integer(chunkSize))
+      chunks <- .compileChunks(objs[-anchor], maxN = as.integer(chunkSize))
       for (i in seq_along(chunks)) {
-        ## `q` appends without the index; the index is written once by ranlib.
+        ## `q` appends without an index; ranlib writes it once at the end.
         cmd <- paste(Rbin, "CMD", ar_bin, if (i == 1L) "qc" else "q", shQuote(lib),
                      paste(shQuote(chunks[[i]]), collapse = " "))
         if (verbose) cat(cmd, "\n")
@@ -400,7 +456,7 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
                  ignore.stdout = !verbose, ignore.stderr = !verbose) != 0)
         stop("Building the archive index failed: ", lib, call. = FALSE)
       cat(sprintf("archived %d objects into %s (%d chunks)\n",
-                  length(objects) - 1L, basename(lib), length(chunks)))
+                  length(objs) - 1L, basename(lib), length(chunks)))
       link_files <- files[anchor]
       base_libs  <- paste(.compileWholeArchive(lib), base_libs)
     }
@@ -484,8 +540,11 @@ compile <- function(..., output = NULL, args = NULL, cores = 1, chunkSize = 100,
       stop("R CMD SHLIB returned exit 0 but did not produce ", out, ":\n",
            paste(out_lines, collapse = "\n"))
     dyn.load(out)
+    ## Only arguments passed as a plain variable can have their modelname
+    ## updated in the caller; an expression has nothing to assign back to.
     for (i in which(is_dmod))
-      eval.parent(parse(text = paste0("modelname(", obj.names[i], ") <- '", output, "'")))
+      if (make.names(obj.names[i]) == obj.names[i])
+        eval.parent(parse(text = paste0("modelname(", obj.names[i], ") <- '", output, "'")))
   }
 
   invisible(TRUE)
@@ -546,9 +605,8 @@ loadDLL <- function(...) {
 ## in the current working directory. The resulting list is the single
 ## authoritative source consulted by `compile()` when given dMod fn objects.
 
-## Per-entry dedup key, cached on the list itself. Summing a parfn over a few
-## thousand conditions merges pairwise, so recomputing every key on every merge
-## would make building the model quadratic in the number of conditions.
+## Dedup keys, cached on the list: merging is pairwise, so recomputing them
+## every time would make summing a few thousand conditions quadratic.
 .compileInfoKeys <- function(x) {
   k <- attr(x, "srckeys")
   if (!is.null(k) && length(k) == length(x)) return(k)

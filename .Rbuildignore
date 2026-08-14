@@ -35,3 +35,4 @@
 ^notes$
 ^bench$
 ^todo\.txt$
+^tests/testthat/\.dMod_objects$

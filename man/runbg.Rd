@@ -101,7 +101,9 @@ Sundials/KLU for CVODE and sparse models) \emph{on the remote machine}, since
 the local library paths do not carry over. The model-specific \code{-D} macros
 are read from the \code{"compileInfo"} attribute of the model objects in the
 workspace. \code{cppDE} therefore has to be installed for the R that is on
-\code{PATH} on the remote machine.
+\code{PATH} on the remote machine. Only the files the chosen mode consumes are
+transferred, and beyond the shell's argument limit the script switches to
+the chunked static-archive build of \code{\link[=compile]{compile()}}.
 }
 \examples{
 \dontrun{

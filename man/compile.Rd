@@ -8,7 +8,7 @@ compile(
   ...,
   output = NULL,
   args = NULL,
-  cores = 1,
+  cores = detectFreeCores(),
   chunkSize = 100,
   verbose = FALSE
 )
@@ -22,10 +22,10 @@ applied.}
 
 \item{args}{Additional compiler/linker flags applied to every file.}
 
-\item{cores}{Parallel compilation jobs (Unix only, requires \code{cores > 1}).}
+\item{cores}{Parallel compilation jobs (Unix only, requires \code{cores > 1}).
+Defaults to \code{\link[=detectFreeCores]{detectFreeCores()}}.}
 
-\item{chunkSize}{Maximum number of files handed to a single archiver call
-when the combined link goes through a static archive (see Details).}
+\item{chunkSize}{Maximum number of files per archiver call, see Details.}
 
 \item{verbose}{If \code{TRUE}, print compiler commands.}
 }
@@ -47,16 +47,18 @@ working directory.
 }
 \section{Many conditions}{
 
-Objects built per condition -- e.g. a \link{parfn} summed over a few thousand
-experiments -- carry one source file per condition. Sources are always
-compiled one file per command, so that side scales, but naming every object
-on the final \verb{R CMD SHLIB} command line does not: the command travels as a
-single argument to the shell and overruns the OS limit (128 KiB on Linux,
-32 KiB on Windows) somewhere around a thousand files. Past that limit
-\code{compile()} bundles the objects into a static archive instead, appended in
-chunks of \code{chunkSize}, and links that archive whole into the shared object.
-The result is identical; only the command lines get shorter. This requires
-\code{output} to be set -- without it every source becomes its own shared object
-and R's \code{R_MAX_NUM_DLLS} cap (614 by default) is hit first.
+Sources are always compiled one file per command, but naming every object on
+the final \verb{R CMD SHLIB} command line overruns the shell's argument limit at
+roughly a thousand files. Beyond that, \code{compile()} bundles the objects into a
+static archive in chunks of \code{chunkSize} and links it whole; the result is
+identical. This needs \code{output} to be set, since one shared object per source
+would exceed \code{R_MAX_NUM_DLLS} first.
+
+Objects are reused when the source bytes and the compile command are
+unchanged, recorded in a \code{.dMod_objects} index next to them: the code
+generators rewrite every source on each run, so file times say nothing about
+whether a recompile is needed. Where the sources share their include block,
+it is precompiled once and prepended, which is what dominates the compile of
+the short generated files.
 }
 
