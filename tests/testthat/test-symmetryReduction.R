@@ -129,11 +129,16 @@ test_that("overlapping scaling and curved directions merge into one block", {
 test_that("rational invariant via Darboux; degree cap gives a certificate", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
   obj <- .mkobj(list(.mkdir(list(x = "x**2", y = "y**2"))), c("x", "y"))
-  # cap 0: coordinate factors only, honest negative certificate
-  red0 <- redquiet(obj, dDarboux = 0L)
+  # cap 0 (and exp stage off): coordinate factors only, honest negative
+  # certificate -- with dExp > 0 this block now RESOLVES through exp(1/x - 1/y)
+  red0 <- redquiet(obj, dDarboux = 0L, dExp = 0L)
   b0 <- red0$blocks[[1]]
   expect_identical(b0$status, "unresolved")
   expect_true(any(grepl("coordinate and xi factors only", b0$certificates)))
+  # the exp stage picks the block up where the rational stages certified failure
+  redE <- redquiet(obj, dDarboux = 0L)
+  expect_identical(redE$blocks[[1]]$stage, "exp")
+  expect_gt(length(redE$blocks[[1]]$invariants), 0L)
   # cap 1: the extactic factors x, y, x - y give (x - y)/(x*y)
   red1 <- redquiet(obj, dDarboux = 1L)
   b1 <- red1$blocks[[1]]
@@ -263,4 +268,104 @@ test_that("EGF/MEK/ERK cascade: all four directions reduced end-to-end", {
   egf2 <- symdet2(reactions, observables, method = "observability",
                   reduceCQ = FALSE, trafo = red$trafo)
   expect_true(egf2$identifiable)
+})
+
+
+test_that("exponential-factor invariant: found, certified, solved and printed", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  obj <- .mkobj(list(.mkdir(list(x = "x", y = "x + y"))), c("x", "y"))
+  red <- redquiet(obj)
+  b <- red$blocks[[1]]
+  expect_identical(b$stage, "exp")
+  expect_identical(b$status, "reduced")
+  expect_length(b$invariants, 1L)
+  # X(I) = 0 numerically (the verify layer already proved it symbolically)
+  gen <- list(x = "x", y = "x + y")
+  expect_lt(abs(.lieAt(gen, b$invariants[[1]], c(x = 1.7, y = 0.9))), 1e-4)
+  # the emitted trafo reproduces the invariant value: I(trafo(y0)) is y0 or 1/y0
+  z <- vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), list(x = 5, y = 3)), numeric(1))
+  Iv <- eval(parse(text = b$invariants[[1]]), as.list(z))
+  expect_true(abs(Iv - 3) < 1e-10 || abs(Iv - 1/3) < 1e-10)
+  txt <- capture.output(print(red))
+  expect_true(any(grepl("[stage: exp]", txt, fixed = TRUE)))
+  expect_true(any(grepl("parametrisation choice", txt)))   # wrap-safe fragment
+  # dExp = 0 switches the stage off with a certificate
+  red0 <- redquiet(obj, dExp = 0L)
+  expect_identical(red0$blocks[[1]]$status, "unresolved")
+  expect_true(any(grepl("exp stage skipped", red0$blocks[[1]]$certificates)))
+})
+
+
+test_that("root carrier: quadratic invariant solved with a fractional power", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  obj <- .mkobj(list(.mkdir(list(a = "b", b = "-a"))), c("a", "b"))
+  red <- redquiet(obj)
+  b <- red$blocks[[1]]
+  expect_identical(b$status, "reduced")
+  entry <- red$trafo[[b$transversal[1]]]
+  carrier <- setdiff(b$support, b$transversal)
+  expect_true(grepl("sqrt|\\^\\(1/2\\)", red$trafo[[carrier]]))
+  expect_true(grepl("positive branch", b$gaugeNote))
+  # numeric round-trip: the invariant value is carried by the renamed parameter
+  z <- vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), list(a = 1, b = 9)), numeric(1))
+  expect_equal(unname(z[["a"]]^2 + z[["b"]]^2), 9, tolerance = 1e-8)
+})
+
+
+test_that("fixed removes curved directions that cannot avoid the coordinate", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  obj <- .mkobj(list(.mkdir(list(a = "a", b = "-b")),
+                     .mkdir(list(b = "b", cc = "cc"))), c("a", "b", "cc"))
+  red <- redquiet(obj, fixed = "a")
+  st <- vapply(red$blocks, `[[`, character(1), "status")
+  expect_true("fixed" %in% st)
+  fb <- red$blocks[[which(st == "fixed")]]
+  expect_identical(fb$labels, "X₁")
+  kb <- red$blocks[[which(st != "fixed")]]
+  expect_identical(kb$status, "reduced")
+  expect_false("a" %in% kb$support)
+  expect_setequal(red$removed, c("X₁", "X₂"))
+  # a single direction moving the fixed coordinate disappears entirely
+  obj2 <- .mkobj(list(.mkdir(list(a = "a^2", b = "a*b"))), c("a", "b"))
+  red2 <- redquiet(obj2, fixed = "a")
+  expect_identical(red2$blocks[[1]]$status, "fixed")
+  expect_true(all(red2$trafo == names(red2$trafo)))
+})
+
+
+test_that("moved-only extactic basis: parameters no longer block the factor search", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  s <- "(k1 + k2 + k3 + k4)"
+  obj <- .mkobj(list(.mkdir(list(x = paste0(s, "*x**2"), y = paste0(s, "*y**2")))),
+                c("x", "y", "k1", "k2", "k3", "k4"))
+  red <- redquiet(obj, dDarboux = 1L)
+  b <- red$blocks[[1]]
+  # 6 total variables used to hit "extactic skipped" (projected entry degree 13
+  # over the all-variables basis); the moved-coordinate basis (2 coordinates)
+  # passes the cap and finds the factor x - y
+  expect_true(any(grepl("extactic complete", b$certificates)))
+  expect_identical(b$stage, "darboux")
+  expect_gt(length(b$invariants), 0L)
+  gen <- list(x = paste0(s, "*x^2"), y = paste0(s, "*y^2"))
+  pt <- c(x = 1.31, y = 0.77, k1 = 0.2, k2 = 0.3, k3 = 0.15, k4 = 0.4)
+  expect_lt(abs(.lieAt(gen, b$invariants[1], pt)), 1e-4)
+})
+
+
+test_that("integrating factor: Liouvillian integral by quadrature, verified", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # damped oscillator: no rational or exp-factor invariant; M = 1/(x^2 + x*y + y^2)
+  obj <- .mkobj(list(.mkdir(list(x = "y", y = "-x - y"))), c("x", "y"))
+  red <- redquiet(obj)
+  b <- red$blocks[[1]]
+  expect_identical(b$stage, "intfactor")
+  expect_identical(b$status, "invariantOnly")   # atan form: reported, not solved
+  expect_length(b$invariants, 1L)
+  expect_true(any(grepl("solved by quadrature", b$certificates)))
+  expect_true(any(grepl("verified: X\\(I\\) = 0", b$certificates)))
+  gen <- list(x = "y", y = "-x - y")
+  pt <- c(x = 0.83, y = 0.41)
+  expect_lt(abs(.lieAt(gen, b$invariants[[1]], pt)), 1e-4)
 })

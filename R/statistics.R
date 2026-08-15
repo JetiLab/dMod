@@ -386,8 +386,10 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                               constraint.out <- constraint.out
                               
                               while (i < sControl$limit) {
-                                
+
                                 ## Iteration step
+                                # Clamp so the last step lands on the limit instead of overshooting
+                                stepsize <- min(stepsize, limits[2] - constraint.out$value)
                                 sufficient <- FALSE
                                 retry <- 0
                                 while (!sufficient & retry < 5) {
@@ -400,10 +402,10 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                                     retry <- retry + 1
                                   } else {
                                     sufficient <- out.try$valid
-                                    stepsize <- out.try$stepsize  
+                                    stepsize <- out.try$stepsize
                                   }
-                                  
-                                }    
+
+                                }
                                 if (inherits(y.try, "try-error") | inherits(out.try, "try-error")) break
                                 
                                 
@@ -438,7 +440,7 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                                 }
                                 
                                 value <- lagrange.out[[sControl$stop]]
-                                if (value > threshold | constraint.out$value > limits[2]) break
+                                if (value > threshold | constraint.out$value >= limits[2] - sqrt(.Machine$double.eps)) break
                                 
                                 i <- i + 1
                                 
@@ -460,8 +462,10 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                               constraint.out <- constraint(pars)
                               
                               while (i < sControl$limit) {
-                                
+
                                 ## Iteration step
+                                # Clamp so the last step lands on the limit instead of overshooting
+                                stepsize <- min(stepsize, constraint.out$value - limits[1])
                                 sufficient <- FALSE
                                 retry <- 0
                                 while (!sufficient & retry < 5) {
@@ -474,9 +478,9 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                                     retry <- retry + 1
                                   } else {
                                     sufficient <- out.try$valid
-                                    stepsize <- out.try$stepsize  
+                                    stepsize <- out.try$stepsize
                                   }
-                                  
+
                                 }
                                 if (inherits(y.try, "try-error") | inherits(out.try, "try-error")) break
                                 
@@ -513,7 +517,7 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
                                 
                                 
                                 value <- lagrange.out[[sControl$stop]]
-                                if (value > threshold | constraint.out$value < limits[1]) break
+                                if (value > threshold | constraint.out$value <= limits[1] + sqrt(.Machine$double.eps)) break
                                 
                                 i <- i + 1
                                 

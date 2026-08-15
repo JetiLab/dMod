@@ -1144,7 +1144,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # Modular arithmetic over GF(p) for the residual-direction gauge, p < 2^31. A
 # double holds integers exactly only to 2^53, so a*b (up to 2^62) is split on a
 # 15-bit boundary to keep every intermediate product below 2^47. Vectorised in a;
-# b is a scalar (the elimination multiplier).
+# b may be a scalar (the elimination multiplier) or an equal-length vector -- the
+# split arithmetic is elementwise-safe either way.
 .symMulmod <- function(a, b, p) {
   a <- a %% p; b <- b %% p
   hi <- (a * (b %/% 32768)) %% p
@@ -4813,7 +4814,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # grouped generators, then what can be fixed. This is all print() shows -- summary()
 # prints the header and computation block above it.
 .symCatResult <- function(object, verbose = FALSE, fixed = NULL,
-                          width = getOption("width")) {
+                          width = getOption("width"), fixing = FALSE) {
   m <- object$method; isObs <- m == "observability"
   n <- length(object$symmetries)
   if (isObs && isTRUE(object$identifiable)) {
@@ -4838,7 +4839,9 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
                             "polynomial Lie-symmetry generators")))
   }
   .symCatGenerators(object, verbose, width)
-  .symCatFixing(object, fixed, width)
+  # The fixing walkthrough is opt-in: summary() and an explicit `fixed = `
+  # request it; the default print stays at verdict + generators.
+  if (isTRUE(fixing) || !is.null(fixed)) .symCatFixing(object, fixed, width)
 }
 
 
@@ -5022,7 +5025,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     for (l in comp) cat("  ", l, "\n", sep = "")
   }
   cat("\n")
-  .symCatResult(object, verbose, fixed, width)
+  .symCatResult(object, verbose, fixed, width, fixing = TRUE)
   invisible(object)
 }
 

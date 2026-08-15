@@ -30,7 +30,7 @@
 
   ## a block beyond the search caps stays honest: negative certificates say what
   ## was excluded instead of silently giving up
-  reduceSymmetry(res2, dPoly = 0L, dDarboux = 0L)
+  reduceSymmetry(res2, dPoly = 0L, dDarboux = 0L, dExp = 0L)
 
   ## -- harder curved blocks ---------------------------------------------------
 
@@ -59,6 +59,33 @@
   red4$blocks[[1]]$invariants     # "a^-1*b^-1*(a - b)"
   symmetryDetection(f4, eqnvec(y = "x"), method = "observability",
                     trafo = red4$trafo)$identifiable
+
+  ## -- the Liouvillian stages ------------------------------------------------
+
+  ## The SAME direction with the Darboux stage capped away: the escalation
+  ## continues into exponential factors (Prelle-Singer: every Liouvillian first
+  ## integral is a product of Darboux factors and exp(g/h) terms). The stage
+  ## certifies exp((b - a)/(a*b)) exactly and the solve becomes a log-solve:
+  ## b = -1/(log(b) - 1). Entries with log/exp are fine for P(), but NOT for the
+  ## symmetryDetection(trafo = ) round trip, which requires rational entries.
+  red4e <- reduceSymmetry(res4, dDarboux = 0L)
+  red4e$blocks[[1]]$invariants    # "exp((-a + b)/(a*b))"
+  red4e$trafo
+
+  ## A quadratic invariant solved by a root: the rotation generator b d/da -
+  ## a d/db leaves a^2 + b^2 invariant; the carrier is solved as a fractional
+  ## power (positive branch, noted in the gauge note).
+  ## (Directions like this reach reduceSymmetry from symmetryDetection results;
+  ## the block then reads:
+  ##   invariants: a^2 + b^2      trafo: a = 1, b = sqrt(b - 1))
+
+  ## An integrating factor when no closed-form invariant exists in the rational
+  ## or exponential class: the damped-oscillator direction y d/dx - (x + y) d/dy
+  ## admits the Darboux-form integrating factor M = 1/(x^2 + x*y + y^2) (the
+  ## quadratic IS a Darboux polynomial, cofactor -1, and div X = -1). The first
+  ## integral -log(x^2 + x*y + y^2)/2 - sqrt(3)*atan(...)/3 is found by
+  ## quadrature and proven exactly, but reported invariantOnly: atan is outside
+  ## the trafo language, so no reparametrisation is claimed.
 
   ## The EGF/EGFR -> MEK/ERK cascade of the vignette, observed only through the
   ## two phospho-forms on unknown gains: four directions. The MEK- and ERK-module

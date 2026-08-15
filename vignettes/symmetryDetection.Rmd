@@ -1296,9 +1296,15 @@ coordinate per independent weight row, set to one) and, because the gauge choice
 is yours, lists the whole admissible family instead of hiding the choice. Curved
 directions go through a support-minimising module reduction followed by an
 escalating exact invariant search -- Laurent monomials, polynomials up to
-`dPoly`, rational invariants via Darboux factors up to `dDarboux` -- and each
-failed stage leaves a precise negative certificate. Solved invariants are carried
-under the name of the coordinate solved for, exactly as in the manual recipe.
+`dPoly`, rational invariants via Darboux factors up to `dDarboux`, Liouvillian
+invariants via exponential factors `exp(g/h)` with numerator degree up to `dExp`
+(by Prelle--Singer this completes the search class: whatever has a closed form
+is of this shape), and, for planar single-generator blocks, a Darboux-form
+integrating factor solved by quadrature -- and each failed stage leaves a
+precise negative certificate. Solved invariants are carried under the name of
+the coordinate solved for, exactly as in the manual recipe; a transcendental
+invariant may solve into `log`/`exp` entries, which `P()` accepts but the
+rational round trip `symmetryDetection(trafo = )` does not.
 
 ```{r reduce, eval = haveSympy}
 res <- symmetryDetection(eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p"),

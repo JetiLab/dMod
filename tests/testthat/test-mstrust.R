@@ -66,6 +66,34 @@ test_that("profile on a 1D Gaussian crosses chi^2 = 3.84 at +/- z(0.95)*sigma", 
 })
 
 
+test_that("profile respects limits on a flat direction", {
+  # Objective (a+b)^2 + c^2 is exactly flat along a - b, so the stepsize
+  # doubles every step; limits must clamp the last step, not be overshot.
+  nm <- c("a", "b", "c")
+  obj <- function(pars, fixed = NULL, deriv = TRUE, ...) {
+    pp <- c(pars, fixed)[nm]
+    v <- as.numeric((pp[["a"]] + pp[["b"]])^2 + pp[["c"]]^2)
+    g <- c(a = 2 * (pp[["a"]] + pp[["b"]]),
+           b = 2 * (pp[["a"]] + pp[["b"]]),
+           c = 2 * pp[["c"]])
+    H <- matrix(c(2, 2, 0, 2, 2, 0, 0, 0, 2), 3, 3, dimnames = list(nm, nm))
+    free <- names(pars)
+    structure(list(value = v, gradient = g[free],
+                   hessian = H[free, free, drop = FALSE]),
+              class = c("objlist", "list"))
+  }
+  class(obj) <- c("objfn", "fn")
+  attr(obj, "modelname") <- character(0)
+
+  prof <- suppressWarnings(profile(
+    obj, pars = c(a = 0.3, b = -0.3, c = 0), whichPar = "a",
+    method = "integrate", stepControl = list(limit = 20),
+    limits = c(lower = -1.5, upper = 1.5), cores = 1))
+
+  expect_equal(range(prof$constraint), c(-1.5, 1.5), tolerance = 1e-6)
+})
+
+
 # ---- vcov ---------------------------------------------------------------
 
 test_that("vcov(fit) equals solve(0.5 * H) for a quadratic with known Hessian", {
