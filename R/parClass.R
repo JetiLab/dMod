@@ -912,6 +912,59 @@ summary.parfn <- function(object, ...) {
 
 ## Parameter classes --------------------------------------------------------
 
+
+## Body of the parfn dispatcher. Package level for the same reason as
+## .Pexpl_p2p(): one parfn per condition should cost state, not code.
+
+.parfn_outfn <- function(st, ..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = st$condition, env = NULL) {
+
+
+  arglist <- list(...)
+  arglist <- arglist[match.fnargs(arglist, "pars")]
+  pars <- arglist[[1]]
+
+  overlap <- test_conditions(conditions, st$condition)
+  # NULL if at least one argument is NULL
+  # character(0) if no overlap
+  # character if overlap
+
+  if (is.null(overlap)) conditions <- union(st$condition, conditions)
+
+  # Per-st$condition warm-start key: prefer this parfn's own st$condition, else the
+  # single st$condition it is currently being evaluated under (set by prodfn when
+  # a st$condition-less parfn is composed with a st$condition-specifying one).
+  cond_key <- if (!is.null(st$condition)) st$condition[[1]]
+              else if (length(conditions) == 1L) conditions
+              else NULL
+
+  if (is.null(overlap) | length(overlap) > 0)
+    result <- if (st$p2p_has_cond)
+      st$p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, condition = cond_key)
+    else
+      st$p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
+  else
+    result <- NULL
+  
+  # Initialize output object
+  length.out <- max(c(1, length(conditions)))
+  outlist <- structure(vector("list", length.out), names = conditions)
+  
+  if (is.null(st$condition)) available <- 1:length.out else available <- match(st$condition, conditions)
+  for (C in available[!is.na(available)]) outlist[[C]] <- result
+  
+  
+  return(outlist)
+  
+}
+
+
+.parfn_wrap <- function(st) {
+  function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE,
+           conditions = st$condition, env = NULL)
+    .parfn_outfn(st, ..., fixed = fixed, deriv = deriv, deriv2 = deriv2,
+                 conditions = conditions, env = env)
+}
+
 #' Parameter transformation function
 #'
 #' Generate functions that transform one parameter vector into another
@@ -947,48 +1000,10 @@ parfn <- function(p2p, parameters = NULL, condition = NULL) {
   # p2p of warm-starting transformations (Pequil / Pimpl) accepts a `condition`
   # argument so it can keep one warm-start cache per condition. Forward it only
   # when present; Pexpl and other p2p's keep their original signature untouched.
-  p2p_has_cond <- "condition" %in% names(formals(p2p))
-
-  outfn <- function(..., fixed = NULL, deriv = TRUE, deriv2 = FALSE, conditions = condition, env = NULL) {
-
-
-    arglist <- list(...)
-    arglist <- arglist[match.fnargs(arglist, "pars")]
-    pars <- arglist[[1]]
-
-    overlap <- test_conditions(conditions, condition)
-    # NULL if at least one argument is NULL
-    # character(0) if no overlap
-    # character if overlap
-
-    if (is.null(overlap)) conditions <- union(condition, conditions)
-
-    # Per-condition warm-start key: prefer this parfn's own condition, else the
-    # single condition it is currently being evaluated under (set by prodfn when
-    # a condition-less parfn is composed with a condition-specifying one).
-    cond_key <- if (!is.null(condition)) condition[[1]]
-                else if (length(conditions) == 1L) conditions
-                else NULL
-
-    if (is.null(overlap) | length(overlap) > 0)
-      result <- if (p2p_has_cond)
-        p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2, condition = cond_key)
-      else
-        p2p(pars = pars, fixed = fixed, deriv = deriv, deriv2 = deriv2)
-    else
-      result <- NULL
-    
-    # Initialize output object
-    length.out <- max(c(1, length(conditions)))
-    outlist <- structure(vector("list", length.out), names = conditions)
-    
-    if (is.null(condition)) available <- 1:length.out else available <- match(condition, conditions)
-    for (C in available[!is.na(available)]) outlist[[C]] <- result
-    
-    
-    return(outlist)
-    
-  }
+  st <- list2env(list(condition = condition, p2p = p2p,
+                      p2p_has_cond = "condition" %in% names(formals(p2p))),
+                 parent = emptyenv())
+  outfn <- .parfn_wrap(st)
   attr(outfn, "mappings") <- mappings
   attr(outfn, "parameters") <- parameters
   attr(outfn, "conditions") <- condition

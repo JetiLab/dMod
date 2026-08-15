@@ -96,6 +96,86 @@ P <- function(trafo = NULL, parameters = NULL, condition = NULL,
 }
 
 
+
+## Body of the parameter transformation built by Pexpl(). Package level, so
+## one parfn per condition carries the state, not another copy of this code.
+
+.Pexpl_p2p <- function(st, pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE) {
+
+  if (deriv2 && !st$emit_d2)
+    stop("Pexpl was built with deriv2 = FALSE; rebuild with deriv2 = TRUE.", call. = FALSE)
+  if (!st$emit_d1) deriv <- FALSE
+  if (deriv2 && !deriv) deriv <- TRUE
+
+  p <- c(pars, fixed)
+  ad_ok  <- st$use_ad && !is.null(st$evaluate) && is.loaded(st$ad_symbol)
+  ad_ok2 <- ad_ok && st$emit_d2 && is.loaded(st$ad2_symbol)
+  if (deriv2 && !ad_ok2 && st$use_ad)
+    stop("Pexpl(deriv2 = TRUE) needs the compiled AD2 entry; rebuild with compile = TRUE.", call. = FALSE)
+
+  Jac <- NULL; Hess <- NULL
+
+  if (ad_ok && deriv) {
+    ## Dual-mode entry reads `params` and `dP` positionally against the
+    ## codegen order, so reorder both to `st$parameters`.
+    dP  <- attr(pars, "deriv")
+    dP2 <- if (deriv2) attr(pars, "deriv2") else NULL
+    if (is.null(dP)) {
+      active <- setdiff(st$parameters, names(fixed))
+      dP <- diag(length(active)); dimnames(dP) <- list(active, active)
+    }
+    out <- st$evaluate(NULL, p[st$parameters], dX = NULL, dP = dP, dX2 = NULL, dP2 = dP2,
+                    deriv2 = deriv2, attach.input = st$attach.input,
+                    fixed = intersect(names(fixed), st$parameters))
+    pinnerVal <- out$y[1, ]
+    if (!is.null(out$dy))
+      Jac <- matrix(out$dy, dim(out$dy)[2], dim(out$dy)[3],
+                    dimnames = list(dimnames(out$dy)[[2]], dimnames(out$dy)[[3]]))
+    if (deriv2 && !is.null(out$d2y))
+      Hess <- array(out$d2y, dim(out$d2y)[2:4], dimnames = dimnames(out$d2y)[2:4])
+  } else {
+    pinnerVal <- st$fun(NULL, p, attach.input = st$attach.input, fixed = names(fixed))[, ]
+    if (deriv && !is.null(st$jac)) {
+      Jac <- as.matrix(st$jac(NULL, p, attach.input = st$attach.input, fixed = names(fixed))[1, , ])
+      dP  <- attr(pars, "deriv")
+      if (!is.null(dP)) {
+        Jac <- Jac %*% dP[colnames(Jac), , drop = FALSE]
+        dimnames(Jac) <- list(names(pinnerVal), colnames(dP))
+      }
+    }
+    if (deriv2) {
+      if (is.null(st$hess))
+        stop("Pexpl(deriv2 = TRUE) requires hess(); rebuild with deriv2 = TRUE.", call. = FALSE)
+      H4 <- st$hess(NULL, p, dX = NULL, dP = attr(pars, "deriv"),
+                 dX2 = NULL, dP2 = attr(pars, "deriv2"),
+                 attach.input = st$attach.input, fixed = names(fixed))
+      Hess <- array(H4, dim(H4)[2:4], dimnames = dimnames(H4)[2:4])
+    }
+  }
+
+  if (any(is.nan(pinnerVal)))
+    stop("Inner parameter(s) evaluate to NaN:\n\t",
+         paste(names(pinnerVal)[is.nan(pinnerVal)], collapse = "\n\t"),
+         ".\nLikely cause: division by zero or missing inputs.", call. = FALSE)
+
+  Jac_keep  <- if (deriv  && !is.null(Jac))  Jac[rowSums(Jac != 0) > 0, , drop = FALSE] else FALSE
+  Hess_keep <- if (deriv2 && !is.null(Hess))
+    (if (is.matrix(Jac_keep)) Hess[rownames(Jac_keep), , , drop = FALSE] else Hess) else FALSE
+  pinner <- as.parvec(pinnerVal, deriv = Jac_keep, deriv2 = Hess_keep)
+
+  if (st$attach.input && !all(names(pars) %in% names(pinnerVal)))
+    pinner <- c(pinner, as.parvec(pars[setdiff(names(pars), names(pinnerVal))],
+                                  deriv  = if (deriv)  NULL else FALSE,
+                                  deriv2 = if (deriv2) NULL else FALSE))
+  pinner
+}
+
+
+.Pexpl_wrap <- function(st) {
+  function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE)
+    .Pexpl_p2p(st, pars, fixed, deriv, deriv2)
+}
+
 #' Parameter transformation (explicit, algebraic)
 #'
 #' Builds `p_inner = f(p_outer)` from symbolic expressions via
@@ -152,75 +232,13 @@ Pexpl <- function(trafo, parameters = NULL, attach.input = FALSE, condition = NU
   ad_symbol  <- paste0(modelname, "_eval_ad")
   ad2_symbol <- paste0(modelname, "_eval_ad2")
 
-  p2p <- function(pars, fixed = NULL, deriv = TRUE, deriv2 = FALSE) {
-
-    if (deriv2 && !emit_d2)
-      stop("Pexpl was built with deriv2 = FALSE; rebuild with deriv2 = TRUE.", call. = FALSE)
-    if (!emit_d1) deriv <- FALSE
-    if (deriv2 && !deriv) deriv <- TRUE
-
-    p <- c(pars, fixed)
-    ad_ok  <- use_ad && !is.null(evaluate) && is.loaded(ad_symbol)
-    ad_ok2 <- ad_ok && emit_d2 && is.loaded(ad2_symbol)
-    if (deriv2 && !ad_ok2 && use_ad)
-      stop("Pexpl(deriv2 = TRUE) needs the compiled AD2 entry; rebuild with compile = TRUE.", call. = FALSE)
-
-    Jac <- NULL; Hess <- NULL
-
-    if (ad_ok && deriv) {
-      ## Dual-mode entry reads `params` and `dP` positionally against the
-      ## codegen order, so reorder both to `parameters`.
-      dP  <- attr(pars, "deriv")
-      dP2 <- if (deriv2) attr(pars, "deriv2") else NULL
-      if (is.null(dP)) {
-        active <- setdiff(parameters, names(fixed))
-        dP <- diag(length(active)); dimnames(dP) <- list(active, active)
-      }
-      out <- evaluate(NULL, p[parameters], dX = NULL, dP = dP, dX2 = NULL, dP2 = dP2,
-                      deriv2 = deriv2, attach.input = attach.input,
-                      fixed = intersect(names(fixed), parameters))
-      pinnerVal <- out$y[1, ]
-      if (!is.null(out$dy))
-        Jac <- matrix(out$dy, dim(out$dy)[2], dim(out$dy)[3],
-                      dimnames = list(dimnames(out$dy)[[2]], dimnames(out$dy)[[3]]))
-      if (deriv2 && !is.null(out$d2y))
-        Hess <- array(out$d2y, dim(out$d2y)[2:4], dimnames = dimnames(out$d2y)[2:4])
-    } else {
-      pinnerVal <- fun(NULL, p, attach.input = attach.input, fixed = names(fixed))[, ]
-      if (deriv && !is.null(jac)) {
-        Jac <- as.matrix(jac(NULL, p, attach.input = attach.input, fixed = names(fixed))[1, , ])
-        dP  <- attr(pars, "deriv")
-        if (!is.null(dP)) {
-          Jac <- Jac %*% dP[colnames(Jac), , drop = FALSE]
-          dimnames(Jac) <- list(names(pinnerVal), colnames(dP))
-        }
-      }
-      if (deriv2) {
-        if (is.null(hess))
-          stop("Pexpl(deriv2 = TRUE) requires hess(); rebuild with deriv2 = TRUE.", call. = FALSE)
-        H4 <- hess(NULL, p, dX = NULL, dP = attr(pars, "deriv"),
-                   dX2 = NULL, dP2 = attr(pars, "deriv2"),
-                   attach.input = attach.input, fixed = names(fixed))
-        Hess <- array(H4, dim(H4)[2:4], dimnames = dimnames(H4)[2:4])
-      }
-    }
-
-    if (any(is.nan(pinnerVal)))
-      stop("Inner parameter(s) evaluate to NaN:\n\t",
-           paste(names(pinnerVal)[is.nan(pinnerVal)], collapse = "\n\t"),
-           ".\nLikely cause: division by zero or missing inputs.", call. = FALSE)
-
-    Jac_keep  <- if (deriv  && !is.null(Jac))  Jac[rowSums(Jac != 0) > 0, , drop = FALSE] else FALSE
-    Hess_keep <- if (deriv2 && !is.null(Hess))
-      (if (is.matrix(Jac_keep)) Hess[rownames(Jac_keep), , , drop = FALSE] else Hess) else FALSE
-    pinner <- as.parvec(pinnerVal, deriv = Jac_keep, deriv2 = Hess_keep)
-
-    if (attach.input && !all(names(pars) %in% names(pinnerVal)))
-      pinner <- c(pinner, as.parvec(pars[setdiff(names(pars), names(pinnerVal))],
-                                    deriv  = if (deriv)  NULL else FALSE,
-                                    deriv2 = if (deriv2) NULL else FALSE))
-    pinner
-  }
+  ## The wrapper closes over `st` alone, not over Pexpl's frame.
+  st <- list2env(list(fun = fun, jac = jac, hess = hess, evaluate = evaluate,
+                      parameters = parameters, attach.input = attach.input,
+                      use_ad = use_ad, ad_symbol = ad_symbol,
+                      ad2_symbol = ad2_symbol, emit_d1 = emit_d1,
+                      emit_d2 = emit_d2), parent = emptyenv())
+  p2p <- .Pexpl_wrap(st)
 
   attr(p2p, "equations")   <- as.eqnvec(trafo)
   attr(p2p, "parameters")  <- parameters

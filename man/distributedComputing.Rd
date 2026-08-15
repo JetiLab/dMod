@@ -20,6 +20,8 @@ distributedComputing(
   purge_local = FALSE,
   compile = FALSE,
   link = FALSE,
+  buildCores = NULL,
+  buildBundle = 50,
   custom_folders = NULL,
   resetSeeds = TRUE,
   returnAll = TRUE,
@@ -80,6 +82,18 @@ with the local one -- in particular, \code{.o} files produced with link-time
 optimisation by a newer GCC cannot be read by an older one. Prefer
 \code{compile = TRUE} when the two machines run different compiler generations.}
 
+\item{buildCores}{Number of compiler processes the remote build runs in
+parallel. The build happens on the login node, before the job is queued, so
+this is unrelated to \code{cores}, which sizes the SLURM allocation. \code{NULL}
+(default) lets the build use what the login node reports, capped at 16.}
+
+\item{buildBundle}{Number of generated sources the remote build puts into one
+translation unit. They hold one small function each and all include the same
+headers, so bundling parses those once per bundle instead of once per file;
+every generated function is kept either way. Only used above the shell's
+argument limit, where the build goes through a static archive. \code{1} compiles
+one file at a time.}
+
 \item{custom_folders}{Named vector with exactly three elements: \code{"compiled"},
 \code{"output"}, and \code{"tmp"}. Each value is a relative path specifying where
 compiled files, temporary data, and output results should be stored.
@@ -126,6 +140,12 @@ It is possible to run multiple repetitions of the same program (via \code{no_rep
 or to pass a list of parameter arrays through \code{var_values}. Parameters that
 vary between runs must be named \code{var_i}, where \emph{i} matches the index
 of the corresponding array in \code{var_values}.
+
+The workspace is serialised through \code{zstd} and expanded again on the cluster
+before the build starts, so it is written and transferred once, compressed.
+With one parameter transformation per condition it is the bulk of the upload.
+Without \code{zstd} locally it is written uncompressed; the archive is compressed
+either way.
 }
 \examples{
 \dontrun{

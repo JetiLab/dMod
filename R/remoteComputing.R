@@ -124,6 +124,32 @@ detectFreeCores <- function(machine = NULL) {
 .remoteNeedsChunking <- function(files)
   sum(nchar(files) + 1L) > .compileCmdLimit()
 
+## Write the job workspace through zstd. Uncompressed it hits the disk in full
+## only for tar to read it back and compress it, and with one parfn per condition
+## that is several GB. zstd is already required for the transfer; the fallback
+## covers a submitting machine without the binary. Returns the file written.
+.saveWorkspace <- function(input, file, envir = .GlobalEnv, level = 3L) {
+
+  zstd <- Sys.which("zstd")
+  if (!nzchar(zstd)) {
+    save(list = input, file = file, envir = envir, compress = FALSE)
+    return(file)
+  }
+
+  out <- paste0(file, ".zst")
+  con <- pipe(paste0(shQuote(zstd), " -T0 -", as.integer(level),
+                     " -q -f -o ", shQuote(out)), "wb")
+  ## close() pcloses, so zstd has finished before tar sees the file.
+  ok <- try(save(list = input, file = con, envir = envir), silent = TRUE)
+  close(con)
+  if (inherits(ok, "try-error")) {
+    unlink(out)
+    stop("Could not write the job workspace: ", attr(ok, "condition")$message,
+         call. = FALSE)
+  }
+  out
+}
+
 ## Generate the bash script that builds the shared object on the remote machine.
 ## `files` are the sources, or the object files when `link = TRUE`. Beyond the
 ## argument limit the script switches to the chunked archive build compile()
@@ -131,7 +157,8 @@ detectFreeCores <- function(machine = NULL) {
 .remoteBuildScript <- function(files, output, compileArgs = "",
                                needsCVODE = FALSE, needsKLU = FALSE,
                                link = FALSE, cxx = FALSE, cores = 1,
-                               workdir = NULL, filelist = NULL, chunkSize = 100) {
+                               workdir = NULL, filelist = NULL, chunkSize = 100,
+                               bundle = 50) {
 
   files <- unlist(strsplit(trimws(files), "\\s+"))
   files <- files[nzchar(files)]
@@ -199,8 +226,36 @@ detectFreeCores <- function(machine = NULL) {
   ## Compile off the file list in parallel, then link. Asking make to
   ## parallelise R CMD SHLIB via MAKEFLAGS does not work, so the objects are
   ## built here and SHLIB only links them.
+  chunked <- !is.null(filelist) && .remoteNeedsChunking(files)
+  isCxx   <- grepl("\\.cpp$", files, ignore.case = TRUE)
+
+  ## Only the chunked path bundles: below the argument limit SHLIB gets the
+  ## sources themselves, so bundles would just be compiled twice.
+  doBundle <- chunked && !link && as.integer(bundle) > 1L && sum(isCxx) > 1L
+
+  anchorLine <- if (chunked)
+    paste0("ANCHOR=", shQuote(files[if (any(isCxx)) which(isCxx)[1] else 1L]))
+
+  ## The sources hold one small function each and all pull in the same headers,
+  ## so bundling them into few translation units parses those headers once per
+  ## bundle. Every generated function survives; only the compiler runs less.
+  bundleBlock <- if (doBundle) c(
+    paste0("BUNDLE=", max(2L, as.integer(bundle))),
+    "grep -i -e '\\.cpp$' \"$WORK\" > dmod_cxx.lst || true",
+    "grep -v -i -e '\\.cpp$' \"$WORK\" > dmod_rest.lst || true",
+    "if [ -s dmod_cxx.lst ]; then",
+    "  rm -f dmod_bundle_*",
+    "  split -l \"$BUNDLE\" -d -a 4 dmod_cxx.lst dmod_bundle_",
+    "  for b in dmod_bundle_[0-9]*; do",
+    "    sed 's|.*|#include \"&\"|' \"$b\" > \"$b.cpp\"",
+    "    echo \"$b.cpp\"",
+    "  done > dmod_bundled.lst",
+    "  cat dmod_rest.lst dmod_bundled.lst > \"$WORK\"",
+    "fi", "")
+
   compileBlock <- if (!is.null(filelist)) c(
-    paste0("FILELIST=", shQuote(filelist)), "",
+    paste0("FILELIST=", shQuote(filelist)),
+    anchorLine, "",
     "dmod_compile_one() {",
     "  src=\"$1\"",
     "  case \"$src\" in",
@@ -212,22 +267,25 @@ detectFreeCores <- function(machine = NULL) {
     "  esac",
     "}",
     "export -f dmod_compile_one", "",
+    "WORK=dmod_work.lst",
+    if (chunked) "grep -v -x -F \"$ANCHOR\" \"$FILELIST\" > \"$WORK\" || true"
+    else "cp \"$FILELIST\" \"$WORK\"",
+    "",
+    bundleBlock,
     paste0("xargs -r -P ", nproc,
-           " -I '{}' bash -c 'dmod_compile_one \"$@\"' _ '{}' < \"$FILELIST\""), "")
+           " -I '{}' bash -c 'dmod_compile_one \"$@\"' _ '{}' < \"$WORK\""), "")
 
   ## Past the argument limit the objects go into a static archive and SHLIB gets
   ## one anchor plus the archive. The anchor is a C++ source when there is one,
   ## so SHLIB still selects the C++ linker and runtime.
-  linkBlock <- if (!(!is.null(filelist) && .remoteNeedsChunking(files))) {
+  linkBlock <- if (!chunked) {
     paste0("R CMD SHLIB ", paste(files, collapse = " "), " -o ", output)
   } else {
-    isCxx <- grepl("\\.cpp$", files, ignore.case = TRUE)
-    c(paste0("ANCHOR=", shQuote(files[if (any(isCxx)) which(isCxx)[1] else 1L])),
-      paste0("LIB=\"$PWD/", sub("\\.so$", "", output), "_objects.a\""), "",
+    c(paste0("LIB=\"$PWD/", sub("\\.so$", "", output), "_objects.a\""), "",
       "# The anchor is linked directly; in the archive too it would define its",
       "# symbols twice.",
       "rm -f \"$LIB\"",
-      paste0("grep -v -x -F \"$ANCHOR\" \"$FILELIST\" | sed 's/\\.[^.]*$/.o/' |",
+      paste0("sed 's/\\.[^.]*$/.o/' \"$WORK\" |",
              " xargs -r -n ", max(1L, as.integer(chunkSize)), " \"$AR\" qc \"$LIB\""),
       "\"$RANLIB\" \"$LIB\"", "",
       "# R resolves the entry points by name at run time, so unreferenced archive",
@@ -677,6 +735,12 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 #' vary between runs must be named `var_i`, where *i* matches the index
 #' of the corresponding array in `var_values`.
 #'
+#' The workspace is serialised through `zstd` and expanded again on the cluster
+#' before the build starts, so it is written and transferred once, compressed.
+#' With one parameter transformation per condition it is the bulk of the upload.
+#' Without `zstd` locally it is written uncompressed; the archive is compressed
+#' either way.
+#'
 #' @param ... R code to be remotely executed. Parameters to be changed for each run
 #' must be named `var_i` (see "Details").
 #' @param jobname Unique name (character) for the run. Existing runs with the same
@@ -715,6 +779,16 @@ runbg <- function(..., machine = "localhost", filename = NULL, input = ls(.Globa
 #' with the local one -- in particular, `.o` files produced with link-time
 #' optimisation by a newer GCC cannot be read by an older one. Prefer
 #' `compile = TRUE` when the two machines run different compiler generations.
+#' @param buildCores Number of compiler processes the remote build runs in
+#' parallel. The build happens on the login node, before the job is queued, so
+#' this is unrelated to `cores`, which sizes the SLURM allocation. `NULL`
+#' (default) lets the build use what the login node reports, capped at 16.
+#' @param buildBundle Number of generated sources the remote build puts into one
+#' translation unit. They hold one small function each and all include the same
+#' headers, so bundling parses those once per bundle instead of once per file;
+#' every generated function is kept either way. Only used above the shell's
+#' argument limit, where the build goes through a static archive. `1` compiles
+#' one file at a time.
 #' @param custom_folders Named vector with exactly three elements: `"compiled"`,
 #' `"output"`, and `"tmp"`. Each value is a relative path specifying where
 #' compiled files, temporary data, and output results should be stored.
@@ -838,6 +912,8 @@ distributedComputing <- function(
     purge_local = FALSE,
     compile = FALSE,
     link = FALSE,
+    buildCores = NULL,
+    buildBundle = 50,
     custom_folders = NULL,
     resetSeeds = TRUE,
     returnAll = TRUE,
@@ -875,7 +951,6 @@ distributedComputing <- function(
   # relative path to the working directory, will now allways be used
   
   wd_path <- paste0("./",jobname, "_folder/")
-  data_path <- paste0(getwd(),"/",jobname, "_folder/")
   
   # number of repetitions
   if(!is.null(no_rep) & is.null(var_values)) {
@@ -887,13 +962,8 @@ distributedComputing <- function(
   }
   
   # define the ssh command depending on 'sshpass' being used
-  if(is.null(ssh_passwd)){
-    ssh_command <- "ssh "
-    scp_command <- "scp "
-  } else {
-    ssh_command <- paste0("sshpass -p ", ssh_passwd, " ssh ")
-    scp_command <- paste0("sshpass -p ", ssh_passwd, " scp ")
-  }
+  ssh_command <- if (is.null(ssh_passwd)) "ssh "
+                 else paste0("sshpass -p ", ssh_passwd, " ssh ")
   
   # - output functions - #
   # Structure of the output 
@@ -901,25 +971,18 @@ distributedComputing <- function(
   
   # check function
   out[[1]] <- function() {
-    
-    result_length <- length(
-      suppressWarnings(
-        system(
-          paste0(ssh_command, machine, " 'ls ", jobname, "_folder/ | egrep *result.RData'"),
-          intern = TRUE)
-      )
-    )
-    
-    if (result_length == num_nodes +1) {
+
+    ready <- length(suppressWarnings(system(
+      paste0(ssh_command, machine, " 'ls ", jobname,
+             "_folder/ 2>/dev/null | grep -E \"result[.]RData$\"'"),
+      intern = TRUE)))
+
+    if (ready >= num_nodes + 1) {
       cat("Result is ready!\n")
       return(TRUE)
     }
-    else if (result_length  < num_nodes +1) {
-      cat("Result from", result_length, "out of", (num_nodes +1), "nodes are ready.")
-      return(FALSE)
-    }
-    setwd(original_wd)
-    
+    cat("Result from", ready, "out of", num_nodes + 1, "nodes are ready.\n")
+    FALSE
   }
   
   # get function
@@ -957,24 +1020,34 @@ distributedComputing <- function(
     
     
     # get list of all currently available output files
-    # setwd(paste0(jobname,"_folder/results"))
-    result_list <- structure(vector(mode = "list", length = num_nodes+1))
-    result_files <- list.files(path=paste0(output_folder_abs,"/",jobname,"_folder/results/"),pattern = glob2rx("*result.RData"))
-    # setwd("../../")
-    
-    # result_files <- Sys.glob(file.path(paste0(wd_path, "/results/*RData")))
-    
-    for (i in seq(1, length(result_files))) {
+    result_list <- vector("list", num_nodes + 1)
+    result_dir <- paste0(output_folder_abs, "/", jobname, "_folder/results/")
+    result_files <- list.files(path = result_dir, pattern = glob2rx("*result.RData"))
+
+    ## Nothing here is the normal state after an OOM kill or a walltime overrun.
+    if (!length(result_files))
+      cat("\n\tNo results retrieved. The jobs are still running or ended before",
+          "\n\twriting a result. Check the .err files in ", jobname,
+          "_folder/ on ", machine, ".\n", sep = "")
+    else if (length(result_files) != num_nodes + 1)
+      cat("\n\t", length(result_files), " of ", num_nodes + 1, " results ready\n",
+          sep = "")
+
+    ## Slot by SLURM array index: with partial results the file order differs.
+    node_ID <- suppressWarnings(as.integer(
+      sub(".*_([0-9]+)_result\\.RData$", "\\1", result_files)))
+    slot <- ifelse(is.na(node_ID) | node_ID < 0L | node_ID > num_nodes,
+                   seq_along(result_files), node_ID + 1L)
+
+    for (i in seq_along(result_files)) {
       cluster_result <- NULL
-      check <- try(load(file = paste0(output_folder_abs,"/",jobname,"_folder/results/",result_files[i])), silent = TRUE) 
-      if (!inherits("try-error", check)) result_list[[i]] <- cluster_result
+      check <- try(load(file = paste0(result_dir, result_files[i])), silent = TRUE)
+      if (inherits(check, "try-error"))
+        warning("Could not load '", result_files[i], "': ",
+                conditionMessage(attr(check, "condition")), call. = FALSE)
+      else
+        result_list[[slot[i]]] <- cluster_result
     }
-    
-    if (length(result_files) != num_nodes +1) {
-      cat("\n\tNot all results ready\n")
-    }
-    setwd(original_wd)
-    # results_cluster <- Sys.glob(paste0(wd_path, "*.RData")) %>% map_dfr(load)
     .GlobalEnv$cluster_result <- result_list
   }
   
@@ -994,7 +1067,6 @@ distributedComputing <- function(
         paste0("rm -rf ", output_folder_abs, "/", jobname,"_folder")
       )
     }
-    setwd(original_wd)
   }
   
   # if recover == T, stop here
@@ -1025,8 +1097,12 @@ distributedComputing <- function(
   # Export the workspace the job needs. The default covers hidden names too,
   # because resetSeeds acts on a transferred .Random.seed.
   input <- intersect(input, ls(.GlobalEnv, all.names = TRUE))
-  save(list = input, file = paste0(wd_path, jobname, "_workspace.RData"),
-       envir = .GlobalEnv, compress = FALSE)
+  ws_file <- .saveWorkspace(input, paste0(wd_path, jobname, "_workspace.RData"))
+  ## The job script loads the plain .RData. Not every zstd has --rm, and a failed
+  ## expansion must not reach the sbatch.
+  ws_unpack <- if (grepl("\\.zst$", ws_file))
+    paste0("{ zstd -dqf ", basename(ws_file), " && rm -f ", basename(ws_file),
+           "; } || exit 1; ") else ""
   
   
   # WRITE R
@@ -1222,8 +1298,9 @@ distributedComputing <- function(
       needsKLU    = buildinfo$needsKLU,
       link        = FALSE,
       cxx         = any(grepl("\\.cpp$", sourcefiles)),
-      cores       = cores,
-      filelist    = filelist_file
+      cores       = buildCores,
+      filelist    = filelist_file,
+      bundle      = buildBundle
     ), file = paste0(wd_path, build_script_file))
 
     compile_remote <- paste0(module_cmd, "bash ", build_script_file, " && ")
@@ -1254,8 +1331,9 @@ distributedComputing <- function(
       needsKLU    = buildinfo$needsKLU,
       link        = TRUE,
       cxx         = length(Sys.glob("*.cpp")) > 0,
-      cores       = cores,
-      filelist    = filelist_file
+      cores       = buildCores,
+      filelist    = filelist_file,
+      bundle      = buildBundle
     ), file = paste0(wd_path, build_script_file))
 
     compile_remote <- paste0(module_cmd, "bash ", build_script_file, " && ")
@@ -1278,6 +1356,7 @@ distributedComputing <- function(
       " mkdir -p ", jobname,"_folder; ", # create new wd on remote
       tar_remote, # uncompress files in wd on remote, if necessary move files
       "cd ", jobname, "_folder; ", # change in said wd
+      ws_unpack, # expand the workspace if it was shipped compressed
       compile_remote, # compile files if said so, if not nothing happen
       "sbatch ", jobname, ".sh'" # start bash script
     )

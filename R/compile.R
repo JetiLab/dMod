@@ -100,6 +100,14 @@
   hdr
 }
 
+## cppDE caches the addresses of a model's compiled entry points, so loading a
+## shared object invalidates them. Guarded, to stay loadable against a cppDE
+## that predates the cache.
+.clearSymbols <- function() {
+  f <- get0("clearNativeSymbols", envir = asNamespace("cppDE"), inherits = FALSE)
+  if (is.function(f)) f()
+}
+
 ## How many more shared objects R can dyn.load() (R_MAX_NUM_DLLS, 614 default).
 .compileDLLBudget <- function() {
   lim <- suppressWarnings(as.integer(Sys.getenv("R_MAX_NUM_DLLS", "614")))
@@ -373,6 +381,7 @@ compile <- function(..., output = NULL, args = NULL, cores = detectFreeCores(),
       parallel::mclapply(info, compile_one, mc.cores = cores)
     else for (e in info) compile_one(e)
     for (r in roots_full) dyn.load(paste0(r, so))
+    .clearSymbols()
   } else {
     ## Combined output: per-file compile to .o (parallel on Unix when cores>1,
     ## serial otherwise -- including on Windows), then a single R CMD SHLIB
@@ -543,6 +552,7 @@ compile <- function(..., output = NULL, args = NULL, cores = detectFreeCores(),
       stop("R CMD SHLIB returned exit 0 but did not produce ", out, ":\n",
            paste(out_lines, collapse = "\n"))
     dyn.load(out)
+    .clearSymbols()
     ## Only arguments passed as a plain variable can have their modelname
     ## updated in the caller; an expression has nothing to assign back to.
     for (i in which(is_dmod))
@@ -593,6 +603,7 @@ loadDLL <- function(...) {
     try(dyn.unload(f), silent = TRUE)
     dyn.load(f)
   }
+  .clearSymbols()
   message("The following local files were dynamically loaded: ", paste(files, collapse = ", "))
 }
 
