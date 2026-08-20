@@ -37,8 +37,10 @@ ggopen <- function(plot = last_plot(), command = "xdg-open", ...) {
 #' 
 #' @param base_size numeric, font-size
 #' @param base_family character, font-name
+#' @param showGrid logical, keep the panel grid. `FALSE` (the default) drops it;
+#'   `TRUE` leaves [ggplot2::theme_bw()]'s grid in place.
 #' @export
-theme_dMod <- function(base_size = 12, base_family = "") {
+theme_dMod <- function(base_size = 12, base_family = "", showGrid = FALSE) {
   colors <- list(
     medium = c(gray = '#737373', red = '#F15A60', green = '#7AC36A', blue = '#5A9BD4', orange = '#FAA75B', purple = '#9E67AB', maroon = '#CE7058', magenta = '#D77FB4'),
     dark = c(black = '#010202', red = '#EE2E2F', green = '#008C48', blue = '#185AA9', orange = '#F47D23', purple = '#662C91', maroon = '#A21D21', magenta = '#B43894'),
@@ -58,30 +60,176 @@ theme_dMod <- function(base_size = 12, base_family = "") {
           axis.ticks.length = unit(-2, "mm"),
           legend.key = element_rect(colour = NA),
           panel.border = element_rect(colour = "black"),
-          # panel.grid = element_blank(),
           strip.background = element_rect(fill = "white", colour = NA),
-          strip.text = element_text(size = rel(1.0)))
-  
+          strip.text = element_text(size = rel(1.0))) +
+    (if (showGrid) NULL else theme(panel.grid = element_blank()))
+
 }
 
+# ---- palettes --------------------------------------------------------------
+#
+# Every palette below carries a measured number: the smallest pairwise CIE2000
+# distance within it, taken as the WORST case over normal, deuteranopic,
+# protanopic and tritanopic vision (for ramps, between positions at least a
+# quarter of the domain apart). A palette counts as colorblind-safe at 10 or
+# above -- below roughly 3 two colors are indistinguishable side by side, and a
+# thin line needs more headroom than a filled patch.
+#
+# The numbers are baked in rather than computed at load time so that the
+# simulation packages stay out of the dependency list. Re-derive them with
+# colorspace::deutan/protan/tritan and farver::compare_colour(method = "cie2000").
+
+#' Seed colors of the dMod palette
+#'
+#' The ten qualitative house colors. Not colorblind-safe -- its brown and red
+#' collapse under protanopia -- see [dMod_palettes()] for the alternatives.
+#'
+#' @export
 dMod_colors <- c("#000000", "#C5000B", "#0084D1", "#579D1C", "#FF950E",
                  "#4B1F6F", "#CC79A7", "#006400", "#F0E442", "#8B4513")
 
-#' Generate `n` distinct colors from the dMod palette
+#' Colorblind-safe seed colors
 #'
-#' Returns the first `n` seed colors directly. For `n` larger than the seed
-#' set, `Polychrome::createPalette()` extends the palette deterministically;
-#' if Polychrome is not installed, the overflow falls back to gray.
+#' The Okabe-Ito palette, extended to twenty. The first eight are Okabe-Ito
+#' itself; the rest were chosen greedily to maximise the worst-case pairwise
+#' distance under simulated dichromacy, subject to every color also keeping a
+#' distance of 25 to the white background. The worst case stays at Okabe-Ito's
+#' own 11.1 for all n up to twenty, so the twelve extra colors cost nothing.
+#'
+#' @export
+dMod_colors_cb <- c(
+  "#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7", "#4F3408", "#072F62",
+  "#645B68", "#4E644A", "#A6D38F", "#2600DA", "#3F3644",
+  "#02ECC9", "#7B75FD", "#954A0E", "#323C2D", "#6D7F80")
+
+# Qualitative palettes. Five colorblind-safe, five not; `dMod_palette()` and
+# `scale_color_dMod()` pick from here by name.
+.dMod_qual <- list(
+  okabe    = list(dE = 11.1, colors = dMod_colors_cb),
+  muted    = list(dE = 11.6, colors = c(
+    "#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677",
+    "#882255", "#AA4499", "#2D330A", "#9B7BFB", "#FC8FB1", "#1E352C", "#A884B7")),
+  medium   = list(dE = 12.1, colors = c(
+    "#6699CC", "#004488", "#EECC66", "#994455", "#997700", "#EE99AA", "#2D330A",
+    "#541C39", "#5EE3F9", "#807987", "#6761DF", "#A79C65")),
+  dark     = list(dE = 11.9, colors = c(
+    "#000000", "#004488", "#994455", "#997700", "#8770FD", "#3F2D11", "#8B8491",
+    "#2B303D", "#616689", "#525901", "#758E65", "#6D38DB")),
+  contrast = list(dE = 21.4, colors = c("#004488", "#DDAA33", "#BB5566")),
+  dMod     = list(dE =  2.1, colors = dMod_colors),
+  dark2    = list(dE =  2.3, colors = c(
+    "#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D",
+    "#666666")),
+  set1     = list(dE =  3.2, colors = c(
+    "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33", "#A65628",
+    "#F781BF", "#999999")),
+  set2     = list(dE =  1.6, colors = c(
+    "#66C2A5", "#FC8D62", "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+    "#B3B3B3")),
+  paired   = list(dE =  1.3, colors = c(
+    "#A6CEE3", "#1F78B4", "#B2DF8A", "#33A02C", "#FB9A99", "#E31A1C", "#FDBF6F",
+    "#FF7F00", "#CAB2D6", "#6A3D9A", "#FFFF99", "#B15928")))
+
+#' Continuous dMod colour ramps
+#'
+#' `dMod_gradient` is the sequential house ramp, `dMod_divergent` the diverging
+#' one; `dMod_gradient_cb` and `dMod_divergent_cb` are their colorblind-safe
+#' counterparts and the defaults of [scale_color_dMod_c()] and
+#' [scale_color_dMod_div()]. See [dMod_palettes()] for the full set.
+#'
+#' @export
+dMod_gradient <- c("#4B1F6F", "#0084D1", "#579D1C", "#FF950E", "#F0E442")
+
+#' @export
+#' @rdname dMod_gradient
+dMod_gradient_cb <- c("#000000", "#4B1F6F", "#0072B2", "#009E73",
+                      "#E69F00", "#F0E442")
+
+#' @export
+#' @rdname dMod_gradient
+dMod_divergent <- c("#0084D1", "#FFFFFF", "#C5000B")
+
+#' @export
+#' @rdname dMod_gradient
+dMod_divergent_cb <- c("#072F62", "#56B4E9", "#FFFFFF", "#E69F00", "#4F3408")
+
+.dMod_seq <- list(
+  okabe   = list(dE = 12.0, colors = dMod_gradient_cb),
+  viridis = list(dE = 13.8, colors = c("#440154","#3B528B","#21908C","#5DC863","#FDE725")),
+  grey    = list(dE = 13.2, colors = c("#111111", "#DDDDDD")),
+  heat    = list(dE = 10.7, colors = c("#FFFFFF", "#FF950E", "#C5000B")),
+  dMod    = list(dE =  5.4, colors = dMod_gradient))
+
+.dMod_div <- list(
+  okabe = list(dE = 25.6, colors = dMod_divergent_cb),
+  puor  = list(dE = 15.7, colors = c("#5E3C99","#B2ABD2","#F7F7F7","#FDB863","#E66101")),
+  rdbu  = list(dE = 15.2, colors = c("#CA0020","#F4A582","#F7F7F7","#92C5DE","#0571B0")),
+  dMod  = list(dE = 12.5, colors = dMod_divergent),
+  brbg  = list(dE =  7.9, colors = c("#A6611A","#DFC27D","#F5F5F5","#80CDC1","#018571")))
+
+.dMod_registry <- list(qualitative = .dMod_qual, sequential = .dMod_seq,
+                       diverging = .dMod_div)
+
+.dMod_pick <- function(palette, type) {
+  reg <- .dMod_registry[[type]]
+  if (!is.character(palette) || length(palette) != 1L || !palette %in% names(reg))
+    stop("dMod: no ", type, " palette \"", paste(palette, collapse = ", "),
+         "\". Available: ", paste(names(reg), collapse = ", "),
+         ". See dMod_palettes().", call. = FALSE)
+  reg[[palette]]
+}
+
+#' Overview of the dMod palettes
+#'
+#' One row per palette, with the measured worst-case CIE2000 distance under
+#' simulated dichromacy and the resulting colorblind verdict. Pass any of the
+#' names as `palette =` to [dMod_palette()], [scale_color_dMod()],
+#' [scale_color_dMod_c()] or [scale_color_dMod_div()].
+#'
+#' @param type restrict to `"qualitative"`, `"sequential"` or `"diverging"`.
+#' @return A data frame with columns `name`, `type`, `n`, `colorblind`, `dE`.
+#' @export
+#' @examples
+#' dMod_palettes()
+#' dMod_palettes("qualitative")
+dMod_palettes <- function(type = NULL) {
+  types <- if (is.null(type)) names(.dMod_registry) else match.arg(
+    type, names(.dMod_registry), several.ok = TRUE)
+  out <- do.call(rbind, lapply(types, function(ty) {
+    reg <- .dMod_registry[[ty]]
+    data.frame(name = names(reg), type = ty,
+               n = vapply(reg, function(p) length(p$colors), integer(1)),
+               colorblind = vapply(reg, function(p) p$dE >= 10, logical(1)),
+               dE = vapply(reg, function(p) p$dE, numeric(1)),
+               row.names = NULL, stringsAsFactors = FALSE)
+  }))
+  out[order(out$type, !out$colorblind, -out$dE), ]
+}
+
+#' Generate `n` distinct colors from a dMod palette
+#'
+#' Returns the first `n` colors of the chosen palette. For `n` beyond it,
+#' `Polychrome::createPalette()` extends the seeds deterministically; if
+#' Polychrome is not installed the overflow comes from [grDevices::hcl.colors()]
+#' instead. Neither extension inherits the palette's colorblind property, which
+#' is why a colorblind-safe choice warns once it runs out of seeds.
 #'
 #' @param n integer, number of colors to produce.
+#' @param palette name of a qualitative palette, see [dMod_palettes()].
 #' @return Character vector of length `n` with hex color codes.
 #' @export
-dMod_palette <- function(n) {
+dMod_palette <- function(n, palette = "okabe") {
   n <- as.integer(n)
   if (n <= 0L) return(character(0))
-  if (n <= length(dMod_colors)) {
-    return(unname(dMod_colors[seq_len(n)]))
-  }
+  pal <- .dMod_pick(palette, "qualitative")
+  seeds <- pal$colors
+  if (n <= length(seeds)) return(unname(seeds[seq_len(n)]))
+  if (pal$dE >= 10)
+    warning("dMod_palette(): palette \"", palette, "\" holds ", length(seeds),
+            " colorblind-safe colors, ", n, " were requested. The extra ",
+            n - length(seeds), " are not -- encode them with linetype, shape ",
+            "or facets instead.", call. = FALSE)
   if (requireNamespace("Polychrome", quietly = TRUE)) {
     old_seed <- if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE))
       get(".Random.seed", envir = .GlobalEnv, inherits = FALSE) else NULL
@@ -96,14 +244,19 @@ dMod_palette <- function(n) {
     set.seed(123L)
     # createPalette() shifts the seeds slightly to maximize distinctness across
     # the whole set; keep the original seeds verbatim and only borrow the tail.
-    extended <- unname(Polychrome::createPalette(n, seedcolors = dMod_colors))
-    return(c(dMod_colors, extended[(length(dMod_colors) + 1L):n]))
+    # `range` caps the luminance: unconstrained, the tail wanders up to ~224 and
+    # those colors are invisible as lines on a white panel.
+    extended <- unname(Polychrome::createPalette(n, seedcolors = seeds,
+                                                 range = c(25, 70)))
+    return(c(seeds, extended[(length(seeds) + 1L):n]))
   }
-  c(dMod_colors, rep("gray", n - length(dMod_colors)))
+  c(seeds, grDevices::hcl.colors(n - length(seeds), "Dark 3"))
 }
 
-#' Standard dMod color palette
+#' Discrete dMod colour scales
 #'
+#' @param palette name of a qualitative palette, see [dMod_palettes()]. The
+#'   default is colorblind-safe.
 #' @param ... arguments forwarded to [ggplot2::discrete_scale()].
 #' @export
 #' @examples
@@ -115,21 +268,77 @@ dMod_palette <- function(n) {
 #'    value = c(values, 1.2*values, 1.4*values, 1.6*values),
 #'    group = rep(c("C1", "C2", "C3", "C4"), each = length(times))
 #' )
-#' qplot(time, value, data = data, color = group, geom = "line") +
+#' ggplot(data, aes(time, value, colour = group)) + geom_line() +
 #'    theme_dMod() + scale_color_dMod()
-#' @export
-scale_color_dMod <- function(...) {
-  ggplot2::discrete_scale(aesthetics = "colour", palette = dMod_palette, ...)
+scale_color_dMod <- function(..., palette = "okabe") {
+  ggplot2::discrete_scale(aesthetics = "colour",
+                          palette = function(n) dMod_palette(n, palette), ...)
 }
 
+#' @export
+#' @rdname scale_color_dMod
+scale_fill_dMod <- function(..., palette = "okabe") {
+  ggplot2::discrete_scale(aesthetics = "fill",
+                          palette = function(n) dMod_palette(n, palette), ...)
+}
 
-#' Standard dMod fill scheme
+.dMod_ramp <- function(cols, direction) if (direction < 0) rev(cols) else cols
+
+.dMod_mid_rescaler <- function(mid) {
+  function(x, to = c(0, 1), from = range(x, na.rm = TRUE))
+    scales::rescale_mid(x, to, from, mid)
+}
+
+#' Continuous dMod colour scales
 #'
+#' Sequential (`_c`) and diverging (`_div`) counterparts of the discrete
+#' [scale_color_dMod()]. The diverging scales pin white to `mid` even for
+#' asymmetric limits, so a signed quantity keeps its zero at the neutral colour.
+#'
+#' The suffix is `_div`, not `_d`: ggplot2 spells *discrete* `_d` (as in
+#' [ggplot2::scale_colour_viridis_d()]), and here the discrete scale is the
+#' unsuffixed [scale_color_dMod()].
+#'
+#' @param mid numeric, the value white is pinned to.
+#' @param direction 1 or -1; -1 reverses the ramp.
+#' @param palette name of a sequential palette for `_c`, a diverging one for
+#'   `_div`, see [dMod_palettes()]. Both defaults are colorblind-safe.
+#' @param ... arguments forwarded to [ggplot2::scale_colour_gradientn()] or
+#'   [ggplot2::scale_fill_gradientn()].
 #' @export
-#' @param ... arguments forwarded to [ggplot2::discrete_scale()].
-scale_fill_dMod <- function(...) {
-  ggplot2::discrete_scale(aesthetics = "fill", palette = dMod_palette, ...)
+#' @examples
+#' library(ggplot2)
+#' d <- expand.grid(time = seq(0, 10, 0.1), eps = seq(0, 1, 0.1))
+#' ggplot(d, aes(time, exp(-eps * time), group = eps, colour = eps)) +
+#'    geom_line() + theme_dMod() + scale_color_dMod_c()
+scale_color_dMod_c <- function(..., direction = 1, palette = "okabe") {
+  ggplot2::scale_colour_gradientn(
+    colours = .dMod_ramp(.dMod_pick(palette, "sequential")$colors, direction), ...)
 }
+
+#' @export
+#' @rdname scale_color_dMod_c
+scale_fill_dMod_c <- function(..., direction = 1, palette = "okabe") {
+  ggplot2::scale_fill_gradientn(
+    colours = .dMod_ramp(.dMod_pick(palette, "sequential")$colors, direction), ...)
+}
+
+#' @export
+#' @rdname scale_color_dMod_c
+scale_color_dMod_div <- function(mid = 0, ..., direction = 1, palette = "okabe") {
+  ggplot2::scale_colour_gradientn(
+    colours = .dMod_ramp(.dMod_pick(palette, "diverging")$colors, direction),
+    rescaler = .dMod_mid_rescaler(mid), ...)
+}
+
+#' @export
+#' @rdname scale_color_dMod_c
+scale_fill_dMod_div <- function(mid = 0, ..., direction = 1, palette = "okabe") {
+  ggplot2::scale_fill_gradientn(
+    colours = .dMod_ramp(.dMod_pick(palette, "diverging")$colors, direction),
+    rescaler = .dMod_mid_rescaler(mid), ...)
+}
+
 
 ggplot <- function(...) ggplot2::ggplot(...) + scale_color_dMod() + theme_dMod()
 

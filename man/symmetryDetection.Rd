@@ -43,7 +43,9 @@ conditions.}
 condition, or -- for \code{"observability"} -- a \emph{list} of \link{eqnvec}s, one per condition.
 A parameter-named entry is substituted into \code{f} and \code{g}; a state-named entry is
 that state's initial condition. A steady state from \link{steadyStates} can be passed
-whole.}
+whole: a state name on the RIGHT of an entry is read as that state's initial value
+(the dMod convention), never as the running state, so substituting the entry cannot
+cancel \code{f} against the steady state it solves.}
 
 \item{method}{One of \code{"observability"} (default), \code{"polynomial"} or \code{"scaling"}; see
 Description.}
@@ -67,7 +69,10 @@ is read from that grid.}
 \item{conditions}{Optional data frame of experimental conditions: one row per
 condition, columns named by model symbols or by event-value placeholders. A numeric
 cell bakes that symbol to a constant in the condition, a character cell renames it.
-A direction is reported only if it is non-identifiable in \emph{every} condition.}
+A column named after a dynamic state sets that state's initial value in the
+condition (it does not freeze the state); one named after a constant state sets the
+regime in force. A direction is reported only if it is non-identifiable in \emph{every}
+condition.}
 
 \item{equilibrate}{Logical, \code{"observability"} only. Start the states at a steady state
 of \code{f} (forcings held at 0) instead of at free initial values; the earliest events
@@ -136,12 +141,15 @@ is no proof of identifiability.}
 \item{\code{rank}, \code{dim}}{observability-matrix rank and coordinate-space dimension;
 both \code{NA} for the scaling/polynomial engines.}
 \item{\code{symmetries}}{the found directions (empty when identifiable), each a
-generator \verb{sum_i xi_i d/dz_i}. Fields: \code{generator} (the components \code{xi_i},
-keyed by coordinate), \code{weights} (a scaling's integer weights, else \code{NULL}),
-\code{type} (\code{"scaling"}, \code{"translation"}, \code{"affine"}, \code{"polynomial"} or
-\code{"general"}), \code{degree}, \code{support} (the coordinates involved -- the only field
-set when no closed form was reached), \code{explicit}, \code{reason}, \code{certified},
-\code{transformation} (the finite map, polynomial engine), \code{verified} and
+generator \verb{X = sum_i eta_i d/dz_i}. Fields: \code{generator} (the components
+\code{eta_i}, keyed by coordinate), \code{weights} (a scaling's integer weights, else
+\code{NULL}), \code{type} -- \code{"scaling"} or \code{"general"}, the two classes being the two
+ways to remove a direction: gauge a scaling by fixing one of its coordinates
+at any value, reparametrise a general direction onto its invariants with
+\link{symmetryReduction} --, \code{degree} (total degree of the canonical generator,
+\code{-1} when it is not polynomial), \code{support} (the coordinates involved -- the
+only field set when no closed form was reached), \code{explicit}, \code{reason},
+\code{certified}, \code{transformation} (the finite map, polynomial engine), \code{verified} and
 \code{display} (the same components factored for printing; \code{generator} stays in
 the canonical expanded form).}
 \item{\code{info}}{\code{engine}, \code{lieOrderUsed}, \code{gapOrderUsed}, \code{conditions}, \code{segments},
@@ -150,7 +158,7 @@ the canonical expanded form).}
 \item{\code{call}}{the matched call.}
 }
 \code{print()} shows the verdict, the generators as a component table (one coordinate
-per line) and what can be fixed; \code{summary()} adds the computation block, and
+per line) and how to remove them; \code{summary()} adds the computation block, and
 \code{summary(x, verbose = TRUE)} the settings and guard detail. Both take \verb{fixed =}
 to test a candidate set of fixings against the result without recomputing it: a
 set removes all scaling directions exactly when it selects independent columns of
@@ -174,7 +182,7 @@ returning the generator and the finite transformation. Cost grows with
 \code{equilibrate} (a scaling leaves \code{f = 0} invariant).
 }
 
-How the engines work is described in \code{vignette("symmetryDetection")}.
+How the engines work is described in \code{vignette("Symmetries")}.
 }
 \details{
 Two behaviours are worth knowing before reading a result. Events after the
@@ -182,7 +190,7 @@ earliest one split the timeline into segments, so a parameter that enters only
 through a transient between events is identified -- but the expansion starts at the
 \emph{earliest} event time, so an event placed there is the one whose transient is seen.
 And a dose on a species that \code{reduceCQ = TRUE} eliminates is not seen; keep such a
-model at \code{reduceCQ = FALSE}. See \code{vignette("symmetryDetection")}.
+model at \code{reduceCQ = FALSE}. See \code{vignette("Symmetries")}.
 }
 \note{
 The interface, defaults and output structure may still change between releases.

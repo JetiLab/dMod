@@ -83,7 +83,8 @@ succeeds under the direction's perturbations is dropped; the rational
 reconstruction then runs over the remaining primes (their product still bounds
 the coefficient height). Below this many live primes the entry is support-only.}
 
-\item{certifyPoly}{Logical. For each \code{"affine"}/\code{"polynomial"} direction, run the
+\item{certifyPoly}{Logical. For each direction whose canonical generator is polynomial
+of degree \verb{1..degreeCap}, run the
 polynomial Lie-symmetry engine (\code{method = "polynomial"}) and set \verb{$certified}
 to whether the direction is a nonzero constant combination of its generators --
 i.e. an exact polynomial Lie point symmetry, not merely an observability

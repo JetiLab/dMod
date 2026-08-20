@@ -2,18 +2,22 @@
 % Please edit documentation in R/plots.R
 \name{dMod_palette}
 \alias{dMod_palette}
-\title{Generate \code{n} distinct colors from the dMod palette}
+\title{Generate \code{n} distinct colors from a dMod palette}
 \usage{
-dMod_palette(n)
+dMod_palette(n, palette = "okabe")
 }
 \arguments{
 \item{n}{integer, number of colors to produce.}
+
+\item{palette}{name of a qualitative palette, see \code{\link[=dMod_palettes]{dMod_palettes()}}.}
 }
 \value{
 Character vector of length \code{n} with hex color codes.
 }
 \description{
-Returns the first \code{n} seed colors directly. For \code{n} larger than the seed
-set, \code{Polychrome::createPalette()} extends the palette deterministically;
-if Polychrome is not installed, the overflow falls back to gray.
+Returns the first \code{n} colors of the chosen palette. For \code{n} beyond it,
+\code{Polychrome::createPalette()} extends the seeds deterministically; if
+Polychrome is not installed the overflow comes from \code{\link[grDevices:hcl.colors]{grDevices::hcl.colors()}}
+instead. Neither extension inherits the palette's colorblind property, which
+is why a colorblind-safe choice warns once it runs out of seeds.
 }

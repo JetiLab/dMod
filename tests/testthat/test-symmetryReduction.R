@@ -1,10 +1,10 @@
-# Behavioral tests for reduceSymmetry() (constructive symmetry reduction).
+# Behavioral tests for symmetryReduction() (constructive symmetry reduction).
 #
 # Assertions are mathematical, never string comparison: invariants are checked by
 # X(I) = 0 (exact via .symExprEqual / numeric tangents), reparametrisations by
 # re-running symmetryDetection with the emitted trafo and reading the rank.
 
-redquiet <- function(...) suppressWarnings(reduceSymmetry(...))
+redquiet <- function(...) suppressWarnings(symmetryReduction(...))
 symdet2 <- function(...) symmetryDetection(..., verbose = FALSE)
 
 # a synthetic symmetrydetection result carrying explicit generators
@@ -80,7 +80,7 @@ test_that("fixed: rank verdict, redundancy, unknown names", {
   W <- list(x = "1", y = "-1", z = "-1")
   obj <- .mkobj(list(.mkdir(list(x = "x", y = "-y", z = "-z"), "scaling", W)),
                 c("x", "y", "z"))
-  expect_warning(reduceSymmetry(obj, fixed = "nothere"), "no effect")
+  expect_warning(symmetryReduction(obj, fixed = "nothere"), "no effect")
   red <- redquiet(obj, fixed = c("x", "y"))
   b <- red$blocks[[1]]
   expect_identical(b$status, "fixed")
@@ -114,14 +114,25 @@ test_that("overlapping scaling and curved directions merge into one block", {
   f <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")
   g <- eqnvec(y = "alpha*A")
   res <- symdet2(f, g, method = "observability", reconstruct = TRUE)
-  red <- redquiet(res)
-  # the scaling (A, B, alpha) shares B with the affine direction: one joint block
-  expect_length(red$blocks, 1L)
-  b <- red$blocks[[1]]
-  expect_identical(b$type, "curved")
-  expect_identical(b$status, "reduced")
-  expect_length(b$invariants, 3L)             # dim 5 - rank 2
-  res2 <- symdet2(f, g, method = "observability", trafo = red$trafo)
+
+  # the scaling (A, B, alpha) shares B with the general direction, so the two are
+  # gauged together instead of through the weight lattice. The grouping is asserted
+  # with the search caps switched off; solving the joint invariant set over all five
+  # coordinates is the slow free path (see the opt-in test below).
+  merged <- redquiet(res, dPoly = 0L, dDarboux = 0L, dExp = 0L)
+  expect_length(merged$blocks, 1L)
+  expect_identical(merged$blocks[[1]]$type, "curved")
+  expect_length(merged$blocks[[1]]$labels, 2L)   # both directions, one block
+
+  # pre-gauging the readout leaves one curved direction, which reduces end-to-end
+  red <- redquiet(res, fixed = "alpha")
+  expect_setequal(vapply(red$blocks, `[[`, character(1), "status"),
+                  c("fixed", "reduced"))
+  cb <- red$blocks[[which(vapply(red$blocks, `[[`, character(1),
+                                 "status") == "reduced")]]
+  expect_length(cb$invariants, 2L)            # k1 + k2 and k2*(A + B)
+  res2 <- symdet2(f, g, method = "observability", fixed = "alpha",
+                  trafo = red$trafo)
   expect_true(res2$identifiable)
 })
 
@@ -129,18 +140,24 @@ test_that("overlapping scaling and curved directions merge into one block", {
 test_that("rational invariant via Darboux; degree cap gives a certificate", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
   obj <- .mkobj(list(.mkdir(list(x = "x**2", y = "y**2"))), c("x", "y"))
+  # separable = FALSE and dPoly = 0 throughout: this generator IS separable, and
+  # its invariant (x - y)/(x*y) sits in the rational stage's Laurent ansatz, so
+  # both earlier stages would take the block before the factor stages ever run
+  # (covered elsewhere) -- here the point is what the factor stages do on their own
   # cap 0 (and exp stage off): coordinate factors only, honest negative
   # certificate -- with dExp > 0 this block now RESOLVES through exp(1/x - 1/y)
-  red0 <- redquiet(obj, dDarboux = 0L, dExp = 0L)
+  red0 <- redquiet(obj, dPoly = 0L, dDarboux = 0L, dExp = 0L, separable = FALSE)
   b0 <- red0$blocks[[1]]
   expect_identical(b0$status, "unresolved")
   expect_true(any(grepl("coordinate and xi factors only", b0$certificates)))
-  # the exp stage picks the block up where the rational stages certified failure
-  redE <- redquiet(obj, dDarboux = 0L)
+  # the exp stage picks the block up where the rational stages certified
+  # failure; the sign-indefinite argument stays exp-wrapped
+  redE <- redquiet(obj, dPoly = 0L, dDarboux = 0L, separable = FALSE)
   expect_identical(redE$blocks[[1]]$stage, "exp")
   expect_gt(length(redE$blocks[[1]]$invariants), 0L)
+  expect_true(any(grepl("exp(", redE$blocks[[1]]$invariants, fixed = TRUE)))
   # cap 1: the extactic factors x, y, x - y give (x - y)/(x*y)
-  red1 <- redquiet(obj, dDarboux = 1L)
+  red1 <- redquiet(obj, dPoly = 0L, dDarboux = 1L, separable = FALSE)
   b1 <- red1$blocks[[1]]
   expect_identical(b1$stage, "darboux")
   expect_length(b1$invariants, 1L)
@@ -195,7 +212,7 @@ test_that("support-only directions and stripped coordinates degrade gracefully",
   expect_match(b$reason, "reconstruct = TRUE")
   # no coordinate list: support-union fallback with a warning
   obj$info$coordinates <- NULL
-  expect_warning(red2 <- reduceSymmetry(obj), "no coordinate list")
+  expect_warning(red2 <- symmetryReduction(obj), "no coordinate list")
   expect_setequal(names(red2$trafo), c("p", "q"))
 })
 
@@ -205,7 +222,7 @@ test_that("trafo entries parse and carry integer powers only", {
   f <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")
   g <- eqnvec(y = "alpha*A")
   res <- symdet2(f, g, method = "observability", reconstruct = TRUE)
-  red <- redquiet(res)
+  red <- redquiet(res, fixed = "alpha")
   expect_true(inherits(red$trafo, "eqnvec"))
   expect_setequal(names(red$trafo), red$coordinates)
   for (v in red$trafo) {
@@ -226,21 +243,41 @@ test_that("identifiable results return an empty reduction", {
 })
 
 
-test_that("print shows blocks, trafo and family", {
+test_that("print stays lean; summary carries the block report", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
   f <- eqnvec(m = "ktx - dm*m", p = "ktl*m - dp*p")
   res <- symdet2(f, eqnvec(y = "p"), method = "observability", reconstruct = TRUE)
   red <- redquiet(res)
   out <- capture.output(print(red))
-  expect_true(any(grepl("Scaling block", out)))
-  expect_true(any(grepl("transversal:", out)))
-  expect_true(any(grepl("admissible transversal", out)))
+  expect_true(any(grepl("^Reduced 1 of 1 direction", out)))
   expect_true(any(grepl("Trafo", out)))
+  expect_true(any(grepl("ktx *= ktx\\*ktl", out)))          # aligned meaning line
+  # nothing of the report leaks into print()
+  expect_false(any(grepl("Scaling block|transversal:|admissible|\\[", out)))
+  expect_lt(length(out), 12L)
+
+  # summary() adds one line per block; the invariants of a REDUCED block are the
+  # Invariants list above, so they are not repeated, and no certificate is printed
+  rep <- capture.output(summary(red))
+  expect_true(any(grepl("^Blocks$", rep)))
+  expect_true(any(grepl("\\{X.\\} scaling, reduced \\| transversal ktl = 1", rep)))
+  expect_true(any(grepl("admissible", rep)))
+  expect_true(any(grepl("ktx *= ktx\\*ktl", rep)))
+  expect_false(any(grepl("invariants  |certificate|certified", rep)))
+  expect_lt(length(rep), 20L)
+  # verbose adds the admissible sets and the raw invariants -- still no certificates
+  vrb <- capture.output(summary(red, verbose = TRUE))
+  expect_true(any(grepl("admissible  \\{", vrb)))
+  expect_true(any(grepl("invariants  ", vrb)))
+  expect_false(any(grepl("\\[transversal certified|\\[verified", vrb)))
+  expect_gt(length(vrb), length(rep))
 })
 
 
 test_that("EGF/MEK/ERK cascade: all four directions reduced end-to-end", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
+  # The receptor scaling merges with the rational confounder into one curved block
+  # that is gauged FREELY, with no pre-fixing: the widest path the solver takes.
   reactions <- eqnlist() |>
     addReaction("EGF + EGFR", "EGF_EGFR", "k_bind * EGF * EGFR")   |>
     addReaction("EGF_EGFR", "EGF + EGFR", "k_unbind * EGF_EGFR")   |>
@@ -253,7 +290,6 @@ test_that("EGF/MEK/ERK cascade: all four directions reduced end-to-end", {
   egf <- symdet2(reactions, observables, method = "observability",
                  reduceCQ = FALSE, reconstruct = TRUE)
   red <- redquiet(egf)
-  expect_length(red$remaining, 0L)
   # two clean unit scalings plus the receptor scaling merged with the rational
   # confounder into one curved block
   types <- vapply(red$blocks, `[[`, character(1), "type")
@@ -265,9 +301,164 @@ test_that("EGF/MEK/ERK cascade: all four directions reduced end-to-end", {
   expect_true(any(vapply(cb$invariants, function(iv) .symExprEqual(
     gsub("\\^", "**", iv),
     "(EGF + EGF_EGFR)*(EGFR + EGF_EGFR)/EGF_EGFR**2"), logical(1))))
-  egf2 <- symdet2(reactions, observables, method = "observability",
-                  reduceCQ = FALSE, trafo = red$trafo)
-  expect_true(egf2$identifiable)
+
+  # the invariants obey sharp mutual bounds: a positive chart requires offsets
+  expect_identical(cb$status, "reduced")
+  expect_length(red$remaining, 0L)
+  expect_true(any(grepl("carrier offset", cb$certificates)))
+
+  # the chart stays positive for every positive outer value, extremes included
+  vals <- c(0.7, 2.3, 1.9, 0.31, 1.7, 0.45, 1.1, 0.9)
+  outer <- unique(c(red$coordinates, unlist(lapply(red$trafo, function(e)
+    all.vars(parse(text = e))))))
+  uAt <- function(scale) setNames(as.list(
+    scale * rep_len(vals, length(outer))), outer)
+  chart <- function(u) vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), u), numeric(1))
+  for (scale in c(1e-3, 1, 1e3)) {
+    z <- chart(uAt(scale))
+    expect_true(all(is.finite(z)) && all(z > 0))
+  }
+
+  # survivorMeaning at the chart point returns the outer value
+  u <- uAt(1)
+  z <- as.list(chart(u))
+  for (nm in names(cb$survivorMeaning))
+    expect_equal(eval(parse(text = cb$survivorMeaning[[nm]]), z), u[[nm]],
+                 tolerance = 1e-8)
+
+  # coverage: the carried quantities are positive at arbitrary inner points
+  for (z0 in list(list(EGF = 1.3, EGFR = 0.2, EGF_EGFR = 2.5, k_bind = 0.8,
+                       k_phos_MEK = 0.3, k_unbind = 1.9),
+                  list(EGF = 1e-4, EGFR = 1e-4, EGF_EGFR = 50, k_bind = 3,
+                       k_phos_MEK = 2, k_unbind = 1e-3)))
+    for (nm in names(cb$survivorMeaning))
+      expect_gt(eval(parse(text = cb$survivorMeaning[[nm]]), z0), 0)
+})
+
+
+test_that("EGF cascade with fixed EGF: exp-stage argument unwraps to a rational
+           invariant and the block reduces", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # a rational invariant reachable only through the exp stage (mu = 0) is
+  # reported unwrapped when sign-certified, keeping the section search available
+  reactions <- eqnlist() |>
+    addReaction("EGF + EGFR", "EGF_EGFR", "k_bind * EGF * EGFR")   |>
+    addReaction("EGF_EGFR", "EGF + EGFR", "k_unbind * EGF_EGFR")   |>
+    addReaction("MEK", "pMEK", "k_phos_MEK * EGF_EGFR * MEK")      |>
+    addReaction("pMEK", "MEK", "k_dephos_MEK * pMEK")              |>
+    addReaction("ERK", "pERK", "k_phos_ERK * pMEK * ERK")          |>
+    addReaction("pERK", "ERK", "k_dephos_ERK * pERK")
+  observables <- eqnvec(pMEK_obs = "scale_pMEK * pMEK",
+                        pERK_obs = "scale_pERK * pERK")
+  fx <- c("EGF", "scale_pMEK", "scale_pERK")
+  det <- symdet2(reactions, observables, method = "observability",
+                 reduceCQ = FALSE, reconstruct = TRUE, fixed = fx)
+  red <- redquiet(det, fixed = fx)
+  b <- red$blocks[[1]]
+  expect_identical(b$status, "reduced")
+  expect_length(red$remaining, 0L)
+  expect_false(any(grepl("exp(", b$invariants, fixed = TRUE)))
+  expect_true(any(vapply(b$invariants, function(iv) .symExprEqual(
+    gsub("\\^", "**", iv),
+    "(EGF*EGFR + EGF*EGF_EGFR + EGFR*EGF_EGFR)/EGF_EGFR**2"), logical(1))))
+  # chart positive; carrier meanings round-trip (fixed coordinates stay outer)
+  tr <- red$trafo[red$trafo != names(red$trafo)]
+  unames <- unique(c(red$coordinates,
+                     unlist(lapply(tr, function(e) all.vars(parse(text = e))))))
+  u <- setNames(as.list(rep_len(c(0.7, 2.3, 1.9, 0.31, 1.7, 0.45),
+                                length(unames))), unames)
+  z <- vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), u), numeric(1))
+  expect_true(all(is.finite(z)) && all(z > 0))
+  zl <- c(as.list(z), u[setdiff(names(u), names(z))])
+  for (nm in names(b$survivorMeaning))
+    expect_equal(eval(parse(text = b$survivorMeaning[[nm]]), zl), u[[nm]],
+                 tolerance = 1e-8)
+
+  # with the coordinate substituted away instead of fixed, the polynomial stage
+  # meets the target with a sign-indefinite invariant; the escalation continues
+  # and a definite rational replacement wins the slot
+  det2 <- symdet2(reactions, observables, method = "observability",
+                  reduceCQ = FALSE, reconstruct = TRUE,
+                  trafo = eqnvec(EGF = "1"))
+  red2 <- redquiet(det2)
+  b2 <- Filter(function(bb) identical(bb$type, "curved"), red2$blocks)[[1]]
+  expect_identical(b2$status, "reduced")
+  expect_length(b2$support, 5L)
+  expect_true(all(vapply(b2$invariants, function(iv) {
+    e <- parse(text = iv)
+    v <- vapply(1:3, function(s) eval(e, setNames(as.list(
+      s * c(0.3, 2.1, 0.7, 1.9, 0.4)), b2$support)), numeric(1))
+    all(v > 0)
+  }, logical(1))))
+  u2names <- unique(c(red2$coordinates, unlist(lapply(red2$trafo, function(e)
+    all.vars(parse(text = e))))))
+  u2 <- setNames(as.list(rep_len(c(0.7, 2.3, 1.9, 0.31, 1.7, 0.45),
+                                 length(u2names))), u2names)
+  z2 <- vapply(names(red2$trafo), function(nm)
+    eval(parse(text = red2$trafo[[nm]]), u2), numeric(1))
+  expect_true(all(is.finite(z2)) && all(z2 > 0))
+  # one fresh q_<k> per invariant, numbered gaplessly, and every carrier meaning
+  # round-trips at the emitted point
+  expect_identical(names(b2$survivorMeaning),
+                   paste0("q_", seq_along(b2$invariants)))
+  qs <- unique(unlist(lapply(red2$trafo, function(e) all.vars(parse(text = e)))))
+  expect_setequal(qs[grepl("^q_[0-9]+$", qs)], names(b2$survivorMeaning))
+  # the shifted carrier solves to its parameter outright
+  expect_true(any(trimws(unlist(red2$trafo)) %in% names(b2$survivorMeaning)))
+  zl2 <- c(as.list(z2), u2[setdiff(names(u2), names(z2))])
+  for (nm in names(b2$survivorMeaning))
+    expect_equal(eval(parse(text = b2$survivorMeaning[[nm]]), zl2), u2[[nm]],
+                 tolerance = 1e-8)
+})
+
+
+test_that("EGF cascade with steady-state trafo: the rational stage finds the
+           single-denominator invariant and the offset chart certifies", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # the direction symmetryDetection(trafo = steadyStates(...), events = ...)
+  # reports for the EGF/EGFR -> MEK/ERK cascade with an EGF dose event. Its 4th
+  # invariant (EGFR^2*k_bind + EGFR*k_bind + EGFR*k_unbind + EGF_EGFR*k_unbind)/
+  # EGFR is polynomial over the single coordinate EGFR -- the rational (Laurent)
+  # stage's case, which no other stage reaches at the default caps. The chart
+  # needs the balance section EGFR = 1 and a certified offset on the carrier of
+  # the 4th invariant (q_4 rides I_4 - 2*sqrt(I_1), positive by AM-GM).
+  gen <- list(EGFR = "2*EGFR*(EGFR + EGF_EGFR)",
+              EGF_EGFR = "EGF_EGFR*(EGFR + EGF_EGFR)",
+              k_bind = "-k_bind*(EGFR + EGF_EGFR)",
+              k_phos_MEK = "-k_phos_MEK*(EGFR + EGF_EGFR)",
+              k_unbind = "-EGFR**2*k_bind + EGFR*k_bind + EGF_EGFR*k_unbind")
+  obj <- .mkobj(list(.mkdir(gen, "general")),
+                c("EGFR", "EGF_EGFR", "pMEK", "pERK", "k_bind", "k_dephos_ERK",
+                  "k_dephos_MEK", "k_phos_ERK", "k_phos_MEK", "k_unbind"))
+  red <- redquiet(obj)                      # default caps: the point of the stage
+  b <- red$blocks[[1]]
+  expect_identical(b$status, "reduced")
+  expect_identical(b$stage, "rational")
+  expect_length(b$invariants, 4L)
+  expect_true(any(grepl("carrier offset", b$certificates)))
+  genR <- lapply(gen, function(x) gsub("\\*\\*", "^", x))
+  pt <- c(EGFR = 0.7, EGF_EGFR = 2.3, k_bind = 1.9, k_phos_MEK = 0.31,
+          k_unbind = 1.7)
+  for (iv in b$invariants) expect_lt(abs(.lieAt(genR, iv, pt)), 1e-4)
+  # the chart stays positive for every positive outer value, extremes included
+  outer <- unique(c(red$coordinates, unlist(lapply(red$trafo, function(e)
+    all.vars(parse(text = e))))))
+  vals <- c(0.7, 2.3, 1.9, 0.31, 1.7, 0.45, 1.1, 0.9)
+  for (scale in c(1e-3, 1, 1e3)) {
+    u <- setNames(as.list(scale * rep_len(vals, length(outer))), outer)
+    z <- vapply(names(red$trafo), function(nm)
+      eval(parse(text = red$trafo[[nm]]), u), numeric(1))
+    expect_true(all(is.finite(z)) && all(z > 0))
+  }
+  # survivorMeaning at the chart point returns the outer value
+  u <- setNames(as.list(rep_len(vals, length(outer))), outer)
+  z <- as.list(vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), u), numeric(1)))
+  for (nm in names(b$survivorMeaning))
+    expect_equal(eval(parse(text = b$survivorMeaning[[nm]]), z), u[[nm]],
+                 tolerance = 1e-8)
 })
 
 
@@ -282,14 +473,19 @@ test_that("exponential-factor invariant: found, certified, solved and printed", 
   # X(I) = 0 numerically (the verify layer already proved it symbolically)
   gen <- list(x = "x", y = "x + y")
   expect_lt(abs(.lieAt(gen, b$invariants[[1]], c(x = 1.7, y = 0.9))), 1e-4)
-  # the emitted trafo reproduces the invariant value: I(trafo(y0)) is y0 or 1/y0
+  # the emitted trafo reproduces the invariant value carried on the fresh
+  # parameter: I(trafo(u)) is u or 1/u
+  expect_identical(names(b$survivorMeaning), "q_1")
   z <- vapply(names(red$trafo), function(nm)
-    eval(parse(text = red$trafo[[nm]]), list(x = 5, y = 3)), numeric(1))
+    eval(parse(text = red$trafo[[nm]]), list(x = 5, y = 3, q_1 = 3)),
+    numeric(1))
   Iv <- eval(parse(text = b$invariants[[1]]), as.list(z))
   expect_true(abs(Iv - 3) < 1e-10 || abs(Iv - 1/3) < 1e-10)
-  txt <- capture.output(print(red))
-  expect_true(any(grepl("[stage: exp]", txt, fixed = TRUE)))
-  expect_true(any(grepl("parametrisation choice", txt)))   # wrap-safe fragment
+  txt <- capture.output(summary(red, verbose = TRUE))
+  expect_true(any(grepl("[exp]", txt, fixed = TRUE)))
+  expect_true(any(grepl("gauge pin", txt)))                # wrap-safe fragment
+  # the certificates stay reachable on the object, they are just not printed
+  expect_true(any(grepl("exp stage", red$blocks[[1]]$certificates)))
   # dExp = 0 switches the stage off with a certificate
   red0 <- redquiet(obj, dExp = 0L)
   expect_identical(red0$blocks[[1]]$status, "unresolved")
@@ -299,18 +495,30 @@ test_that("exponential-factor invariant: found, certified, solved and printed", 
 
 test_that("root carrier: quadratic invariant solved with a fractional power", {
   if (!.sympy_works()) skip("reticulate/sympy not available")
+  # the rotation a' = b, b' = -a has the single invariant a^2 + b^2. Pinning a = 1
+  # would solve b = sqrt(I - 1), a chart valid only for I > 1 -- the orbit is the
+  # circle of radius sqrt(I) and reaches a = 1 only when it is large enough. The
+  # balance section a = b has no such wall: it meets every circle once, in the
+  # positive quadrant, and puts both coordinates at sqrt(2*I)/2.
   obj <- .mkobj(list(.mkdir(list(a = "b", b = "-a"))), c("a", "b"))
   red <- redquiet(obj)
   b <- red$blocks[[1]]
   expect_identical(b$status, "reduced")
-  entry <- red$trafo[[b$transversal[1]]]
-  carrier <- setdiff(b$support, b$transversal)
-  expect_true(grepl("sqrt|\\^\\(1/2\\)", red$trafo[[carrier]]))
-  expect_true(grepl("positive branch", b$gaugeNote))
-  # numeric round-trip: the invariant value is carried by the renamed parameter
+  expect_match(b$gaugeNote, "gauge section")
+  expect_match(b$gaugeNote, "certified positive")
+  expect_true(all(vapply(red$trafo, function(e)
+    grepl("sqrt|\\^\\(1/2\\)", e), logical(1))))
+  # numeric round-trip: the invariant value is carried by the fresh parameter
   z <- vapply(names(red$trafo), function(nm)
-    eval(parse(text = red$trafo[[nm]]), list(a = 1, b = 9)), numeric(1))
+    eval(parse(text = red$trafo[[nm]]), list(a = 1, b = 1, q_1 = 9)),
+    numeric(1))
   expect_equal(unname(z[["a"]]^2 + z[["b"]]^2), 9, tolerance = 1e-8)
+  # and the emitted point is positive for every positive outer value, which the old
+  # constant pin was not
+  z2 <- vapply(names(red$trafo), function(nm)
+    eval(parse(text = red$trafo[[nm]]), list(a = 1, b = 1, q_1 = 0.01)),
+    numeric(1))
+  expect_true(all(z2 > 0))
 })
 
 
@@ -340,8 +548,11 @@ test_that("moved-only extactic basis: parameters no longer block the factor sear
   s <- "(k1 + k2 + k3 + k4)"
   obj <- .mkobj(list(.mkdir(list(x = paste0(s, "*x**2"), y = paste0(s, "*y**2")))),
                 c("x", "y", "k1", "k2", "k3", "k4"))
-  red <- redquiet(obj, dDarboux = 1L)
+  red <- redquiet(obj, dPoly = 0L, dDarboux = 1L, separable = FALSE)
   b <- red$blocks[[1]]
+  # separable = FALSE and dPoly = 0: the generator decouples and its invariant is
+  # Laurent, so the quadrature and rational stages would each answer before the
+  # extactic basis is ever built -- this test is about the basis
   # 6 total variables used to hit "extactic skipped" (projected entry degree 13
   # over the all-variables basis); the moved-coordinate basis (2 coordinates)
   # passes the cap and finds the factor x - y
@@ -351,6 +562,45 @@ test_that("moved-only extactic basis: parameters no longer block the factor sear
   gen <- list(x = paste0(s, "*x^2"), y = paste0(s, "*y^2"))
   pt <- c(x = 1.31, y = 0.77, k1 = 0.2, k2 = 0.3, k3 = 0.15, k4 = 0.4)
   expect_lt(abs(.lieAt(gen, b$invariants[1], pt)), 1e-4)
+})
+
+
+test_that("separable characteristics: quadrature before the factor stages", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # Support 3, so the 2-coordinate integrating-factor stage cannot reach it, and
+  # atan is outside the Darboux language: only the quadrature stage gets these.
+  obj <- .mkobj(list(.mkdir(list(x = "1 + x**2", y = "1 + y**2", z = "1 + z**2"))),
+                c("x", "y", "z"))
+  b <- redquiet(obj)$blocks[[1]]
+  expect_identical(b$stage, "separable")
+  expect_length(b$invariants, 2L)          # target = 3 coordinates - rank 1
+  gen <- list(x = "1 + x^2", y = "1 + y^2", z = "1 + z^2")
+  for (iv in b$invariants)
+    expect_lt(abs(.lieAt(gen, iv, c(x = 0.7, y = 1.3, z = 2.1))), 1e-4)
+  # atan cannot be emitted as a trafo entry, so the block stays invariantOnly
+  expect_identical(b$status, "invariantOnly")
+
+  # a separable block whose quadrature IS rational reduces end-to-end
+  obj2 <- .mkobj(list(.mkdir(list(x = "x**2", y = "y**2", z = "z**2"))),
+                 c("x", "y", "z"))
+  b2 <- redquiet(obj2)$blocks[[1]]
+  expect_identical(b2$stage, "separable")
+  expect_identical(b2$status, "reduced")
+  expect_true(any(vapply(b2$invariants, function(iv) .symExprEqual(
+    gsub("\\^", "**", iv), "(x - y)/(x*y)"), logical(1))))
+
+  # a coupled generator is declined, not invented: xi_y involves x
+  obj3 <- .mkobj(list(.mkdir(list(x = "x", y = "x + y"))), c("x", "y"))
+  b3 <- redquiet(obj3)$blocks[[1]]
+  expect_false(identical(b3$stage, "separable"))
+
+  # the switch turns the stage off with a certificate (on the 2-coordinate block:
+  # forcing the support-3 one through the factor stages costs a minute)
+  obj4 <- .mkobj(list(.mkdir(list(x = "x**2", y = "y**2"))), c("x", "y"))
+  b4 <- redquiet(obj4, separable = FALSE)$blocks[[1]]
+  expect_false(identical(b4$stage, "separable"))
+  expect_true(any(grepl("separable-characteristics stage skipped",
+                        b4$certificates)))
 })
 
 
@@ -368,4 +618,42 @@ test_that("integrating factor: Liouvillian integral by quadrature, verified", {
   gen <- list(x = "y", y = "-x - y")
   pt <- c(x = 0.83, y = 0.41)
   expect_lt(abs(.lieAt(gen, b$invariants[[1]], pt)), 1e-4)
+})
+
+
+test_that("a carrier that takes both signs is declared real and gets a covering pin", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # Only the difference a - b enters, so a - b is the only invariant and it takes
+  # both signs on the positive orthant. A constant gauge pin (b = 1) is reached only
+  # by the orbits with a - b > -1, which leaves the rest of the positive orthant
+  # outside the chart; the sum-of-squares pin clears every orbit at once.
+  r <- symdet2(eqnvec(x = "-(a - b)*x"), eqnvec(y = "x"),
+               method = "observability", reconstruct = TRUE)
+  red <- redquiet(r, verbose = FALSE)
+  b1 <- red$blocks[[1]]
+  expect_equal(b1$status, "reduced")
+  expect_equal(unname(b1$coverage), "total")
+  expect_equal(unname(b1$carrierDomain[["q_1"]]), "real")
+
+  # the chart stays in the positive orthant for EVERY real carrier value ...
+  q <- c(-50, -3, -1, -0.4, 0, 0.4, 1, 3, 50)
+  z <- lapply(red$trafo[c("a", "b")], function(e) eval(parse(text = e), list(q_1 = q)))
+  expect_true(all(z$a > 0))
+  expect_true(all(z$b > 0))
+  # ... and lands on the orbit the carrier names
+  expect_equal(eval(parse(text = b1$survivorMeaning[["q_1"]]), z), q)
+})
+
+
+test_that("a certified-positive carrier keeps its positive domain", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+
+  # the moiety total A + B is positive on the positive orthant by inspection, so the
+  # carrier stays log-fittable and no sum-of-squares pin is needed
+  r <- symdet2(eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B"), eqnvec(y = "A + B"),
+               method = "observability", reconstruct = TRUE, reduceCQ = FALSE)
+  red <- redquiet(r, verbose = FALSE)
+  dom <- unlist(lapply(red$blocks, `[[`, "carrierDomain"))
+  expect_true(length(dom) == 0L || all(dom == "positive"))
 })

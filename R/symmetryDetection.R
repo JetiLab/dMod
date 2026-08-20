@@ -15,7 +15,7 @@
 #'   * `"scaling"`: the scaling symmetries only, from an exact integer kernel. Ignores
 #'     `equilibrate` (a scaling leaves `f = 0` invariant).
 #'
-#'   How the engines work is described in `vignette("symmetryDetection")`.
+#'   How the engines work is described in `vignette("Symmetries")`.
 #'
 #' @param f The model right-hand sides: an [eqnlist], an [eqnvec], or a named character
 #'   vector keyed by state name. `reduceCQ` needs an [eqnlist].
@@ -30,7 +30,9 @@
 #'   condition, or -- for `"observability"` -- a *list* of [eqnvec]s, one per condition.
 #'   A parameter-named entry is substituted into `f` and `g`; a state-named entry is
 #'   that state's initial condition. A steady state from [steadyStates] can be passed
-#'   whole.
+#'   whole: a state name on the RIGHT of an entry is read as that state's initial value
+#'   (the dMod convention), never as the running state, so substituting the entry cannot
+#'   cancel `f` against the steady state it solves.
 #' @param method One of `"observability"` (default), `"polynomial"` or `"scaling"`; see
 #'   Description.
 #' @param parameters Character vector of extra symbols to treat as parameters.
@@ -44,7 +46,10 @@
 #' @param conditions Optional data frame of experimental conditions: one row per
 #'   condition, columns named by model symbols or by event-value placeholders. A numeric
 #'   cell bakes that symbol to a constant in the condition, a character cell renames it.
-#'   A direction is reported only if it is non-identifiable in *every* condition.
+#'   A column named after a dynamic state sets that state's initial value in the
+#'   condition (it does not freeze the state); one named after a constant state sets the
+#'   regime in force. A direction is reported only if it is non-identifiable in *every*
+#'   condition.
 #' @param fixed Character vector of symbols that are known and therefore not unknowns.
 #'   For `"observability"` they leave the coordinates: a fixed parameter is a known
 #'   constant, a fixed state keeps its dynamics but carries no unknown initial value.
@@ -105,12 +110,15 @@
 #'     \item{`rank`, `dim`}{observability-matrix rank and coordinate-space dimension;
 #'       both `NA` for the scaling/polynomial engines.}
 #'     \item{`symmetries`}{the found directions (empty when identifiable), each a
-#'       generator `sum_i xi_i d/dz_i`. Fields: `generator` (the components `xi_i`,
-#'       keyed by coordinate), `weights` (a scaling's integer weights, else `NULL`),
-#'       `type` (`"scaling"`, `"translation"`, `"affine"`, `"polynomial"` or
-#'       `"general"`), `degree`, `support` (the coordinates involved -- the only field
-#'       set when no closed form was reached), `explicit`, `reason`, `certified`,
-#'       `transformation` (the finite map, polynomial engine), `verified` and
+#'       generator `X = sum_i eta_i d/dz_i`. Fields: `generator` (the components
+#'       `eta_i`, keyed by coordinate), `weights` (a scaling's integer weights, else
+#'       `NULL`), `type` -- `"scaling"` or `"general"`, the two classes being the two
+#'       ways to remove a direction: gauge a scaling by fixing one of its coordinates
+#'       at any value, reparametrise a general direction onto its invariants with
+#'       [symmetryReduction] --, `degree` (total degree of the canonical generator,
+#'       `-1` when it is not polynomial), `support` (the coordinates involved -- the
+#'       only field set when no closed form was reached), `explicit`, `reason`,
+#'       `certified`, `transformation` (the finite map, polynomial engine), `verified` and
 #'       `display` (the same components factored for printing; `generator` stays in
 #'       the canonical expanded form).}
 #'     \item{`info`}{`engine`, `lieOrderUsed`, `gapOrderUsed`, `conditions`, `segments`,
@@ -119,7 +127,7 @@
 #'     \item{`call`}{the matched call.}
 #'   }
 #'   `print()` shows the verdict, the generators as a component table (one coordinate
-#'   per line) and what can be fixed; `summary()` adds the computation block, and
+#'   per line) and how to remove them; `summary()` adds the computation block, and
 #'   `summary(x, verbose = TRUE)` the settings and guard detail. Both take `fixed =`
 #'   to test a candidate set of fixings against the result without recomputing it: a
 #'   set removes all scaling directions exactly when it selects independent columns of
@@ -131,7 +139,7 @@
 #'   through a transient between events is identified -- but the expansion starts at the
 #'   *earliest* event time, so an event placed there is the one whose transient is seen.
 #'   And a dose on a species that `reduceCQ = TRUE` eliminates is not seen; keep such a
-#'   model at `reduceCQ = FALSE`. See `vignette("symmetryDetection")`.
+#'   model at `reduceCQ = FALSE`. See `vignette("Symmetries")`.
 #'
 #' @note The interface, defaults and output structure may still change between releases.
 #'
@@ -215,7 +223,13 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   # every engine return funnels through here: normalise to the public object,
   # print the report unless verbose = FALSE (so `out <- symmetryDetection(...)`
   # still shows it), and return it invisibly to avoid a double print at top level.
+  # set by the `trafo` block below when a right-hand side names a state; the analysis
+  # then runs on a renamed initial-value coordinate and the report maps it back
+  icFrom <- icTo <- character(0)
   deliver <- function(raw, method, coordinates = NULL) {
+    raw <- .symRenameResult(raw, icFrom, icTo)
+    if (length(icFrom) && length(coordinates))
+      coordinates <- replaceSymbols(icTo, icFrom, as.character(coordinates))
     res <- .symFinalize(raw, method, .symSettings, .symCall,
                          elapsed = as.numeric(Sys.time() - .symT0, units = "secs"),
                          coordinates = coordinates)
@@ -226,6 +240,10 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   # warn about arguments that do not apply to the chosen engine instead of
   # silently ignoring them
   supplied <- setdiff(names(match.call())[-1], "")
+  # an argument passed as NULL is the default; warning about it would fire on any
+  # caller that forwards a fixed argument list
+  supplied <- supplied[vapply(supplied, function(a)
+    !is.null(mget(a, envir = environment(), ifnotfound = list(NULL))[[1]]), logical(1))]
   applies <- switch(method,
     observability = c("events", "conditions", "equilibrate", "control"),
     polynomial = "polynomial",
@@ -319,6 +337,8 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   trafoList <- !is.null(trafo) && is.list(trafo) && !inherits(trafo, "eqnvec")
   if (trafoList) {
     trafos <- lapply(trafo, as.eqnvec)
+    icSplit <- .symInitialValueSplit(trafos, states, taken = c(parameters, gNames()))
+    trafos <- icSplit$trafos; icFrom <- icSplit$from; icTo <- icSplit$to
     condSubs <- lapply(trafos, function(tr) {
       se <- setdiff(names(tr), states)
       as.list(setNames(as.character(tr[se]), se))
@@ -333,7 +353,9 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
       warning("symmetryDetection(): a per-condition `trafo` list is not yet ",
               "supported for method = \"polynomial\"; pass a single trafo.", call. = FALSE)
   } else if (!is.null(trafo)) {
-    trafo <- as.eqnvec(trafo)
+    icSplit <- .symInitialValueSplit(list(as.eqnvec(trafo)), states,
+                                     taken = c(parameters, gNames()))
+    trafo <- icSplit$trafos[[1]]; icFrom <- icSplit$from; icTo <- icSplit$to
     icEntries  <- intersect(names(trafo), states)
     subEntries <- setdiff(names(trafo), states)
     subs <- trafo[subEntries]
@@ -363,6 +385,39 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
     fdyn <- sub(fdyn)
     substModel(sub)
     if (length(icEntries)) initial <- sub(trafo[icEntries])
+  }
+
+  # The renamed initial-value coordinate is also named by a condition-grid column (a
+  # substitution target) and by an event value; both have to follow, or they would fix
+  # a coordinate that no longer exists and leave the renamed one free.
+  if (length(icFrom)) {
+    if (!is.null(conditions)) {
+      cdf <- as.data.frame(conditions, stringsAsFactors = FALSE)
+      hit <- match(colnames(cdf), icFrom)
+      if (any(!is.na(hit))) colnames(cdf)[!is.na(hit)] <- icTo[hit[!is.na(hit)]]
+      conditions <- cdf
+    }
+    if (!is.null(events) && nrow(as.data.frame(events)))
+      events$value <- replaceSymbols(icFrom, icTo, as.character(events$value))
+  }
+
+  # A grid CELL is substituted into f, where a state name is the running state and not
+  # the initial value a writer means by it. A `trafo` entry can be split apart (above);
+  # a cell has no second coordinate to carry the initial value, so this is reported
+  # rather than reinterpreted. Cells of a state-named column are exempt: those are
+  # initial conditions already.
+  if (!is.null(conditions)) {
+    cdf <- as.data.frame(conditions, stringsAsFactors = FALSE)
+    keep <- setdiff(colnames(cdf), states)
+    chr <- keep[vapply(cdf[keep], function(cl)
+      is.character(cl) || is.factor(cl), logical(1))]
+    hit <- if (!length(chr)) character(0) else
+      intersect(getSymbols(as.character(unlist(lapply(cdf[chr], as.character)))), states)
+    if (length(hit))
+      warning("symmetryDetection(): condition-grid value(s) name the state(s) ",
+              paste(hit, collapse = ", "), ". A grid value is substituted into `f`, ",
+              "where that name is the running state and not an initial value. ",
+              "Pass it through a per-condition `trafo` instead.", call. = FALSE)
   }
 
   # A per-condition `g` list defines the condition count exactly like a per-condition
@@ -589,8 +644,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
       sr$conditions <- as.integer(res$nConditions)
       sr$segments <- as.integer(res$nConditions)   # single-segment: one per condition
       sr$gapOrderUsed <- 0L
-      sr$nonIdentifiable <- .symRelabelDirections(sr$nonIdentifiable, sd,
-        if (is.null(control$degreeCap)) 4L else control$degreeCap)
+      sr$nonIdentifiable <- .symRelabelDirections(sr$nonIdentifiable, sd)
       if (isTRUE(control$certifyPoly))
         sr$nonIdentifiable <- .symCertifyPoly(sr$nonIdentifiable,
           .symEqnLines(fdyn), gLines(), forcings, fixed, parameters, control, sd)
@@ -643,8 +697,7 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
            "method = \"polynomial\".", call. = FALSE)
     res <- ro$result
     if (is.list(res)) {
-      res$nonIdentifiable <- .symRelabelDirections(res$nonIdentifiable, sd,
-        if (is.null(control$degreeCap)) 4L else control$degreeCap)
+      res$nonIdentifiable <- .symRelabelDirections(res$nonIdentifiable, sd)
       if (isTRUE(control$certifyPoly))
         res$nonIdentifiable <- .symCertifyPoly(res$nonIdentifiable,
           .symEqnLines(fdyn), gLines(), forcings, fixed, parameters, control, sd)
@@ -665,7 +718,8 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   # of f leaves f = 0 invariant), so `equilibrate` stays observability-only.
   # ==== engine: scaling (exact integer kernel) ======================================
   if (method == "scaling") {
-    fixedScal <- unique(c(fixed, .symEventPinnedStates(events, conditions)))
+    fixedScal <- unique(c(fixed, .symEventPinnedStates(events, conditions),
+                          .symGridPinnedStates(conditions, states)))
     syms <- unique(c(states, gNames(), getSymbols(c(as.character(fdyn), gChar()))))
     multiCond <- (!is.null(conditions) && nrow(as.data.frame(conditions)) > 1L) ||
                  length(condSubs) > 1L || nCondObs > 1L
@@ -756,6 +810,19 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
 # multiply dose, or a dose to a parameter (symbolic) value, imposes no constraint. A
 # grid-column value is resolved to its cells; a state pinned in ANY condition is
 # pinned (the scaling common to all conditions must respect every condition).
+# states whose initial value a condition grid pins to a known number: the column name
+# is the state's initial value, so it cannot be scaled
+.symGridPinnedStates <- function(conditions, states) {
+  if (is.null(conditions) || !length(states)) return(character(0))
+  grid <- as.data.frame(conditions, stringsAsFactors = FALSE)
+  cand <- intersect(colnames(grid), states)
+  cand[vapply(cand, function(cl) {
+    v <- as.character(unlist(grid[[cl]]))
+    length(v) > 0L && all(!is.na(suppressWarnings(as.numeric(v))))
+  }, logical(1))]
+}
+
+
 .symEventPinnedStates <- function(events, conditions) {
   if (is.null(events)) return(character(0))
   ev <- as.data.frame(events, stringsAsFactors = FALSE)
@@ -789,6 +856,81 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
 # empty target, or an empty substitution, passes through untouched, so the result can
 # be mapped over the optional model pieces (observation list, initial conditions)
 # without a guard at every call site.
+# dMod names a state's initial value after the state itself, so a symbol on the RIGHT
+# of a `trafo` entry that carries a state's name means that INITIAL VALUE -- a constant
+# outer coordinate -- and never the running state. A parameter entry is substituted
+# into f and g, where the same name IS the running state, so taking it verbatim
+# silently rewrites the model: a steadyStates() trafo, whose whole point is that it
+# solves f = 0 in the state symbols, collapses every substituted right-hand side to 0
+# and takes its parameters out of the analysis with it.
+#
+# Split the two readings apart. Every conflicted symbol is renamed to a fresh
+# initial-value coordinate in ALL right-hand sides (initial conditions included, so the
+# coordinate stays one symbol), and a conflicted state that had no initial condition of
+# its own gets one, tying it to that coordinate -- which is what its free initial value
+# was. The names are mapped back before the result is reported, so the rename never
+# reaches the user. Returns the rewritten trafos and the rename `from` -> `to`.
+.symInitialValueSplit <- function(trafos, states, taken = character(0)) {
+  trafos <- lapply(trafos, as.eqnvec)
+  none <- list(trafos = trafos, from = character(0), to = character(0))
+  if (!length(trafos) || !length(states)) return(none)
+  conflict <- unique(unlist(lapply(trafos, function(tr) {
+    subEntries <- setdiff(names(tr), states)
+    if (!length(subEntries)) return(character(0))
+    intersect(getSymbols(as.character(tr[subEntries])), states)
+  })))
+  conflict <- intersect(states, conflict)          # model order, for a stable rename
+  if (!length(conflict)) return(none)
+
+  taken <- unique(c(taken, states, unlist(lapply(trafos, names)),
+                    unlist(lapply(trafos, function(tr) getSymbols(as.character(tr))))))
+  to <- character(0)
+  for (X in conflict) {
+    cand <- paste0(X, "_init")
+    while (cand %in% taken) cand <- paste0(cand, "0")
+    taken <- c(taken, cand); to <- c(to, cand)
+  }
+
+  out <- lapply(trafos, function(tr) {
+    tr <- as.eqnvec(setNames(replaceSymbols(conflict, to, as.character(tr)), names(tr)))
+    add <- setdiff(conflict, intersect(names(tr), states))
+    if (length(add))
+      tr <- as.eqnvec(setNames(c(as.character(tr), to[match(add, conflict)]),
+                               c(names(tr), add)))
+    tr
+  })
+  list(trafos = out, from = conflict, to = to)
+}
+
+# Map the initial-value coordinates of .symInitialValueSplit() back onto the names the
+# user gave, in the coordinate list and in every direction the engine returned.
+.symRenameResult <- function(raw, from, to) {
+  if (!length(from) || is.null(raw) || !is.list(raw)) return(raw)
+  ren <- function(x) if (!length(x)) x else replaceSymbols(to, from, as.character(x))
+  renNames <- function(v) {
+    i <- match(names(v), to)
+    if (any(!is.na(i))) names(v)[!is.na(i)] <- from[i[!is.na(i)]]
+    v
+  }
+  renVals <- function(v) {
+    if (is.list(v)) { v[] <- lapply(v, function(e) if (is.character(e)) ren(e) else e); v }
+    else if (is.character(v)) { v[] <- ren(v); v } else v
+  }
+  fixDir <- function(d) {
+    if (!is.list(d)) return(d)
+    for (fld in c("vector", "infinitesimals"))
+      if (!is.null(d[[fld]])) d[[fld]] <- renVals(renNames(d[[fld]]))
+    if (!is.null(d$support)) d$support <- ren(d$support)
+    d
+  }
+  if (!is.null(raw$coordinates)) raw$coordinates <- ren(raw$coordinates)
+  if (!is.null(raw$nonIdentifiable))
+    raw$nonIdentifiable <- lapply(raw$nonIdentifiable, fixDir)
+  else if (is.null(raw$rank)) raw <- lapply(raw, fixDir)   # polynomial: bare list
+  raw
+}
+
+
 .symSubst <- function(keys, vals) {
   keys <- as.character(keys); vals <- as.character(vals)
   function(e) {
@@ -809,7 +951,10 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
   grid <- if (is.null(conditions)) NULL else as.data.frame(conditions, stringsAsFactors = FALSE)
   nGrid <- if (is.null(grid)) 0L else nrow(grid)
   K <- max(length(condSubs), nGrid, if (gPerCond) length(gset) else 0L, 1L)
-  subCols <- if (is.null(grid)) character(0) else intersect(colnames(grid), symbols)
+  # states are never baked into f (see above); a grid column naming one fixes that
+  # state's initial value, which the scaling engine takes through `fixed`
+  subCols <- if (is.null(grid)) character(0)
+             else setdiff(intersect(colnames(grid), symbols), names(fdyn))
   lapply(seq_len(K), function(k) {
     subs <- list()
     for (col in subCols) subs[[col]] <- as.character(grid[k, col])
@@ -979,7 +1124,8 @@ symmetryDetection <- function(f = NULL, g = NULL, trafo = NULL,
 #'   succeeds under the direction's perturbations is dropped; the rational
 #'   reconstruction then runs over the remaining primes (their product still bounds
 #'   the coefficient height). Below this many live primes the entry is support-only.
-#' @param certifyPoly Logical. For each `"affine"`/`"polynomial"` direction, run the
+#' @param certifyPoly Logical. For each direction whose canonical generator is polynomial
+#'   of degree `1..degreeCap`, run the
 #'   polynomial Lie-symmetry engine (`method = "polynomial"`) and set `$certified`
 #'   to whether the direction is a nonzero constant combination of its generators --
 #'   i.e. an exact polynomial Lie point symmetry, not merely an observability
@@ -1099,6 +1245,15 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 }
 
 
+# Sorting names, always in the C locale. The coordinate order fixes the monomial
+# tables, the evaluation points and the order in which gauge-section candidates are
+# tried, so the same model searched under en_US collation (which sorts "EGF_EGFR"
+# before "EGFR") and under C (which testthat sets) would take different paths and
+# could return different -- each valid -- reparametrisations. Numeric input sorts
+# as it always did.
+.symSort <- function(x) sort(x, method = "radix")
+
+
 # ---- modular linear algebra over GF(p) -----------------------------------------------
 
 .symSieve <- function(n) {
@@ -1163,24 +1318,17 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 }
 
 # Reduced row echelon form over GF(p); returns the reduced rows, the 0-based pivot
-# columns and the rank. Sizes here are tiny (the nullspace dimension by nz).
+# columns and the rank. The elimination is symRrefMod(); the compiled kernel returns
+# the pivot rows only, so the zero rows are restored here -- callers read the row
+# count and search the zero block (.symMinsupportGauge's leftNull).
 .symRrefModp <- function(M, p) {
-  M <- matrix(as.numeric(M) %% p, nrow(M), ncol(M))
-  nr <- nrow(M); nc <- ncol(M); piv <- integer(0); row <- 1L
-  for (col in seq_len(nc)) {
-    if (row > nr) break
-    nz <- which(M[row:nr, col] %% p != 0)
-    if (!length(nz)) next
-    pr <- row + nz[1] - 1L
-    if (pr != row) { tmp <- M[row, ]; M[row, ] <- M[pr, ]; M[pr, ] <- tmp }
-    M[row, ] <- .symMulmod(M[row, ], .symInvmod(M[row, col], p), p)
-    for (r2 in seq_len(nr)) if (r2 != row) {
-      f2 <- M[r2, col] %% p
-      if (f2 != 0) M[r2, ] <- (M[r2, ] - .symMulmod(M[row, ], f2, p)) %% p
-    }
-    piv <- c(piv, col - 1L); row <- row + 1L
-  }
-  list(R = M, piv = piv, rank = length(piv))
+  nr <- nrow(M); nc <- ncol(M)
+  if (!nr || !nc)
+    return(list(R = matrix(0, nr, nc), piv = integer(0), rank = 0L))
+  rr <- symRrefMod(matrix(as.numeric(M) %% p, nr, nc), p)
+  R <- matrix(0, nr, nc)
+  if (rr$rank > 0L) R[seq_len(rr$rank), ] <- rr$R
+  list(R = R, piv = rr$piv, rank = rr$rank)
 }
 
 # RREF of the rows of B, but with the columns in `physCols0` (0-based) taken as
@@ -1565,7 +1713,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   dirSupport <- NULL   # this direction's support, set once its anchor is known
   fb <- function(reason) {
     supp <- if (!is.null(dirSupport)) dirSupport
-            else { v <- .symNullResidues(sc$ref, f, P1); sort(znames[v != 0]) }
+            else { v <- .symNullResidues(sc$ref, f, P1); .symSort(znames[v != 0]) }
     list(support = supp, type = "general", closedForm = FALSE, reason = reason) }
   if (is.null(sd) || is.null(kcallFwd) || .symExpired(ctrl)) {
     if (listAnchors) return(integer(0)); return(fb("forward path unavailable")) }
@@ -1638,7 +1786,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   arow <- match(ac, rr0$piv)
   if (is.na(arow)) return(fb("forward: requested anchor is not a residual pivot"))
   v0 <- as.integer(.symMulmod(rr0$R[arow, ], .symInvmod(rr0$R[arow, ac + 1L] %% P1, P1), P1))
-  dirSupport <- sort(unique(stripName(znames[which(v0 %% P1 != 0)])))
+  dirSupport <- .symSort(unique(stripName(znames[which(v0 %% P1 != 0)])))
   suppNames <- unique(stripName(znames[c(ac, setdiff(which(v0 %% P1 != 0) - 1L, ac)) + 1L]))
 
   # 2. turnover transversal (avoids the direction's support + the recast coords)
@@ -1768,7 +1916,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     if (rdiag) message(sprintf("[fwd]   verify %-24s -> %s", stripName(nm), if (okv) "ok" else "FAIL"))
     if (!okv) return(fb("forward: reconstructed direction failed fresh-point verification")) }
   if (rdiag) message("[fwd] VERIFIED (base-independent) -- closing direction (states are resting-level symbols)")
-  list(support = sort(names(entries)), vector = entries, type = "general", closedForm = TRUE)
+  list(support = .symSort(names(entries)), vector = entries, type = "general", closedForm = TRUE)
 }
 
 
@@ -2014,14 +2162,18 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 }
 
 
-# Classify one closed-form direction into {scaling, translation, affine, polynomial,
-# general} on its canonical poly-primitive generator, via the Python classifier. A
-# generator is defined only up to a nonzero factor h(z); fixing that gauge makes the
-# modular and symbolic engines land on the same representative, so a disguised scaling is
-# recognised as one. A symbolic (Hill) weight is left as-is, since the classifier reads
-# it as a degree-2 polynomial. Returns the direction with $type/$vector/$degree updated
-# (scaling: $vector = the integer weights).
-.symClassifyDirection <- function(d, sd, degreeCap) {
+# Classify one closed-form direction as a scaling or a general direction, on its
+# canonical poly-primitive generator, via the Python classifier. The two classes are the
+# two ways to remove a direction: a scaling has a ray for an orbit and is gauged by
+# holding one of its coordinates at any value, while a general direction has a curved
+# orbit and is removed by reparametrising onto its invariants. A generator is defined
+# only up to a nonzero factor h(z); fixing that gauge makes the modular and symbolic
+# engines land on the same representative, so a disguised scaling is recognised as one. A
+# symbolic (Hill) weight is left as-is, since the classifier reads it as a degree-2
+# polynomial. Returns the direction with $type/$vector/$degree updated (scaling: $vector
+# = the integer weights); $degree is the total degree of the canonical generator, -1 when
+# it is not polynomial, and it is what selects the certifyPoly candidates below.
+.symClassifyDirection <- function(d, sd) {
   if (is.null(d$vector)) return(d)
   if (isTRUE(d$type == "scaling")) {
     wint <- suppressWarnings(as.integer(as.character(unlist(d$vector))))
@@ -2031,17 +2183,16 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   } else {
     lit <- setNames(as.list(as.character(unlist(d$vector))), names(d$vector))
   }
-  cls <- tryCatch(sd$classifyDirection(lit, as.integer(degreeCap)),
-                  error = function(e) NULL)
+  cls <- tryCatch(sd$classifyDirection(lit), error = function(e) NULL)
   if (is.null(cls) || is.null(cls$type)) return(d)
   d$type <- as.character(cls$type)
   d$degree <- if (!is.null(cls$degree)) as.integer(cls$degree) else NULL
   if (identical(d$type, "scaling")) {
     d$vector <- lapply(cls$weights, function(w) as.character(w))
-    d$support <- sort(names(cls$weights))
+    d$support <- .symSort(names(cls$weights))
   } else {
     d$vector <- lapply(cls$components, function(x) as.character(x))
-    d$support <- sort(names(cls$components))
+    d$support <- .symSort(names(cls$components))
   }
   d
 }
@@ -2051,21 +2202,27 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # modular and symbolic engines report the same canonical generator and symmetry
 # class. Support-only directions (no closed form) are left untouched. Runs at the
 # top-level observability returns, so it covers both symEngine paths.
-.symRelabelDirections <- function(nonId, sd, degreeCap) {
+.symRelabelDirections <- function(nonId, sd) {
   if (is.null(sd) || !length(nonId)) return(nonId)
   lapply(nonId, function(d) if (is.null(d$vector)) d
-                            else .symClassifyDirection(d, sd, degreeCap))
+                            else .symClassifyDirection(d, sd))
 }
 
 
 # Optional certificate (reconstControl(certifyPoly = TRUE)): run the polynomial engine at
-# the relevant degree and flag each affine/polynomial direction that is a nonzero
-# constant combination of its generators, i.e. a strict polynomial Lie POINT symmetry.
-# Sets $certified; FALSE only means the direction is not a strict polynomial symmetry, it
-# stays a valid non-identifiability. `modelLines`/`obsLines` are serialised f and g.
+# the relevant degree and flag each general direction with a polynomial generator that is
+# a nonzero constant combination of its generators, i.e. a strict polynomial Lie POINT
+# symmetry. Candidates are selected by $degree, not by class: a scaling needs no
+# certificate, a non-polynomial direction ($degree < 0) has no ansatz, and one above
+# degreeCap would drive pMax past what the ansatz is meant to cover. Sets $certified;
+# FALSE only means the direction is not a strict polynomial symmetry, it stays a valid
+# non-identifiability. `modelLines`/`obsLines` are serialised f and g.
 .symCertifyPoly <- function(nonId, modelLines, obsLines, forcings, fixed,
                               parameters, ctrl, sd) {
-  cand <- Filter(function(d) isTRUE(d$type %in% c("affine", "polynomial")), nonId)
+  cap <- if (is.null(ctrl$degreeCap)) 4L else as.integer(ctrl$degreeCap)
+  isCand <- function(d) !isTRUE(d$type == "scaling") && !is.null(d$degree) &&
+    !is.na(d$degree) && d$degree >= 1L && d$degree <= cap
+  cand <- Filter(isCand, nonId)
   if (!length(cand) || is.null(sd)) return(nonId)
   deg <- if (!is.null(ctrl$certifyPolyDeg)) as.integer(ctrl$certifyPolyDeg)
          else max(vapply(cand, function(d)
@@ -2084,7 +2241,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   genVecs <- if (is.null(gens)) list()
              else Filter(Negate(is.null), lapply(gens, function(g) g$infinitesimals))
   lapply(nonId, function(d) {
-    if (!isTRUE(d$type %in% c("affine", "polynomial"))) return(d)
+    if (!isCand(d)) return(d)
     d$certified <- length(genVecs) > 0L &&
       isTRUE(tryCatch(sd$certifyInSpan(d$vector, genVecs)$certified,
                       error = function(e) FALSE))
@@ -2115,7 +2272,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   result$rank <- as.integer(length(physCoords) - physNull)
   result$identifiable <- (physNull == 0L)
   result$nonIdentifiable <- lapply(result$nonIdentifiable, function(d) {
-    d$support <- sort(intersect(d$support, physCoords))
+    d$support <- .symSort(intersect(d$support, physCoords))
     if (!is.null(d$vector)) {
       isAux <- names(d$vector) %in% auxNames
       d[[auxField]] <- d$vector[isAux]
@@ -2164,7 +2321,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     if (all(tangent == 0) || !inSpan(N, tangent) || inSpan(Bmat, tangent)) next
     Bmat <- cbind(Bmat, tangent)
     supp <- names(d$vector)[keep]
-    ord <- order(supp)
+    ord <- order(supp, method = "radix")
     scaling[[length(scaling) + 1L]] <- list(
       support = supp[ord],
       vector = setNames(as.list(wsym[ord]), supp[ord]),
@@ -2645,7 +2802,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
           # Submit in a canonical per-model order with chunk.size = 1: the static
           # assignment job i -> worker ((i-1) mod n) then sends a model back to the
           # worker that already holds its compile, wave after wave.
-          ord <- order(vapply(jobs, function(j) j$mkey, character(1)))
+          ord <- order(vapply(jobs, function(j) j$mkey, character(1)),
+                       method = "radix")
           res <- tryCatch(parallel::parLapply(cl, jobs[ord], worker, cargs = solveConst,
                                               chunk.size = 1L), error = function(e) NULL)
           if (is.null(res) || length(res) != length(jobs)) return(NULL)
@@ -2847,8 +3005,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
           if (is.null(b)) return(list(ok = FALSE))
           blocks <- c(blocks, b)
         }
-        # final stacked reduction over GF(p): the compiled kernel (symRrefMod)
-        # runs per accepted sample here; .symRrefModp is the identical R fallback
+        # final stacked reduction over GF(p), run per accepted sample; the pivot
+        # rows are all this path reads, so it calls symRrefMod directly
         rr <- symRrefMod(do.call(rbind, blocks), p)
         list(ok = TRUE, R = rr$R,
              pivots = as.integer(rr$piv), rank = as.integer(rr$rank), dim = nzWide)
@@ -3236,7 +3394,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       if (.symExpired(ctrl)) {
         v <- if (!is.null(rfn)) rfn(sc$ref, P, zvals0) else .symNullResidues(sc$ref, fc, P)
         if (is.null(v)) v <- .symNullResidues(sc$ref, fc, P)
-        return(list(support = sort(znames[v != 0]), type = "general",
+        return(list(support = .symSort(znames[v != 0]), type = "general",
                     closedForm = FALSE,
                     reason = "reconstruction time budget (reconstControl(timeout=)) exceeded"))
       }
@@ -3285,7 +3443,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       if (isTRUE(e$closedForm) && !ok) {
         v <- if (!is.null(rfn)) rfn(sc$ref, P, zvals0) else .symNullResidues(sc$ref, fc, P)
         if (is.null(v)) v <- .symNullResidues(sc$ref, fc, P)
-        e <- list(support = sort(znames[v != 0]), type = "general",
+        e <- list(support = .symSort(znames[v != 0]), type = "general",
                   closedForm = FALSE,
                   reason = paste("a closed form was reconstructed but failed",
                                  "verification at a fresh prime"))
@@ -3467,7 +3625,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   } else {
     support <- lapply(residualFree, function(fc) {
       v <- .symNullResidues(sc$ref, fc, P)
-      list(support = sort(znames[v != 0]), type = "general", closedForm = FALSE)
+      list(support = .symSort(znames[v != 0]), type = "general", closedForm = FALSE)
     })
     result$nonIdentifiable <- c(scaling, support)
   }
@@ -3938,7 +4096,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     entries[[znames[ci + 1L]]] <- if (is.null(spy)) expr else .symSimplify(expr, spy)
   }
   entries[[znames[f + 1L]]] <- "1"
-  list(support = sort(names(entries)), vector = entries, type = "general",
+  list(support = .symSort(names(entries)), vector = entries, type = "general",
        closedForm = TRUE)
 }
 
@@ -3973,7 +4131,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   }
   relevant <- sort(unique(unlist(relByEntry)))
   fallback <- function(reason) list(poolNext = poolNext,
-    entry = list(support = sort(znames[base_nv != 0]), type = "general",
+    entry = list(support = .symSort(znames[base_nv != 0]), type = "general",
                  closedForm = FALSE, reason = reason))
   timedOut <- "reconstruction time budget (reconstControl(timeout=)) exceeded"
   if (.symExpired(ctrl)) return(fallback(timedOut))
@@ -4012,7 +4170,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       entries[[znames[supportCols[i] + 1L]]] <- e
     }
     entries[[znames[f + 1L]]] <- "1"
-    return(list(poolNext = poolNext, entry = list(support = sort(names(entries)),
+    return(list(poolNext = poolNext, entry = list(support = .symSort(names(entries)),
       vector = entries, type = "general", closedForm = TRUE,
       relevantLeaves = integer(0))))
   }
@@ -4116,7 +4274,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     entries[[znames[supportCols[i] + 1L]]] <- expr
   }
   entries[[znames[f + 1L]]] <- "1"
-  list(poolNext = poolNext, entry = list(support = sort(names(entries)),
+  list(poolNext = poolNext, entry = list(support = .symSort(names(entries)),
     vector = entries, type = "general", closedForm = TRUE,
     relevantLeaves = relevant))
 }
@@ -4146,7 +4304,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   relevant <- rel$relevant; relByEntry <- rel$relByEntry
   fallback <- function(reason = NULL) {
     list(poolNext = poolNext,
-         entry = list(support = sort(znames[base_nv != 0]), type = "general",
+         entry = list(support = .symSort(znames[base_nv != 0]), type = "general",
                       closedForm = FALSE, reason = reason))
   }
   timedOut <- "reconstruction time budget (reconstControl(timeout=)) exceeded"
@@ -4186,7 +4344,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     }
     entries[[znames[f + 1L]]] <- "1"
     return(list(poolNext = poolNext,
-                entry = list(support = sort(names(entries)), vector = entries,
+                entry = list(support = .symSort(names(entries)), vector = entries,
                              type = "general", closedForm = TRUE)))
   }
 
@@ -4355,7 +4513,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 
   entries[[znames[f + 1L]]] <- "1"
   list(poolNext = poolNext,
-       entry = list(support = sort(names(entries)), vector = entries,
+       entry = list(support = .symSort(names(entries)), vector = entries,
                     type = "general", closedForm = TRUE))
 }
 
@@ -4391,6 +4549,14 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   subCols <- intersect(cols, symbols)
   initial <- if (is.null(initial)) NULL else as.eqnvec(initial)
   dynStates <- setdiff(states, constStates)
+  # A grid column naming a DYNAMIC state fixes that state's INITIAL VALUE in this
+  # condition, which is what the name means everywhere else in dMod. Substituting it
+  # into f instead freezes the state at a constant, which takes its trajectory -- and
+  # every rate that drives it -- out of the analysis and reports those rates as
+  # non-identifiable. A constant state (a switch, rhs = 0) is the one case where both
+  # readings agree, and it keeps the substitution.
+  icCols  <- intersect(subCols, dynStates)
+  subCols <- setdiff(subCols, icCols)
 
   ev <- if (is.null(events)) NULL else as.data.frame(events, stringsAsFactors = FALSE)
   tnum <- if (is.null(ev) || !nrow(ev)) numeric(0)
@@ -4460,9 +4626,12 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
         for (X in dynStates) {
           isForcing <- X %in% forcings
           hasInit <- !is.null(initK) && X %in% names(initK)
+          hasCell <- X %in% icCols
           ops <- leIdx[evVar[leIdx] == X]
-          if (!isForcing && !hasInit && !length(ops)) next
-          cur <- if (isForcing) "0" else if (hasInit) as.character(initK[[X]]) else X
+          if (!isForcing && !hasInit && !hasCell && !length(ops)) next
+          # a per-condition trafo wins over a grid cell, as it does for parameters
+          cur <- if (isForcing) "0" else if (hasInit) as.character(initK[[X]])
+                 else if (hasCell) resolve(cell(k, X), k) else X
           for (i in ops) cur <- .symComposeEvent(cur, evMethod[i], resolve(ev$value[i], k))
           ic0[[X]] <- cur
         }
@@ -4502,6 +4671,17 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # the R CMD check non-ASCII warning, which fails CI).
 .symPartial <- function(var) paste0("\u2202/\u2202", var)
 
+# The component of the generator along a coordinate: eta(P) for the eta_P of the
+# vignette. Two things rule out a subscript here. Unicode has subscript glyphs for the
+# digits and about a dozen lower-case letters, but none for capitals and none for '_',
+# so a coordinate named P or k_d or R1_R2_TGFb_int has no subscript form at all; and
+# an underscore in its place collides with the underscores inside the names
+# themselves -- eta_k_pS2_R1_R2_TGFb_int does not show where the label ends. The
+# parentheses delimit any name, and they read against the legend of
+# .symCatGenerators, which keeps the real subscript for the bound index i: eta(i)
+# there, eta(P) here, one substitution apart.
+.symEta <- function(var) paste0("\u03b7(", var, ")")
+
 # ---- result display: the shared print()/summary() renderer ---------------------------
 
 # the generator component xi_i of a scaling from its weight w and coordinate:
@@ -4535,10 +4715,10 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   out
 }
 
-# the symmetry-class tag, carrying the degree for a polynomial direction
+# the symmetry-class tag, carrying the total degree of a general direction that has one
 .symClassTag <- function(d) {
-  if (isTRUE(d$type == "polynomial") && !is.null(d$degree))
-    sprintf("polynomial (%d)", d$degree)
+  if (isTRUE(d$type == "general") && !is.null(d$degree) && isTRUE(d$degree >= 0L))
+    sprintf("general (%d)", d$degree)
   else d$type
 }
 
@@ -4558,10 +4738,11 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   paste0(.symJoinGenerator(signed), "   [", tag, "]")
 }
 
-# the plural group heading for a symmetry type
+# the plural group heading for a symmetry class. The polynomial engine labels a
+# direction by the finite transformation it integrates to ("scaling, translation", ...)
+# rather than by class, so unknown strings are capitalised and passed through.
 .symTypeLabel <- function(t) switch(t,
-  scaling = "Scalings", affine = "Affine", translation = "Translations",
-  polynomial = "Polynomial", general = "General",
+  scaling = "Scalings", general = "General",
   paste0(toupper(substring(t, 1, 1)), substring(t, 2)))
 
 # a non-negative integer as Unicode subscript digits (U+2080..U+2089), built from
@@ -4612,18 +4793,18 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     character(1), USE.NAMES = FALSE)
 }
 
-# One generator as a component table: the coordinate's d/d operator in a left column,
-# its component xi_i to the right, ONE COORDINATE PER LINE. Padding is therefore local
-# to the operator column, so a long polynomial component can no longer stretch the gaps
-# of an unrelated line -- the failure mode of a packed layout. The left column is also
-# the list to choose a fixing from, which is what the reader is here for. A component
+# One generator as a component table: the component's name eta_i in a left column, the
+# component itself to the right, ONE COORDINATE PER LINE. Padding is therefore local to
+# the name column, so a long polynomial component can no longer stretch the gaps of an
+# unrelated line -- the failure mode of a packed layout. The left column is also the list
+# of coordinates the direction moves, which is what the reader is here for. A component
 # too wide for the terminal wraps at its top-level '+'/'-' and continues under the
 # component column; a single term wider than that overflows, since breaking inside a
 # product reads worse than a long line.
 .symFormatGenerator <- function(generator, indent, width = getOption("width")) {
   nm <- names(generator)
   if (!length(nm)) return(paste0(indent, "0"))
-  ops <- vapply(nm, .symPartial, character(1), USE.NAMES = FALSE)
+  ops <- vapply(nm, .symEta, character(1), USE.NAMES = FALSE)
   ow  <- max(nchar(ops))
   pad <- strrep(" ", nchar(indent) + ow + 4L)
   room <- max(24L, width - nchar(pad))
@@ -4647,20 +4828,18 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   syms <- object$symmetries
   if (!length(syms)) return(list(syms = list(), labels = character(0)))
   types <- vapply(syms, function(d) as.character(d$type), character(1))
-  syms <- syms[order(match(types, c("scaling", "affine", "translation",
-                                    "polynomial", "general")), seq_along(syms))]
+  syms <- syms[order(match(types, c("scaling", "general")), seq_along(syms))]
   list(syms = syms,
        labels = vapply(seq_along(syms), function(i) paste0("X", .symSubscript(i)),
                        character(1)))
 }
 
-# the type plus the degree / certificate / verification notes, as one label-line tag.
-# On the label line rather than trailing the generator, where a wrapped block used to
-# bury it in the middle.
+# The certificate / verification notes, as one label-line tag. On the label line rather
+# than trailing the generator, where a wrapped block used to bury it in the middle.
+# Neither the class nor the degree is repeated here: the class is the group heading the
+# label sits under, and the degree is read off the component table below it.
 .symFlags <- function(d) {
-  f <- as.character(d$type)
-  if (isTRUE(d$type == "polynomial") && !is.null(d$degree))
-    f <- c(f, sprintf("degree %d", d$degree))
+  f <- character(0)
   if (isTRUE(d$certified)) f <- c(f, "certified")
   if (isFALSE(d$verified)) f <- c(f, "unverified")
   paste(f, collapse = ", ")
@@ -4670,27 +4849,34 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # one, else the canonical components
 .symShown <- function(d) if (!is.null(d$display)) d$display else d$generator
 
-# Print the directions grouped by type (Scalings / Affine / ...), each a label line
-# carrying the class flags followed by its component table. In verbose mode the finite
-# transformation of a polynomial generator and the reason a closed form was missed are
-# shown below it.
+# Print the directions grouped by class (Scalings / General), each a label line carrying
+# whatever notes it has followed by its component table. The legend above them names the
+# object being listed, so the tables need no repeated d/dz column. Its subscripts are
+# U+1D62, in the same family as the U+2080..2089 digits of the X_1, X_2 labels; the
+# bound index stays a subscript there, while an instantiated coordinate takes the
+# parentheses of .symEta. In verbose mode the
+# finite transformation of a polynomial generator and the reason a closed form was missed
+# are shown below it.
 .symCatGenerators <- function(object, verbose = FALSE, width = getOption("width")) {
   o <- .symOrdered(object)
   if (!length(o$syms)) return(invisible())
+  cat("Generators  X = \u03a3\u1d62 \u03b7(i) \u2202\u1d62\n\n")
   lw <- max(nchar(o$labels)); cur <- ""
   for (i in seq_along(o$syms)) {
     d <- o$syms[[i]]
     if (d$type != cur) { cur <- d$type; cat(.symTypeLabel(cur), ":\n", sep = "") }
     lab <- paste0("  ", .symLjust(o$labels[i], lw), "  ")
-    ind <- strrep(" ", nchar(lab) + 2L)
+    ind <- strrep(" ", nchar(lab))
+    notes <- .symFlags(d)
     if (is.null(d$generator)) {
-      cat(lab, .symFlags(d), ", support only\n", ind,
-          paste(d$support, collapse = ", "), "\n", sep = "")
+      cat(sub(" +$", "", paste0(lab, notes, if (nzchar(notes)) ", ", "support only")),
+          "\n", ind, paste(d$support, collapse = ", "), "\n", sep = "")
       if (isTRUE(verbose) && !is.null(d$reason))
         cat(ind, "reason: ", d$reason, "\n", sep = "")
+      cat("\n")
       next
     }
-    cat(lab, .symFlags(d), "\n", sep = "")
+    cat(sub(" +$", "", paste0(lab, notes)), "\n", sep = "")
     cat(.symFormatGenerator(.symShown(d), ind, width), sep = "\n")
     cat("\n")
     if (isTRUE(verbose) && !is.null(d$transformation)) {
@@ -4702,13 +4888,13 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   }
 }
 
-# ---- the fixing report ---------------------------------------------------------
+# ---- the reduction report ------------------------------------------------------
 
 # The integer weight matrix of the scaling directions, one row per scaling. Holding a
 # set S of coordinates fixed leaves exactly those combinations of the scalings whose
 # weight vanishes on all of S -- the kernel of W[, S] -- so S removes every scaling iff
 # rank(W[, S]) equals the number of scalings. That is the whole arithmetic behind the
-# fixing report, and it is why "one coordinate per direction" is necessary but not
+# report below, and it is why "one coordinate per direction" is necessary but not
 # sufficient: the chosen columns must also be independent.
 .symWeights <- function(syms) {
   isScal <- vapply(syms, function(d) isTRUE(d$type == "scaling") && !is.null(d$weights),
@@ -4730,55 +4916,44 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 # the coordinates a direction lives on, whether or not it reached a closed form
 .symCoords <- function(d) if (!is.null(d$generator)) names(d$generator) else d$support
 
-# What to fix, left as the reader's decision: which coordinates each direction offers
-# (that is the component table above), which of them are shared between directions, and
-# -- given a candidate `fixed` -- whether it actually removes everything.
-.symCatFixing <- function(object, fixed = NULL, width = getOption("width")) {
+# How to remove what was found -- one line per class, since the class IS the strategy.
+# A scaling is a gauge freedom: its orbit is a ray, so holding one of its coordinates
+# fixed picks a representative and any value will do. A general direction has a curved
+# orbit that need not reach a prescribed value, so fixing is not free there and the
+# direction is removed by reparametrising onto its invariants instead. Given a candidate
+# `fixed`, the scaling arithmetic above is checked and reported as a rank.
+.symCatReduction <- function(object, fixed = NULL, width = getOption("width")) {
   o <- .symOrdered(object)
   if (!length(o$syms)) return(invisible())
   syms <- o$syms; labels <- o$labels
-  wm <- .symWeights(syms)
-  nScal <- if (is.null(wm)) 0L else nrow(wm$W)
-  other <- setdiff(seq_along(syms), if (is.null(wm)) integer(0) else wm$rows)
-  supp <- lapply(syms, .symCoords)
-  cat("Fixing:\n")
+  isScal <- vapply(syms, function(d) isTRUE(d$type == "scaling"), logical(1))
+  cat("Reduction:\n")
 
   if (is.null(fixed)) {
-    if (nScal)
-      cat(strwrap(paste0("A scaling goes when any one of its coordinates is held fixed",
-                         " -- which one is yours to pick. A set of fixings removes all ",
-                         nScal, " scalings exactly when the weight columns it selects",
-                         " are independent."),
-                  width = max(40L, width - 2L), prefix = "  "), sep = "\n")
-    tab <- table(unlist(supp))
-    shared <- sort(names(tab)[tab > 1L])
-    if (length(shared)) {
-      cat("  Shared coordinates -- fixing one of these settles only one direction:\n")
-      for (s in shared)
-        cat("    ", .symLjust(s, max(nchar(shared))), "  ",
-            paste(labels[vapply(supp, function(v) s %in% v, logical(1))], collapse = ", "),
-            "\n", sep = "")
-    }
-    if (length(other))
-      cat(strwrap(paste0(paste(labels[other], collapse = ", "),
-                         if (length(other) == 1L) " is not a scaling. Fixing a"
-                         else " are not scalings. Fixing a",
-                         " coordinate still removes such a direction, but only at a value",
-                         " its orbit reaches -- a scaling admits any value, a curved orbit",
-                         " does not. Reparametrise onto the invariants, or verify the fit",
-                         " is unchanged after fixing."),
-                  width = max(40L, width - 2L), prefix = "  "), sep = "\n")
-    cat("  Test a candidate set with  summary(<result>, fixed = c(...)), or derive a\n",
-        " reparametrisation with  reduceSymmetry(<result>).\n", sep = "")
+    say <- function(...) cat(strwrap(paste0(...), width = max(40L, width - 2L),
+                                     prefix = "  "), sep = "\n")
+    if (any(isScal))
+      say(paste(labels[isScal], collapse = ", "),
+          if (sum(isScal) == 1L)
+            " is a scaling: gauge it by holding any one of its coordinates fixed,"
+          else " are scalings: gauge them by holding one coordinate of each fixed,",
+          " at any value.")
+    if (any(!isScal))
+      say(paste(labels[!isScal], collapse = ", "),
+          if (sum(!isScal) == 1L) " is not a scaling: reparametrise onto its"
+          else " are not scalings: reparametrise onto their",
+          " invariants with  symmetryReduction(<result>).")
     return(invisible())
   }
 
   fixed <- unique(as.character(fixed))
+  wm <- .symWeights(syms)
+  nScal <- if (is.null(wm)) 0L else nrow(wm$W)
   cat("  candidate: ", .symPlural(length(fixed), "coordinate", "coordinates"), "\n", sep = "")
   if (nScal) {
     inW <- intersect(fixed, colnames(wm$W))
     r <- .symRank(wm$W[, inW, drop = FALSE])
-    cat(sprintf("  scalings:   %d of %d removed (weight rank %d / %d)%s\n",
+    cat(sprintf("  scalings:  %d of %d removed (weight rank %d / %d)%s\n",
                 r, nScal, r, nScal,
                 if (r == nScal) "" else sprintf("  --  %d survive", nScal - r)))
     red <- character(0); acc <- character(0)
@@ -4786,23 +4961,16 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
       if (.symRank(wm$W[, c(acc, cn), drop = FALSE]) == .symRank(wm$W[, acc, drop = FALSE]))
         red <- c(red, cn) else acc <- c(acc, cn)
     if (length(red))
-      cat("              redundant (raise no rank): ", paste(red, collapse = ", "),
+      cat("             redundant (raise no rank): ", paste(red, collapse = ", "),
           "\n", sep = "")
   }
-  if (length(other)) {
-    untouched <- other[vapply(other, function(i) !any(supp[[i]] %in% fixed), logical(1))]
-    if (length(untouched))
-      cat("  untouched:  ", paste(labels[untouched], collapse = ", "),
-          " -- no fixed coordinate in the support\n", sep = "")
-    hit <- setdiff(other, untouched)
-    if (length(hit))
-      cat("  reduced:    ", paste(labels[hit], collapse = ", "),
-          " -- not a scaling, so the rank argument does not settle these\n", sep = "")
-  }
-  unknown <- setdiff(fixed, unique(unlist(supp)))
+  if (any(!isScal))
+    cat("  general:   ", paste(labels[!isScal], collapse = ", "),
+        " (fixing does not settle these; reparametrise instead)\n", sep = "")
+  unknown <- setdiff(fixed, unique(unlist(lapply(syms, .symCoords))))
   if (length(unknown))
-    cat("  no effect:  ", paste(unknown, collapse = ", "),
-        " -- not a coordinate of any direction\n", sep = "")
+    cat("  no effect: ", paste(unknown, collapse = ", "),
+        " (not a coordinate of any direction)\n", sep = "")
   invisible()
 }
 
@@ -4811,7 +4979,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
 .symPlural <- function(n, one, many) sprintf("%d %s", n, if (n == 1L) one else many)
 
 # The result section (shared by print() and summary()): the one-line verdict, the
-# grouped generators, then what can be fixed. This is all print() shows -- summary()
+# grouped generators, then how to remove them. This is all print() shows -- summary()
 # prints the header and computation block above it.
 .symCatResult <- function(object, verbose = FALSE, fixed = NULL,
                           width = getOption("width"), fixing = FALSE) {
@@ -4824,7 +4992,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
   }
   if (isObs) {
     dirs <- .symPlural(n, "non-identifiable direction", "non-identifiable directions")
-    cat(sprintf("Result:  rank %d / %d  --  %s\n\n", object$rank, object$dim, dirs))
+    cat(sprintf("Result:  rank %d / %d  |  %s\n\n", object$rank, object$dim, dirs))
   } else if (m == "scaling") {
     cat(sprintf("Result:  %s (exact integer kernel)\n\n",
                 .symPlural(n, "scaling symmetry", "scaling symmetries")))
@@ -4839,9 +5007,9 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
                             "polynomial Lie-symmetry generators")))
   }
   .symCatGenerators(object, verbose, width)
-  # The fixing walkthrough is opt-in: summary() and an explicit `fixed = `
-  # request it; the default print stays at verdict + generators.
-  if (isTRUE(fixing) || !is.null(fixed)) .symCatFixing(object, fixed, width)
+  # The reduction note is opt-in: summary() and an explicit `fixed = ` request it;
+  # the default print stays at verdict + generators.
+  if (isTRUE(fixing) || !is.null(fixed)) .symCatReduction(object, fixed, width)
 }
 
 
@@ -4862,6 +5030,13 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
              function(k) .symScalingComponent(d$vector[[k]], k), character(1))),
              names(d$vector))
   }
+  # The components are the right-hand side of the flow dz_i/deps = xi_i(z), so they
+  # are handed out as an eqnvec in R's power syntax: odemodel(gen$generator) builds
+  # that flow directly. sympy's '**' would reach R's parser as it stands but sympy's
+  # own reader must get it back (.symDisplayForm, .symRedGenPrep both convert).
+  gen <- if (is.null(gen)) NULL else
+    as.eqnvec(setNames(gsub("\\*\\*", "^", vapply(gen, as.character, character(1))),
+                       names(gen)))
   structure(list(
     type           = sub("^Type: ", "", as.character(d$type)),
     generator      = gen,
@@ -4896,7 +5071,8 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     d$display <- lapply(d$generator, function(x) {
       x <- as.character(x)
       if (nchar(x) > 4000L) return(gsub("\\*\\*", "^", x))
-      y <- tryCatch(as.character(spy$factor(spy$sympify(x))), error = function(e) x)
+      y <- tryCatch(as.character(spy$factor(spy$sympify(gsub("\\^", "**", x)))),
+                    error = function(e) x)
       if (length(y) != 1L || is.na(y) || nchar(y) >= nchar(x)) y <- x
       gsub("\\*\\*", "^", y)
     })
@@ -4934,7 +5110,7 @@ scalingControl <- function(backend = c("symengine", "sympy")) {
     conditions   = raw$conditions,
     segments     = raw$segments,
     # the full coordinate list of the analysis (states + unknown parameters), so a
-    # consumer (reduceSymmetry) can build a complete identity-based trafo; engines
+    # consumer (symmetryReduction) can build a complete identity-based trafo; engines
     # deliver it in raw$coordinates, the polynomial dispatcher passes it explicitly
     coordinates  = if (!is.null(raw$coordinates)) as.character(raw$coordinates)
                    else coordinates,

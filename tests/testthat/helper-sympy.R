@@ -22,7 +22,9 @@
 # exact symbolic equality of two expression strings via sympy
 .symExprEqual <- function(a, b) {
   spy <- reticulate::import("sympy", convert = TRUE)
-  as.character(spy$simplify(spy$sympify(paste0("(", a, ") - (", b, ")")))) == "0"
+  # arguments may come from $generator, which is in R's power syntax
+  ab <- gsub("\\^", "**", paste0("(", a, ") - (", b, ")"))
+  as.character(spy$simplify(spy$sympify(ab))) == "0"
 }
 
 

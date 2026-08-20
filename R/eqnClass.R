@@ -1439,3 +1439,74 @@ eqnlist <- function(smatrix = NULL, states = colnames(smatrix), rates = NULL,
 
 
 
+
+
+#' Transform an ODE to log10 coordinates
+#'
+#' Reads `f` as the right-hand side of \eqn{\dot x = f(x)} and returns the same
+#' system in \eqn{x_{l10} = \log_{10} x}. By the chain rule
+#'
+#' \deqn{\dot x_{l10} = \frac{f(x)}{\log(10)\, x}, \qquad x = 10^{x_{l10}}}
+#'
+#' so each right-hand side is divided by its own state and every remaining state
+#' replaced by `10^` of the transformed one. The division is cancelled
+#' symbolically first, which is what makes the result readable: `x = "-k*x"`
+#' becomes `x_l10 = "-k/log(10)"`, not a ratio that happens to simplify at
+#' runtime.
+#'
+#' Integrating in these coordinates cannot produce a negative state, since a power
+#' of ten is positive for every real exponent -- positivity is the geometry of the
+#' chart rather than a constraint checked afterwards. Where a trajectory would have
+#' crossed \eqn{x = 0}, the transformed variable escapes to `-Inf` and the solver
+#' stops there instead.
+#'
+#' The back-substitution is written `(10^(x_l10))`, not `exp10(x_l10)`, although
+#' the latter reads better and works inside a [P()] transformation: `exp10` is a
+#' C99 function with no entry in R's derivatives table, so a model built on it has
+#' no symbolic Jacobian and [Xs()] cannot generate sensitivities. The parentheses
+#' are load-bearing -- R's `^` is right-associative, so a bare `10^x_l10`
+#' substituted into `x^2` would mean `10^(x_l10^2)`.
+#'
+#' Read results back in R with `10^x_l10`.
+#'
+#' @param f `eqnvec` (or named character vector) holding the right-hand sides.
+#' @param suffix appended to each state name.
+#' @param simplify cancel the division symbolically with sympy. `FALSE`, or an
+#'   unavailable sympy, leaves the plain quotient, which is equivalent but wordy.
+#' @return An `eqnvec` over the renamed states.
+#' @seealso [odemodel()], which compiles the result.
+#' @export
+#' @examples
+#' log10Transform(eqnvec(x = "-k*x"))
+#' log10Transform(eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B"))
+log10Transform <- function(f, suffix = "_l10", simplify = TRUE) {
+
+  f <- as.eqnvec(f)
+  states <- names(f)
+  renamed <- paste0(states, suffix)
+
+  spy <- NULL
+  if (simplify)
+    spy <- tryCatch(reticulate::import("sympy", convert = TRUE),
+                    error = function(e) NULL)
+
+  rhs <- vapply(states, function(k) {
+    quotient <- paste0("(", f[[k]], ")/(", k, ")")
+    if (!is.null(spy)) {
+      # cancel removes the state where it divides out, expand then distributes
+      # what is left over the division: (-A*k1 + B*k2)/A becomes -k1 + B*k2/A
+      cancelled <- tryCatch(
+        gsub("\\*\\*", "^", as.character(
+          spy$expand(spy$cancel(spy$sympify(gsub("\\^", "**", quotient)))))),
+        error = function(e) NULL)
+      if (!is.null(cancelled)) quotient <- cancelled
+    }
+    quotient <- replaceSymbols(states, paste0("(10^(", renamed, "))"), quotient)
+    # a bare symbol needs no parentheses; anything else does
+    if (grepl("^-?[A-Za-z0-9_.]+$", quotient)) paste0(quotient, "/log(10)")
+    else paste0("(", quotient, ")/log(10)")
+  }, character(1))
+
+  as.eqnvec(setNames(rhs, renamed))
+
+}

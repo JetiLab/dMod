@@ -829,26 +829,31 @@ def _canon_int_vector(prim, gens):
     return scaled
 
 
-def classifyDirection(vector, degreeCap=4):
+def classifyDirection(vector):
     """Classify one non-identifiability direction and return its canonical
     poly-primitive differential generator.
 
     `vector` is a dict {coordinate: component_str} giving the LITERAL components
-    xi_i of the generator  X = sum_i xi_i * d/dz_i  (a scaling is passed as
+    eta_i of the generator  X = sum_i eta_i * d/dz_i  (a scaling is passed as
     {z_i: "w_i*z_i"}). A generator is only defined up to multiplication by a
     nonzero function h(z); that gauge is fixed by clearing the common denominator
     and dividing by the polynomial content of the numerators, then normalising to a
-    canonical integer-primitive representative. The class is read off the result:
+    canonical integer-primitive representative. The class is read off the result.
 
-      scaling      : every xi_i = w_i * z_i   (own coordinate, degree 1)
-      translation  : every xi_i is a nonzero constant
-      affine       : total degree <= 1, but neither pure scaling nor translation
-      polynomial   : max total degree d in 2..degreeCap
-      general      : non-polynomial, or degree > degreeCap
+    There are two classes, because there are two ways to remove a direction:
+
+      scaling : every eta_i = w_i * z_i (own coordinate, degree 1). The orbit is a
+                ray through the positive orthant, so every value of a coordinate is
+                reachable and the direction is a gauge freedom: hold one coordinate
+                fixed, at any value.
+      general : anything else. The orbit is curved and reaches only part of the
+                coordinate space, so fixing a coordinate is not free -- the
+                direction is removed by reparametrising onto its invariants.
 
     Returns {'type', 'weights', 'components', 'degree'}: `weights` is the integer
-    scaling-weight map (None unless scaling); `components` is the canonical
-    generator {z_i: str(xi_i)} used to render every non-scaling class."""
+    scaling-weight map (None unless scaling), `components` the canonical generator
+    {z_i: str(eta_i)}, and `degree` its total degree (-1 when not polynomial, which
+    is what the fallback returns)."""
     items = [(str(k), str(v)) for k, v in vector.items()]
     fallback = {'type': 'general', 'weights': None,
                 'components': {k: v for k, v in items}, 'degree': -1}
@@ -892,18 +897,14 @@ def classifyDirection(vector, degreeCap=4):
     prim = _canon_int_vector(prim, gens)
 
     # read the class off the canonical representative
-    isScaling, isTransl, maxdeg = True, True, 0
+    isScaling, maxdeg = True, 0
     for i, e in enumerate(prim):
         if e == 0:
             continue
         P = spy.Poly(e, *gens)
         maxdeg = max(maxdeg, P.total_degree())
         monoms = list(P.as_dict().keys())
-        constTerm = (len(monoms) == 1 and sum(monoms[0]) == 0)
-        selfTerm = (len(monoms) == 1 and sum(monoms[0]) == 1 and monoms[0][i] == 1)
-        if not constTerm:
-            isTransl = False
-        if not selfTerm:
+        if not (len(monoms) == 1 and sum(monoms[0]) == 1 and monoms[0][i] == 1):
             isScaling = False
 
     comp_out = {str(gens[i]): str(prim[i]) for i in range(n) if prim[i] != 0}
@@ -915,13 +916,6 @@ def classifyDirection(vector, degreeCap=4):
                 weights[str(gens[i])] = int(spy.Poly(prim[i], *gens).as_dict()[key])
         return {'type': 'scaling', 'weights': weights,
                 'components': comp_out, 'degree': 1}
-    if isTransl:
-        return {'type': 'translation', 'weights': None, 'components': comp_out, 'degree': 0}
-    if maxdeg <= 1:
-        return {'type': 'affine', 'weights': None, 'components': comp_out, 'degree': 1}
-    if maxdeg <= degreeCap:
-        return {'type': 'polynomial', 'weights': None,
-                'components': comp_out, 'degree': int(maxdeg)}
     return {'type': 'general', 'weights': None,
             'components': comp_out, 'degree': int(maxdeg)}
 
