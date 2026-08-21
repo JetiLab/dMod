@@ -77,11 +77,15 @@ jobs:
       R_KEEP_PKG_SOURCE: yes
       DMOD_PETABTESTS: ${{ github.workspace }}/PEtabTests
       DMOD_BENCHMARKMODELS: ${{ github.workspace }}/BenchmarkModels
+      # the container sets no LANG, so R runs with session charset ASCII and every
+      # multibyte character in printed output arrives as raw bytes -- regexes over
+      # captured output then behave differently than on the hosted runners
+      LANG: en_US.UTF-8
 
     steps:
-      # glibc-langpack-en: the image ships glibc-minimal-langpack only, so
-      # R CMD check's syntax pass cannot honour the en_US.UTF-8 it asks for and
-      # warns -- which error-on: "warning" turns into a failed job.
+      # glibc-langpack-en: the image ships glibc-minimal-langpack only, so the
+      # en_US.UTF-8 above (and the one R CMD check's syntax pass asks for) has no
+      # locale to bind to, and the warning that follows fails error-on: "warning".
       - name: Install R and build dependencies
         run: |
           dnf install -y --setopt=install_weak_deps=False \

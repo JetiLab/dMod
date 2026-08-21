@@ -260,7 +260,9 @@ test_that("print stays lean; summary carries the block report", {
   # Invariants list above, so they are not repeated, and no certificate is printed
   rep <- capture.output(summary(red))
   expect_true(any(grepl("^Blocks$", rep)))
-  expect_true(any(grepl("\\{X.\\} scaling, reduced \\| transversal ktl = 1", rep)))
+  # [^}] not . -- under an ASCII session charset the label subscript reaches the
+  # captured line as its raw bytes, which a byte-wise "." cannot span
+  expect_true(any(grepl("\\{X[^}]+\\} scaling, reduced \\| transversal ktl = 1", rep)))
   expect_true(any(grepl("admissible", rep)))
   expect_true(any(grepl("ktx *= ktx\\*ktl", rep)))
   expect_false(any(grepl("invariants  |certificate|certified", rep)))
