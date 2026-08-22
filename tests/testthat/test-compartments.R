@@ -68,10 +68,9 @@ test_that("subset.eqnlist drops unreferenced compartments", {
   f <- NULL
   f <- addReaction(f, "A", "B", "k1*A", "r1")
   f <- addReaction(f, "B", "C", "k2*B", "r2")
-  f$compartments <- list(c1 = list(volume = "V1", rule = NULL),
-                         c2 = list(volume = "V2", rule = NULL))
-  f$compartmentOf <- c(A = "c1", B = "c1", C = "c2")
-  f$volumes <- c(A = "V1", B = "V1", C = "V2")
+  f <- f |>
+    assignCompartment(A = "c1", B = "c1", C = "c2") |>
+    setCompartmentVolume(c1 = "V1", c2 = "V2")
 
   f_sub <- subset(f, Description == "r1")
   expect_equal(names(f_sub$compartments), "c1")
@@ -192,8 +191,7 @@ test_that("rateCompartment enables reactions with educts across compartments", {
   f <- addReaction(f, "L + R",     "Compl", "k_on*L*R",
                    compartment = "cytosol",
                    rateCompartment = "extraCellular")
-  f$compartments$extraCellular$volume <- "V_ext"
-  f$compartments$cytosol$volume       <- "V_cyt"
+  f <- setCompartmentVolume(f, extraCellular = "V_ext", cytosol = "V_cyt")
 
   # reactionCompartment vector stored
   expect_equal(f$reactionCompartment[3], "extraCellular")
@@ -226,8 +224,7 @@ test_that("subset.eqnlist and c.eqnlist preserve reactionCompartment", {
                    compartment = "ext")
   f <- addReaction(f, "L + R",  "C", "k2*L*R", "bind",
                    compartment = "cyt", rateCompartment = "ext")
-  f$compartments$ext$volume <- "V_ext"
-  f$compartments$cyt$volume <- "V_cyt"
+  f <- setCompartmentVolume(f, ext = "V_ext", cyt = "V_cyt")
 
   expect_equal(f$reactionCompartment, c(NA, "ext"))
 
@@ -253,4 +250,159 @@ test_that("getParameters.eqnlist picks up symbolic compartment volumes", {
   expect_true("V_cyt" %in% params)
   expect_true("V_nuc" %in% params)
   expect_true("k" %in% params)
+})
+
+test_that("assignCompartment fixes the layout independently of reaction order", {
+  addRC <- function(eq, from, to, rate, ...) addReaction(eq, from, to, rate, compartment = "Cell", ...)
+  addRE <- function(eq, from, to, rate, ...) addReaction(eq, from, to, rate, compartment = "extraCell", ...)
+
+  # TGFb is extracellular although the first reaction mentioning it is a
+  # cell-surface binding step.
+  f <- eqnlist() |>
+    assignCompartment(TGFb = "extraCell", volume = "V_ext") |>
+    addRC("R + TGFb", "R_TGFb", "k_on*R*TGFb") |>
+    addRE("", "TGFb", "k_secr*TGFB1", rateCompartment = "Cell") |>
+    setCompartmentVolume(Cell = "V_Cell")
+
+  expect_equal(unname(f$compartmentOf[["TGFb"]]), "extraCell")
+  expect_equal(unname(f$compartmentOf[["R"]]), "Cell")
+  # An explicit `compartment` is taken as the frame when the educts span.
+  expect_equal(f$reactionCompartment[1], "Cell")
+
+  fl <- getFluxes(f)
+  expect_true(any(grepl("\\(V_Cell/V_ext\\)", fl$TGFb)))
+  expect_false(any(grepl("V_Cell/V_Cell", unlist(fl))))
+})
+
+test_that("assignCompartment moves a state afterwards and re-derives volumes", {
+  f <- addReaction(NULL, "A", "B", "k*A", compartment = "cyt") |>
+    setCompartmentVolume(cyt = "V_cyt") |>
+    assignCompartment(B = "nuc", volume = "V_nuc")
+
+  expect_equal(unname(f$compartmentOf[["B"]]), "nuc")
+  expect_equal(unname(f$volumes[["B"]]), "V_nuc")
+  expect_true(is.eqnlist(f))
+  expect_true(grepl("V_cyt/V_nuc", getFluxes(f)$B))
+})
+
+test_that("is.eqnlist catches a $volumes view left stale by in-place edits", {
+  f <- addReaction(NULL, "A", "B", "k*A", compartment = "cyt")
+  f$compartments$cyt$volume <- "V_cyt"
+  expect_false(is.eqnlist(f))
+  expect_true(is.eqnlist(setCompartmentVolume(
+    addReaction(NULL, "A", "B", "k*A", compartment = "cyt"), cyt = "V_cyt")))
+})
+
+test_that("subset keeps a compartment that only a reaction frame references", {
+  f <- eqnlist(
+    smatrix = matrix(c(-1, NA, NA, NA, -1, 1), nrow = 2, byrow = TRUE,
+                     dimnames = list(NULL, c("L", "R", "C"))),
+    states = c("L", "R", "C"), rates = c("kd*L", "kf*R"),
+    description = c("degL", "conv"),
+    compartments = list(ext = "V_ext", cyt = "V_cyt"),
+    compartmentOf = c(L = "ext", R = "cyt", C = "cyt"),
+    reactionCompartment = c(NA, "ext"))
+
+  f_sub <- subset(f, Description == "conv")
+  expect_true(is.eqnlist(f_sub))
+  expect_true("ext" %in% names(f_sub$compartments))
+  expect_equal(f_sub$reactionCompartment, "ext")
+})
+
+test_that("amount fluxes carry no dilution term", {
+  f <- eqnlist(
+    smatrix = matrix(c(-1, 1), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+    states = c("A", "B"), rates = "k*A", description = "r",
+    compartments = list(cyt = list(volume = "V_cyt", rule = "mu*V_cyt")),
+    compartmentOf = c(A = "cyt", B = "cyt"))
+
+  expect_true(any(grepl("dilution", names(getFluxes(f, "conc")$A))))
+  expect_false(any(grepl("dilution", names(getFluxes(f, "amount")$A))))
+})
+
+test_that("states in substance units are not divided by their volume", {
+  f <- eqnlist(
+    smatrix = matrix(c(-1, 1), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+    states = c("A", "B"), rates = "k*A", description = "transport",
+    compartments = list(cyt = "V_cyt", nuc = "V_nuc"),
+    compartmentOf = c(A = "cyt", B = "nuc"),
+    amountStates = "B")
+
+  expect_true(is.eqnlist(f))
+  expect_equal(unname(getFluxes(f)$A), "-1*(k*A)")
+  expect_equal(unname(getFluxes(f)$B), "1*(k*A)*(V_cyt)")
+  expect_error(
+    eqnlist(smatrix = matrix(-1, nrow = 1, dimnames = list(NULL, "A")),
+            states = "A", rates = "k*A", amountStates = "Nope"),
+    "amountStates")
+})
+
+test_that("a net-zero reaction contributes no flux instead of failing", {
+  f <- addReaction(NULL, "A", "A", "k*A", "futile")
+  expect_length(getFluxes(f)$A, 0)
+  expect_equal(unname(as.eqnvec(f)[["A"]]), "0")
+})
+
+test_that("the constructor normalises zero stoichiometry to NA", {
+  f <- eqnlist(smatrix = matrix(c(-1, 0), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+               states = c("A", "B"), rates = "k*A", description = "r")
+  expect_true(is.na(f$smatrix[1, "B"]))
+  expect_length(getFluxes(f)$B, 0)
+})
+
+test_that("write.eqnlist warns that the csv drops the compartment layout", {
+  f <- eqnlist(smatrix = matrix(c(-1, 1), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+               states = c("A", "B"), rates = "k*A", description = "r",
+               compartments = list(cyt = "V_cyt", nuc = "V_nuc"),
+               compartmentOf = c(A = "cyt", B = "nuc"))
+  expect_warning(write.eqnlist(f, file = tempfile(fileext = ".csv")), "compartments")
+})
+
+test_that("auto-generated compartment IDs follow first appearance, not collation", {
+  f <- eqnlist(smatrix = matrix(c(-1, 1), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+               states = c("A", "B"), rates = "k*A", description = "r",
+               volumes = c(A = "Zeta", B = "Alpha"))
+  expect_equal(unname(f$compartmentOf[["A"]]), "c1")
+  expect_equal(f$compartments$c1$volume, "Zeta")
+})
+
+test_that("print surfaces substance-unit states", {
+  f <- eqnlist(
+    smatrix = matrix(c(-1, -1, 1), nrow = 1, dimnames = list(NULL, c("L", "R", "C"))),
+    states = c("L", "R", "C"), rates = "k*L*R", description = "bind",
+    compartments = list(ext = "V_ext", cyt = "V_cyt"),
+    compartmentOf = c(L = "ext", R = "cyt", C = "cyt"),
+    reactionCompartment = "ext", amountStates = "C")
+  captured <- paste(capture.output(print(f)), collapse = "\n")
+  expect_true(grepl("substance units: C", captured))
+})
+
+test_that("a stale $volumes argument is reported rather than dropped", {
+  f <- addReaction(NULL, "A", "B", "k*A", compartment = "cyt") |>
+    setCompartmentVolume(cyt = "V_cyt")
+  expect_warning(
+    eqnlist(f$smatrix, f$states, f$rates, volumes = c(A = "1", B = "1"),
+            description = f$description,
+            compartments = f$compartments, compartmentOf = f$compartmentOf),
+    "disagrees")
+})
+
+test_that("a compartment declared for a future state survives until it appears", {
+  f <- eqnlist() |> assignCompartment(TGFb = "extraCell", volume = "V_ext")
+  expect_true(is.eqnlist(f))
+  expect_equal(unname(f$compartmentOf[["TGFb"]]), "extraCell")
+  expect_true(grepl("Declared", paste(capture.output(print(
+    addReaction(f, "A", "B", "k*A", compartment = "Cell"))), collapse = "\n")))
+
+  g <- addReaction(f, "", "TGFb", "k_secr", compartment = "Cell")
+  expect_equal(unname(g$compartmentOf[["TGFb"]]), "extraCell")
+  expect_equal(unname(g$volumes[["TGFb"]]), "V_ext")
+})
+
+test_that("an explicit volumes argument beats a layout carried along as attribute", {
+  f <- eqnlist(smatrix = matrix(c(-1, 1), nrow = 1, dimnames = list(NULL, c("A", "B"))),
+               states = c("A", "B"), rates = "k1*A", description = "forward")
+  g <- as.eqnlist(as.data.frame(f), volumes = c(A = "Vcyt", B = "Vnuc"))
+  expect_equal(unname(g$volumes[["A"]]), "Vcyt")
+  expect_true(grepl("Vcyt/Vnuc", getFluxes(g)$B))
 })

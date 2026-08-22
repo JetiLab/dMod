@@ -15,6 +15,7 @@ as.eqnlist(data, volumes, ...)
   compartments = NULL,
   compartmentOf = NULL,
   reactionCompartment = NULL,
+  amountStates = NULL,
   ...
 )
 
@@ -29,6 +30,7 @@ eqnlist(
   compartments = NULL,
   compartmentOf = NULL,
   reactionCompartment = NULL,
+  amountStates = NULL,
   totals = NULL
 )
 }
@@ -47,11 +49,16 @@ volume expression (character) or a list with fields \code{volume} and \code{rule
 (\code{rule} reserved for future dynamic-volume support, must be \code{NULL}).}
 
 \item{compartmentOf}{Named character vector mapping state → compartment ID.
-States not listed default to compartment \code{"defaultComp"} with volume \code{"1"}.}
+States not listed default to compartment \code{"defaultComp"} with volume \code{"1"}.
+May also name states that do not exist yet; see \code{\link[=assignCompartment]{assignCompartment()}}.}
 
 \item{reactionCompartment}{Optional character vector of length
 \code{nrow(smatrix)}. Per-reaction reference compartment ID; use \code{NA} to infer
 from educts. Required when educts span multiple compartments.}
+
+\item{amountStates}{Optional character vector of states that carry substance
+units (amounts) rather than concentrations, SBML's \code{hasOnlySubstanceUnits}.
+Their fluxes are not divided by a compartment volume.}
 
 \item{x}{object of class \code{eqnlist}}
 

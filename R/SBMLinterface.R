@@ -82,8 +82,10 @@ importSbml <- function(modelpath) {
       # eqnlist had volume "1". Otherwise use the SBML compartment ID as the
       # volume symbol so the trafo can override it.
       trivial <- !is.null(c$size) && is.numeric(c$size) && isTRUE(c$size == 1)
-      compartments[[c$id]] <- list(volume = if (trivial) "1" else c$id,
-                                   rule   = NULL)
+      # An InitialAssignment on the compartment is its symbolic volume.
+      volume <- if (!is.null(c$sizeAssignment)) .normalise_formula(c$sizeAssignment)
+                else if (trivial) "1" else c$id
+      compartments[[c$id]] <- list(volume = volume, rule = NULL)
     }
     if (!is.null(spc_json) && length(spc_json) > 0L) {
       compartmentOf <- unlist(spc_json)
@@ -95,11 +97,13 @@ importSbml <- function(modelpath) {
     compartmentOf <- NULL
   }
 
-  # Normalize each kinetic law: rate_dMod = K / V_home. The home compartment is
-  # determined from the educt rows of S; pure-synthesis reactions fall back to
-  # the product compartment. Non-factorable kinetic laws retain a `/V` term in
-  # the rate string, which is mathematically correct if aesthetically ugly.
+  # Normalize each kinetic law: rate_dMod = K / V_ref. Any compartment works as
+  # V_ref -- getFluxes() multiplies it back in -- as long as the choice is
+  # recorded, which is what `reactionCompartment` is for. The educt compartment
+  # is the natural one; pure-synthesis reactions fall back to the product side.
+  reactionCompartment <- NULL
   if (!is.null(compartmentOf) && !is.null(S)) {
+    reactionCompartment <- rep(NA_character_, length(v))
     for (i in seq_along(v)) {
       row_i <- S[i, ]
       educt_idx <- which(!is.na(row_i) & row_i < 0)
@@ -107,16 +111,17 @@ importSbml <- function(modelpath) {
       home_cids <- if (length(educt_idx) > 0)   unique(compartmentOf[states[educt_idx]])
                    else if (length(product_idx) > 0) unique(compartmentOf[states[product_idx]])
                    else character(0)
-      if (length(home_cids) == 1L) {
-        home_vol <- compartments[[home_cids]]$volume
-        if (!identical(home_vol, "1"))
-          v[i] <- paste0("(", v[i], ")/(", home_vol, ")")
-      } else if (length(home_cids) > 1L) {
-        warning(sprintf("Reaction %d spans compartments (%s); kinetic law stored as-is.",
-                        i, paste(home_cids, collapse = ", ")))
-      }
+      if (length(home_cids) == 0L) next
+      if (length(home_cids) > 1L) reactionCompartment[i] <- home_cids[1]
+      home_vol <- compartments[[home_cids[1]]]$volume
+      if (!identical(home_vol, "1"))
+        v[i] <- paste0("(", v[i], ")/(", home_vol, ")")
     }
+    if (all(is.na(reactionCompartment))) reactionCompartment <- NULL
   }
+
+  # SBML species with hasOnlySubstanceUnits carry amounts, not concentrations.
+  amountStates <- intersect(unlist(json_content[["amountSpecies"]]), states)
 
   pars <- setNames(json_content[["p"]], json_content[["parameterNames"]])
   x0 <- setNames(.normalise_formula(json_content[["x0"]]),
@@ -175,6 +180,11 @@ importSbml <- function(modelpath) {
       # Append a virtual reaction: stoichiometry +1 on `var`, 0 elsewhere;
       # rate string = rhs. After eqnlist construction this contributes
       # +rhs to the RHS row of `var`, which is exactly the rate rule.
+      # An amount species has V_X = 1, so divide its volume out to leave dn/dt = rhs.
+      if (var %in% amountStates && !is.null(compartmentOf)) {
+        var_vol <- compartments[[unname(compartmentOf[var])]]$volume
+        if (!identical(var_vol, "1")) rhs <- paste0("(", rhs, ")/(", var_vol, ")")
+      }
       new_col <- rep(NA_real_, length(states))
       new_col[match(var, states)] <- 1
       S <- if (is.null(S)) matrix(new_col, nrow = 1L)
@@ -183,8 +193,15 @@ importSbml <- function(modelpath) {
     }
   }
 
+  # Virtual rate-rule reactions have no annotation; their frame is inferred.
+  if (!is.null(reactionCompartment) && length(v) > length(reactionCompartment))
+    reactionCompartment <- c(reactionCompartment,
+                             rep(NA_character_, length(v) - length(reactionCompartment)))
+
   reactions <- eqnlist(smatrix = S, states = states, rates = v,
-                       compartments = compartments, compartmentOf = compartmentOf)
+                       compartments = compartments, compartmentOf = compartmentOf,
+                       reactionCompartment = reactionCompartment,
+                       amountStates = amountStates)
 
   observables <- json_content[["observables"]]
 
@@ -241,8 +258,9 @@ importSbml <- function(modelpath) {
 #'
 #' Serialises an [eqnlist] plus parameter values and initial concentrations to
 #' SBML Level 3 Version 2. Each reaction's kinetic law is emitted as
-#' `V_home * rate_dMod` to restore SBML's extensive-flux convention
-#' (`K_SBML = rate_dMod * V`). Requires a Python environment with `libsbml`
+#' `V_ref * rate_dMod` to restore SBML's extensive-flux convention
+#' (`K_SBML = rate_dMod * V_ref`). Symbolic volumes are written as an
+#' `<initialAssignment>` on the compartment. Requires a Python environment with `libsbml`
 #' installed; the default location matches the one used by [importSbml()].
 #'
 #' @param eqnlist Object of class [eqnlist] to export.
@@ -251,7 +269,8 @@ importSbml <- function(modelpath) {
 #'   `NULL` to write parameters without values.
 #' @param inits Named numeric *or* character vector of initial values keyed
 #'   by state name. Numeric entries (or character entries that parse as
-#'   numeric) are written as `initialConcentration`; non-numeric character
+#'   numeric) are written as `initialConcentration` -- `initialAmount` for
+#'   states listed in `eqnlist$amountStates`; non-numeric character
 #'   entries are emitted as `<initialAssignment>` formulas and let the SBML
 #'   simulator resolve the expression against `parameters` at sim time.
 #'   Missing states default to 0.
@@ -274,16 +293,19 @@ exportSbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
     entry <- eqnlist$compartments[[cid]]
     vol <- entry$volume
     size <- suppressWarnings(as.numeric(vol))
-    if (is.na(size)) size <- 1.0
-    list(id = cid, size = size, spatialDimensions = 3L)
+    out <- list(id = cid, size = if (is.na(size)) 1.0 else size, spatialDimensions = 3L)
+    if (is.na(size)) out$sizeAssignment <- vol
+    out
   })
 
   species_list <- lapply(eqnlist$states, function(st) {
     raw <- if (!is.null(inits) && st %in% names(inits)) inits[[st]] else 0
     num <- suppressWarnings(as.numeric(raw))
-    base <- list(id = st, compartment = unname(eqnlist$compartmentOf[[st]]))
+    amount <- st %in% eqnlist$amountStates
+    base <- list(id = st, compartment = unname(eqnlist$compartmentOf[[st]]),
+                 hasOnlySubstanceUnits = amount)
     if (!is.na(num)) {
-      c(base, list(initialConcentration = num))
+      if (amount) c(base, list(initialAmount = num)) else c(base, list(initialConcentration = num))
     } else {
       # symbolic: emit as <initialAssignment>; the formula may reference any
       # parameter declared on the SBML side (incl. compartment-volume IDs).
@@ -298,9 +320,14 @@ exportSbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
   }
 
   # Each row of the stoichiometric matrix becomes one reaction. The kinetic
-  # law is `rate * V_home` -- the α-bridge identity in the export direction.
+  # law is `rate * V_ref` -- the α-bridge identity in the export direction.
   smatrix <- eqnlist$smatrix
-  rxn_list <- lapply(seq_len(nrow(smatrix)), function(i) {
+  vref_vol <- .refVolumes(.refCompartments(smatrix, eqnlist$compartmentOf[eqnlist$states],
+                                           eqnlist$reactionCompartment, eqnlist$description),
+                          eqnlist$compartments)
+  # unname(): a named index vector would make rjson emit an object, not an array.
+  rxn_rows <- unname(which(apply(!is.na(smatrix), 1L, any)))
+  rxn_list <- lapply(rxn_rows, function(i) {
     row_i <- smatrix[i, ]
     # `which()` on a named vector preserves names, which would propagate
     # through lapply() into a *named* list -- rjson then serialises it as
@@ -314,9 +341,7 @@ exportSbml <- function(eqnlist, parameters = NULL, inits = NULL, filepath,
     products <- lapply(product_idx, function(j)
       list(species = eqnlist$states[j], stoich = as.numeric(row_i[j])))
 
-    home_idx <- if (length(educt_idx) > 0L) educt_idx else product_idx
-    home_cid <- unique(unname(eqnlist$compartmentOf[eqnlist$states[home_idx]]))[1]
-    home_vol <- eqnlist$compartments[[home_cid]]$volume
+    home_vol <- vref_vol[i]
     kinetic_law <- paste0("(", home_vol, ") * (", eqnlist$rates[i], ")")
 
     list(id = paste0("r", i),

@@ -21,7 +21,8 @@ compartment-size parameters referenced in \code{eqnlist$compartments}). Pass
 
 \item{inits}{Named numeric \emph{or} character vector of initial values keyed
 by state name. Numeric entries (or character entries that parse as
-numeric) are written as \code{initialConcentration}; non-numeric character
+numeric) are written as \code{initialConcentration} -- \code{initialAmount} for
+states listed in \code{eqnlist$amountStates}; non-numeric character
 entries are emitted as \verb{<initialAssignment>} formulas and let the SBML
 simulator resolve the expression against \code{parameters} at sim time.
 Missing states default to 0.}
@@ -36,7 +37,8 @@ Missing states default to 0.}
 \description{
 Serialises an \link{eqnlist} plus parameter values and initial concentrations to
 SBML Level 3 Version 2. Each reaction's kinetic law is emitted as
-\code{V_home * rate_dMod} to restore SBML's extensive-flux convention
-(\code{K_SBML = rate_dMod * V}). Requires a Python environment with \code{libsbml}
+\code{V_ref * rate_dMod} to restore SBML's extensive-flux convention
+(\code{K_SBML = rate_dMod * V_ref}). Symbolic volumes are written as an
+\verb{<initialAssignment>} on the compartment. Requires a Python environment with \code{libsbml}
 installed; the default location matches the one used by \code{\link[=importSbml]{importSbml()}}.
 }

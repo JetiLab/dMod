@@ -27,6 +27,18 @@ def build_sbml(spec):
         comp.setSize(c.get("size", 1.0))
         comp.setSpatialDimensions(c.get("spatialDimensions", 3))
         comp.setConstant(True)
+        # A symbolic volume is the compartment's size, not a factor hidden in
+        # the kinetic laws: SBML divides by the size, so it has to carry it.
+        formula = c.get("sizeAssignment")
+        if formula is not None:
+            ia = model.createInitialAssignment()
+            _check(ia.setSymbol(c["id"]), "initialAssignment.setSymbol")
+            ast = libsbml.parseL3Formula(formula)
+            if ast is None:
+                raise ValueError(
+                    "Could not parse compartment size for %r: %s -- got %r"
+                    % (c["id"], libsbml.getLastParseL3Error(), formula))
+            ia.setMath(ast)
 
     for s in spec.get("species", []):
         sp = model.createSpecies()
@@ -36,9 +48,13 @@ def build_sbml(spec):
         # initials use initialConcentration. SBML lets both coexist -- the
         # InitialAssignment wins at sim time -- but we keep them mutually
         # exclusive for cleanliness on roundtrip.
+        amount = bool(s.get("hasOnlySubstanceUnits", False))
         if "initialAssignment" not in s:
-            sp.setInitialConcentration(s.get("initialConcentration", 0.0))
-        sp.setHasOnlySubstanceUnits(False)
+            if amount:
+                sp.setInitialAmount(s.get("initialAmount", 0.0))
+            else:
+                sp.setInitialConcentration(s.get("initialConcentration", 0.0))
+        sp.setHasOnlySubstanceUnits(amount)
         sp.setBoundaryCondition(False)
         sp.setConstant(False)
 

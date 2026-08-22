@@ -1130,3 +1130,39 @@ test_that("v2 → v1 → v2 textual normaliser roundtrips a minimal problem", {
   expect_equal(out$measurements$simulationConditionId, "c1")
   expect_equal(out$conditions$a0[out$conditions$conditionId == "c1"], "3")
 })
+
+
+test_that("SBML roundtrip preserves symbolic volumes, reaction frames and amounts", {
+
+  if (!.libsbml_works()) skip("libsbml virtualenv not available")
+  withr::local_dir(tempdir())
+
+  f <- eqnlist(
+    smatrix = matrix(c(-1, -1, 1, NA, NA, -1), nrow = 2, byrow = TRUE,
+                     dimnames = list(NULL, c("L", "R", "C"))),
+    states = c("L", "R", "C"), rates = c("k_on*L*R", "k_off*C"),
+    description = c("bind", "unbind"),
+    compartments = list(ext = "V_ext", cyt = "V_cyt"),
+    compartmentOf = c(L = "ext", R = "cyt", C = "cyt"),
+    reactionCompartment = c("ext", NA),
+    amountStates = "C")
+
+  path <- file.path(tempdir(), "roundtrip.xml")
+  exportSbml(f, parameters = c(k_on = 1, k_off = 2, V_ext = 5, V_cyt = 3),
+             inits = c(L = 1, R = 2, C = 0), filepath = path)
+  xml <- readLines(path)
+  expect_true(any(grepl('id="C".*hasOnlySubstanceUnits="true"', xml)))
+
+  g <- importSbml(path)$reactions
+
+  expect_equal(unname(g$compartmentOf[c("L", "R", "C")]), c("ext", "cyt", "cyt"))
+  expect_equal(g$compartments$ext$volume, "V_ext")
+  expect_equal(g$reactionCompartment[1], "ext")
+  expect_equal(g$amountStates, "C")
+
+  # The rate strings are not simplified by the roundtrip, so compare numerically.
+  pars <- c(k_on = 1, k_off = 2, V_ext = 5, V_cyt = 3, L = 0.7, R = 0.3, C = 0.5)
+  value <- function(el) vapply(as.eqnvec(el)[c("L", "R", "C")],
+                               function(e) eval(parse(text = e), as.list(pars)), numeric(1))
+  expect_equal(value(g), value(f))
+})

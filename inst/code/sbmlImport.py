@@ -15,8 +15,11 @@ Output JSON keys (consumed unchanged by R/SBMLinterface.R):
                        Symbolic when an InitialAssignment exists; else the
                        numeric initialConcentration / initialAmount as text.
     observables        empty dict; PEtab observables.tsv is authoritative.
-    compartments       list of {id, size, spatialDimensions} dicts.
+    compartments       list of {id, size, sizeAssignment, spatialDimensions}
+                       dicts; sizeAssignment holds an InitialAssignment on the
+                       compartment (a symbolic volume) when present.
     speciesCompartments  dict mapping species ID -> compartment ID.
+    amountSpecies      list of species IDs with hasOnlySubstanceUnits set.
 
 Limitations:
 - AssignmentRules are emitted in the JSON `assignmentRules` dict (LHS -> RHS
@@ -91,9 +94,12 @@ def parse_sbml(sbml_file):
     compartments = []
     for i in range(model.getNumCompartments()):
         c = model.getCompartment(i)
+        ia = model.getInitialAssignment(c.getId())
         compartments.append({
             'id': c.getId(),
             'size': c.getSize() if c.isSetSize() else None,
+            'sizeAssignment': (_formula(ia.getMath())
+                               if ia is not None and ia.isSetMath() else None),
             'spatialDimensions': (int(c.getSpatialDimensions())
                                   if c.isSetSpatialDimensions() else None),
         })
@@ -105,6 +111,7 @@ def parse_sbml(sbml_file):
     # via the parameter trafo.
     state_names = []
     species_compartments = {}
+    amount_species = []
     x0 = []
     species_idx = {}
     for i in range(model.getNumSpecies()):
@@ -113,6 +120,8 @@ def parse_sbml(sbml_file):
         state_names.append(sid)
         species_idx[sid] = i
         species_compartments[sid] = sp.getCompartment()
+        if sp.getHasOnlySubstanceUnits():
+            amount_species.append(sid)
 
         ia = model.getInitialAssignment(sid)
         if ia is not None and ia.isSetMath():
@@ -245,6 +254,7 @@ def parse_sbml(sbml_file):
         'observables': {},
         'compartments': compartments,
         'speciesCompartments': species_compartments,
+        'amountSpecies': amount_species,
         'assignmentRules': assignment_rules,
         'rateRules': rate_rules,
         'events': events,

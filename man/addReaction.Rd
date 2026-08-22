@@ -26,14 +26,18 @@ of the reaction.}
 
 \item{description}{Optional description instead of \code{names(rate)}.}
 
-\item{compartment}{Character, compartment ID to which any \emph{new} states introduced
-by this reaction are assigned. Defaults to \code{"defaultComp"}. If the compartment does
-not yet exist on \code{eqnlist}, it is created with volume \code{"1"}.}
+\item{compartment}{Character, compartment ID for the states this reaction
+\emph{introduces}, and the frame the reaction is written in. Defaults to
+\code{"defaultComp"}; created with volume \code{"1"} if new. States that already have a
+compartment keep it -- use \code{\link[=assignCompartment]{assignCompartment()}} to place a species that does
+not belong to the compartment of the reaction first mentioning it.}
 
 \item{rateCompartment}{Optional compartment ID naming the frame in which \code{rate}
-is a concentration-rate. Required when educts span multiple compartments
-(e.g. membrane binding \code{L_ext + R_cyt -> Complex}); leave as \code{NA} (the
-default) to let \code{\link[=getFluxes]{getFluxes()}} infer the frame from the educts.}
+is a concentration-rate. Needed when educts span multiple compartments (e.g.
+membrane binding \code{L_ext + R_cyt -> Complex}); leave as \code{NA} (the default) to
+let \code{\link[=getFluxes]{getFluxes()}} infer the frame from the educts. When the educts do span
+compartments and \code{compartment} was given explicitly, that compartment is
+taken as the frame.}
 }
 \value{
 An object of class \link{eqnlist}.
