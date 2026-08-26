@@ -25,6 +25,27 @@
   ## capped search: negative certificates instead of silence
   symmetryReduction(res2, dPoly = 0L, dDarboux = 0L, dExp = 0L)
 
+  ## zero limits: k1 + u*k2 is the invariant, so either production term can be
+  ## switched off from anywhere -- reported without a point
+  symmetryReduction(res2, reportZeroCompatibility = TRUE)$zeroCompatibility
+
+  ## P <-> pP through s*pP: neither zero holds everywhere, so nothing is claimed
+  ## until a point decides it
+  pp <- eqnlist() |>
+    addReaction("P",  "pP", "k_p*P",  "phosphorylation") |>
+    addReaction("pP", "P",  "k_d*pP", "dephosphorylation")
+  resPP <- symmetryDetection(pp, eqnvec(y = "s*pP"), method = "observability",
+                             reconstruct = TRUE)
+  redPP <- symmetryReduction(resPP, fixed = "s", reportZeroCompatibility = TRUE)
+  redPP                           # k_d and P each "where ...", k_p "nowhere"
+  ## the conditions are R over the model's own names -- one eval decides them, and
+  ## above the steady state the back reaction goes, below it the initial value
+  cond <- setNames(redPP$zeroCompatibility$condition, redPP$zeroCompatibility$coordinates)
+  sapply(cond[c("P", "k_d")], function(cc)
+    eval(parse(text = cc), list(P = 1, pP = 0.2, k_p = 0.3, k_d = 0.05)))
+  sapply(cond[c("P", "k_d")], function(cc)
+    eval(parse(text = cc), list(P = 0.2, pP = 1, k_p = 0.05, k_d = 0.3)))
+
   ## scaling entangled with a general direction: one joint curved block
   f3 <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")
   g3 <- eqnvec(y = "alpha*A")

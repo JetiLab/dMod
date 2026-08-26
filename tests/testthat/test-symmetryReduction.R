@@ -659,3 +659,108 @@ test_that("a certified-positive carrier keeps its positive domain", {
   dom <- unlist(lapply(red$blocks, `[[`, "carrierDomain"))
   expect_true(length(dom) == 0L || all(dom == "positive"))
 })
+
+
+test_that("zero limits: unconditional ones reported, conditional ones stated", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  reactions <- eqnlist() |>
+    addReaction("P",  "pP", "k_p*P",  "phosphorylation") |>
+    addReaction("pP", "P",  "k_d*pP", "dephosphorylation")
+  res <- symdet2(reactions, eqnvec(y = "s*pP"), method = "observability",
+                 reconstruct = TRUE)
+  red <- redquiet(res, fixed = "s", reportZeroCompatibility = TRUE)
+  v <- red$zeroCompatibility
+  rownames(v) <- v$coordinates
+
+  # X2 is xi_P = P + pP, xi_k_d = k_p, xi_k_p = -k_p, so the flow is closed form:
+  #   k_p(e) = k_p*exp(-e), k_d(e) = k_d + k_p*(1 - exp(-e)), P(e) = (P + pP)*exp(e) - pP
+  # (pP unmoved). That is the ground truth every assertion below is checked against.
+  kdZero <- function(z) -log1p(z[["k_d"]] / z[["k_p"]])   # eps where k_d hits 0
+  flowP  <- function(e, z) (z[["P"]] + z[["pP"]]) * exp(e) - z[["pP"]]
+
+  # k_p*(P + pP) is an invariant, strictly positive on the orthant: {k_p = 0} is
+  # off every orbit, whatever the point -- and the flow agrees, k_p only decays
+  expect_identical(v["k_p", "verdict"], "no")
+  # the other two are reachable on complementary halves of the parameter space
+  expect_identical(unname(v[c("P", "k_d"), "verdict"]), c("if", "if"))
+  # neither face is invariant (v does not divide xi_v): finite eps, not a limit
+  expect_false(any(v$limit[v$verdict == "if"]))
+  expect_true(all(v$certain))
+
+  t1 <- c(P = 1,   pP = 0.2, k_p = 0.3,  k_d = 0.05, s = 1)   # above steady state
+  t2 <- c(P = 0.2, pP = 1,   k_p = 0.05, k_d = 0.3,  s = 1)   # below it
+  # the flow decides it: at t1 the orbit reaches {k_d = 0} with P still positive,
+  # at t2 P has left the orthant before k_d gets there
+  expect_gt(flowP(kdZero(t1), t1), 0)
+  expect_lt(flowP(kdZero(t2), t2), 0)
+  # the reported conditions are R over the model's own names: one eval decides them,
+  # and they agree with the flow at both points
+  dec <- function(cond, z) eval(parse(text = cond), as.list(z))
+  expect_true(dec(v["k_d", "condition"], t1))
+  expect_false(dec(v["P", "condition"], t1))
+  expect_false(dec(v["k_d", "condition"], t2))
+  expect_true(dec(v["P", "condition"], t2))
+  # the degenerate point that is reported IS where the flow lands
+  pAt <- sub(".*\\bP = ([^,]+).*", "\\1", v["k_d", "at"])
+  expect_equal(eval(parse(text = pAt), as.list(t1)), flowP(kdZero(t1), t1))
+
+  # neither zero is announced as reachable; the condition is what is reported
+  out <- capture.output(print(red))
+  expect_true(any(grepl("k_d = 0 +where +P\\*k_p > k_d\\*pP", out)))
+  expect_true(any(grepl("P += 0 +where +k_d\\*pP > P\\*k_p", out)))
+  # a zero that cannot happen is not news: no k_p row (its trafo entry still prints)
+  expect_false(any(grepl("^ +k_p += 0", out)))
+  expect_false(any(grepl("everywhere", out)))
+})
+
+
+test_that("zero limits: unconditional case, and the switch", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # A = k1 + u*k2 - kdeg*A with u fixed: the invariant is k1 + u*k2, so either
+  # production term can be moved into the other from ANY positive point
+  res <- symdet2(eqnvec(A = "k1 + u*k2 - kdeg*A"), eqnvec(y = "A"),
+                 method = "observability", fixed = "u", reconstruct = TRUE)
+  red <- redquiet(res, reportZeroCompatibility = TRUE)
+  v <- red$zeroCompatibility
+  expect_setequal(v$coordinates, c("k1", "k2"))
+  expect_true(all(v$verdict == "yes"))
+  expect_true(all(!nzchar(v$condition)))
+  # the reported degenerate points carry the invariant unchanged
+  pt <- c(k1 = 0.7, k2 = 1.3, u = 2, kdeg = 0.4, A = 1.1)
+  inv <- function(z) z[["k1"]] + z[["u"]] * z[["k2"]]
+  for (i in seq_len(nrow(v))) {
+    z <- pt
+    for (e in strsplit(v$at[i], ", ", fixed = TRUE)[[1]]) {
+      kv <- strsplit(e, " = ", fixed = TRUE)[[1]]
+      z[kv[1]] <- eval(parse(text = kv[2]), as.list(pt))
+    }
+    expect_equal(inv(z), inv(pt))
+    expect_true(all(z[v$coordinates] >= 0))
+  }
+  expect_true(any(grepl("k1 = 0 +everywhere", capture.output(print(red)))))
+  expect_null(redquiet(res)$zeroCompatibility)
+})
+
+
+test_that("zero limits: coordinates that can only vanish together", {
+  if (!.sympy_works()) skip("reticulate/sympy not available")
+  # a and b scale with the SAME weight: eps -> -Inf takes both to zero and moves
+  # nothing else, so {a, b} is a zero limit and neither coordinate is one alone.
+  # The invariant b/a is 0/0 there, which is why the set has to be found by growing
+  # the face rather than by testing it.
+  obj <- .mkobj(list(.mkdir(list(a = "a", b = "b"), "scaling",
+                            list(a = "1", b = "1"))), c("a", "b", "other"))
+  v <- redquiet(obj, reportZeroCompatibility = TRUE)$zeroCompatibility
+  expect_identical(v$coordinates, "a, b")
+  expect_identical(v$verdict, "yes")
+  expect_true(v$limit)                       # a scaling never crosses {a = 0}
+  # opposite weights: a -> 0 only with b -> Inf, which is no zero limit at all
+  obj2 <- .mkobj(list(.mkdir(list(a = "a", b = "-b"), "scaling",
+                             list(a = "1", b = "-1"))), c("a", "b", "other"))
+  v2 <- redquiet(obj2, reportZeroCompatibility = TRUE)$zeroCompatibility
+  expect_true(all(v2$verdict == "no"))
+  # nothing can vanish, so the section does not appear at all
+  expect_false(any(grepl("Zero limits",
+                         capture.output(print(redquiet(obj2,
+                           reportZeroCompatibility = TRUE))))))
+})

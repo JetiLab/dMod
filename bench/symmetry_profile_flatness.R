@@ -4,8 +4,13 @@
 # engine analyses. First the two directions are flown both ways, as in the
 # invariance bench: the states move, the observable does not. Then they are profiled
 # -- the scaling is gauged away by fixing s, the curved direction is flat until its
-# orbit hits the Darboux surface {k_p = 0}, and symmetryReduction() closes that
-# profile.
+# orbit leaves the model's domain, and symmetryReduction() closes that profile.
+#
+# The two walls are different objects, and the reduction's zero limits name them:
+# {k_p = 0} is a Darboux surface, invariant, never crossed; {k_d = 0} is crossed at
+# finite eps, and that crossing -- the back reaction switched off -- is where the
+# flatness ends. Which of the two binds is a property of the TRUTH, not of the
+# model, so it is only reported once a point is passed.
 #
 # Step through in RStudio, top to bottom. Nothing is written to disk.
 
@@ -30,7 +35,9 @@ summary(res)
 
 coords <- res$info$coordinates
 
-red <- symmetryReduction(res, fixed = "s") # s is the gauge the fit fixes too
+# fixed = "s": the gauge the fit fixes too. reportZeroCompatibility is off by
+# default -- it is the zero limits below that need it
+red <- symmetryReduction(res, fixed = "s", reportZeroCompatibility = TRUE)
 summary(red)
 
 
@@ -98,6 +105,16 @@ prd.red <- g * x * p.red                   # s gauged, curved direction removed
 truth  <- c(P = 1, pP = 0.2, k_p = 0.3, k_d = 0.05, s = 1)
 truthL <- setNames(log10(truth), paste0(names(truth), "_l10"))
 
+# which coordinates the symmetry can switch off with nothing running off to
+# infinity. The reduction states the condition, not the verdict -- here
+# P*k_p > k_d*pP holds, so k_d goes, the back reaction with it, and the flat
+# direction ends in a degenerate model that fits exactly as well. Swap the pair round
+# (P = 0.2, pP = 1, k_p = 0.05, k_d = 0.3) and P = 0 is the reachable zero instead;
+# k_p never is, k_p*(P + pP) being invariant and strictly positive.
+red$zeroCompatibility[, c("coordinates", "verdict", "limit", "condition", "at")]
+cond <- setNames(red$zeroCompatibility$condition, red$zeroCompatibility$coordinates)
+sapply(cond[c("P", "k_d")], function(cc) eval(parse(text = cc), as.list(truth)))
+
 times <- seq(0, 10, len = 300)
 pred0 <- as.data.frame(prd(times, truthL, deriv = FALSE))   # the unmoved reference
 
@@ -106,8 +123,9 @@ direction <- 2                            # click through 1 .. length(flow)
 # flow stops there, the other runs towards {k_p = 0} and only reaches it at
 # infinity. Which side is which follows the sign of the returned generator --
 # shorten whichever range stops.
-eps  <- seq(0, 5,    len = 50)            # forward
-epsb <- seq(0, 0.1541, len = 50)            # backward
+eps  <- seq(0, 5, len = 50)               # forward
+# backward the flow stops AT the zero limit above: k_d(eps) = k_d - k_p*(e^eps - 1)
+epsb <- seq(0, log1p(truth[["k_d"]] / truth[["k_p"]]-0.01), len = 50)
 
 mv  <- names(res$symmetries[[direction]]$generator)
 mvL <- paste0(mv, "_l10")
@@ -212,6 +230,7 @@ plot(prd.lin(times, truth.fit, deriv = FALSE), data)
 stepControl <- list(stepsize = 1e-8, min = 1e-8, max = Inf,
                     atol = 1e-3, rtol = 1e-3, limit = 1e3)
 optControl  <- list(rinit = 0.1, rmax = 10, iterlim = 2e3)
+algoControl  <- list(reoptimize = TRUE)
 
 pouter <- structure(rep(-1, length(getParameters(prd.lin))),
                     names = getParameters(prd.lin))
@@ -223,9 +242,10 @@ plotValues(as.parframe(fit), tol = 0.1, value < 1e4)
 bestfit <- as.parvec(as.parframe(fit))
 plot(prd.lin(times, bestfit, deriv = FALSE), data)
 
-prof <- profile(obj, bestfit, whichPar = names(bestfit), method = "optimize",
+prof <- profile(obj, bestfit, whichPar = names(bestfit), method = "integrate",
+                algoControl = algoControl,
                 stepControl = stepControl, optControl = optControl,
-                limits = c(lower = -10, upper = 10), cores = cores)
+                limits = c(lower = -5, upper = 5), cores = cores)
 plotProfilesAndPaths(prof, names(bestfit))
 
 
@@ -241,7 +261,7 @@ bestfit.red <- as.parvec(as.parframe(fit.red))
 plot(prd.red(times, bestfit.red, deriv = FALSE), data)
 
 prof.red <- profile(obj.red, bestfit.red, whichPar = names(bestfit.red),
-                    method = "optimize",
+                    method = "integrate", algoControl = algoControl,
                     stepControl = stepControl, optControl = optControl,
                     limits = c(lower = -10, upper = 10), cores = cores)
 plotProfilesAndPaths(prof.red, names(bestfit.red))

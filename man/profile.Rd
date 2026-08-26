@@ -44,8 +44,8 @@ setting stepControl, algoControl and optControl by hand.}
 \code{list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)}}
 
 \item{optControl}{List of arguments controlling the \code{trust()} optimizer. Defaults to
-\code{list(rinit = .1, rmax = 10, iterlim = 10, fterm = 1e-6, mterm = 1e-6)}.
-See \link{trust} for more details.}
+\code{list(rinit = .1, rmax = 10, iterlim = 10)}; any other argument of \link{trust},
+e.g. \code{ftol} or \code{parupper}, can be added. See \link{trust} for more details.}
 
 \item{verbose}{Logical, print verbose messages.}
 

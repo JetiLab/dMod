@@ -11,6 +11,7 @@ symmetryReduction(
   dDarboux = 2L,
   dExp = 2L,
   separable = TRUE,
+  reportZeroCompatibility = FALSE,
   verbose = FALSE,
   ...
 )
@@ -47,6 +48,11 @@ quadratures -- cheaper than every other stage and the only one reaching
 antiderivatives outside the Darboux language (\code{atan}). \code{FALSE} forces the
 ansatz and factor stages to carry such a block on their own.}
 
+\item{reportZeroCompatibility}{Logical, off by default: work out which zeros the
+symmetry is compatible with (see below), one exact face solve per coordinate of
+each block. It costs a quarter of the reduction on a six-reaction cascade and is
+asked for, not paid for by everyone.}
+
 \item{verbose}{Logical: print progress per block and stage.}
 
 \item{...}{Reserved.}
@@ -63,7 +69,20 @@ surviving coordinate or fresh \verb{q_<k>} parameter carries), \code{carrierDoma
 (\code{"positive"} or \code{"real"} per carrier) and \code{coverage} (\code{"total"} when the
 chart reaches every orbit that meets the positive orthant, \code{"partial"}
 otherwise), \code{moduleCombos}, \code{status}
-(\code{"fixed"}, \code{"reduced"}, \code{"invariantOnly"} or \code{"unresolved"}), \code{reason}.}
+(\code{"fixed"}, \code{"reduced"}, \code{"invariantOnly"} or \code{"unresolved"}), \code{reason},
+\code{zeroCompatibility}.}
+\item{\code{zeroCompatibility}}{the zero limits of every block, one row per set of
+coordinates that vanish together (\code{coordinates}, comma-separated):
+\code{verdict} (\code{"yes"} reached from every positive point, \code{"if"} reached exactly
+where \code{condition} holds, \code{"no"} not reached, \code{"unknown"} not decided),
+\code{limit} (\code{TRUE} when the face is invariant, so the
+zero is only approached as \code{eps -> +-Inf}), \code{certain} (\code{FALSE} when the
+block's invariant set is incomplete, which leaves anything but \code{"no"} an
+upper bound), \code{condition} (an R expression over the model's own coordinate
+names -- \code{eval(parse(text = condition), as.list(pars))} decides it at a
+point) and \code{at} (the degenerate point the
+orbit lands on; a primed name is a coordinate the remaining freedom leaves
+open). \code{NULL} unless \code{reportZeroCompatibility = TRUE}.}
 \item{\code{trafo}}{a complete \link{eqnvec} over all coordinates (identity plus the
 transversal pins and solved entries), ready for \code{\link[=P]{P()}} or
 \code{symmetryDetection(trafo = )}; \code{NULL} when nothing was reducible.}
@@ -73,8 +92,9 @@ nonzero constant.}
 \item{\code{removed}, \code{remaining}}{direction labels by outcome.}
 \item{\code{coordinates}, \code{fixed}, \code{settings}, \code{call}}{provenance.}
 }
-\code{print()} is terse: the verdict, the non-identity trafo entries and the
-invariant each outer parameter carries. \code{summary()} adds one line per block --
+\code{print()} is terse: the verdict, the non-identity trafo entries, the invariant
+each outer parameter carries and where each zero limit is reached. \code{summary()}
+adds one line per block --
 kind, status, stage, how it was gauged -- plus, for a block that did not
 reduce, its invariants and the reason (how many invariants were found under
 which degree caps). \code{summary(verbose = TRUE)} adds the admissible gauges and
@@ -114,6 +134,30 @@ it pushes the pin past the Cauchy bound on the real roots, where the entry carri
 the sign of its leading coefficient. The chart then reaches every orbit that meets
 the positive orthant (\code{coverage = "total"}). A block where no such gauge certified
 keeps the positive-domain chart and is reported as \code{coverage = "partial"}.
+
+With \code{reportZeroCompatibility = TRUE} every block also reports its ZERO LIMITS:
+which coordinates the orbit can drive to 0 with nothing running off to infinity.
+That is the difference between a flat direction that runs forever and one that
+ends in a degenerate model -- a rate switched off, its whole reaction gone --
+which fits the data exactly as well and is rarely what a symmetry is wanted for.
+Several coordinates may vanish together (a set of rates switched off is still a
+model); only divergence disqualifies, a zero bought by sending another coordinate
+to infinity being no zero of the model. The orbit lies inside the level set of the
+block's invariants, so the face \code{{z_Z = 0}} is asked for the invariant values a
+point carries: the face system is solved exactly, a solved coordinate that cannot
+be positive there is added to \code{Z} and the face asked again -- so the sets come out
+of the solve, not from enumerating subsets -- and an equation left with no unknown
+is the divergence. Whether the face is reached at finite \code{eps} or only approached
+as \code{eps -> +-Inf} follows from \code{v | xi_v} (\code{limit}).
+
+A zero is never ANNOUNCED as reachable unless it is reachable from every positive
+point; where it is not, the report states the inequality under which it is, and
+leaves the call to the reader. Whether \code{k_d} can be removed from \verb{P <-> pP}
+depends on which side of its steady state the parameters sit (\code{P*k_p > k_d*pP}),
+and on the other side \code{P = 0} is the reachable one instead: that is a statement
+about the parameters, not about the model. The condition is an R expression over
+the model's own coordinate names, so one \code{eval()} settles it at whatever point
+matters -- the reduction itself stays symbolic and takes no parameter values.
 }
 \examples{
 \dontrun{
@@ -142,6 +186,27 @@ keeps the positive-domain chart and is reported as \code{coverage = "partial"}.
 
   ## capped search: negative certificates instead of silence
   symmetryReduction(res2, dPoly = 0L, dDarboux = 0L, dExp = 0L)
+
+  ## zero limits: k1 + u*k2 is the invariant, so either production term can be
+  ## switched off from anywhere -- reported without a point
+  symmetryReduction(res2, reportZeroCompatibility = TRUE)$zeroCompatibility
+
+  ## P <-> pP through s*pP: neither zero holds everywhere, so nothing is claimed
+  ## until a point decides it
+  pp <- eqnlist() |>
+    addReaction("P",  "pP", "k_p*P",  "phosphorylation") |>
+    addReaction("pP", "P",  "k_d*pP", "dephosphorylation")
+  resPP <- symmetryDetection(pp, eqnvec(y = "s*pP"), method = "observability",
+                             reconstruct = TRUE)
+  redPP <- symmetryReduction(resPP, fixed = "s", reportZeroCompatibility = TRUE)
+  redPP                           # k_d and P each "where ...", k_p "nowhere"
+  ## the conditions are R over the model's own names -- one eval decides them, and
+  ## above the steady state the back reaction goes, below it the initial value
+  cond <- setNames(redPP$zeroCompatibility$condition, redPP$zeroCompatibility$coordinates)
+  sapply(cond[c("P", "k_d")], function(cc)
+    eval(parse(text = cc), list(P = 1, pP = 0.2, k_p = 0.3, k_d = 0.05)))
+  sapply(cond[c("P", "k_d")], function(cc)
+    eval(parse(text = cc), list(P = 0.2, pP = 1, k_p = 0.05, k_d = 0.3)))
 
   ## scaling entangled with a general direction: one joint curved block
   f3 <- eqnvec(A = "-k1*A + k2*B", B = "k1*A - k2*B")

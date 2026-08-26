@@ -432,7 +432,7 @@ List trustL1_clip(Function objfun, NumericVector parinit,
                   const L1Spec& l1,
                   double rinit, double rmax,
                   Nullable<NumericVector> parscale,
-                  int iterlim, double fterm, double mterm,
+                  int iterlim, double ftol, double mtol,
                   bool minimize, bool blather_on,
                   Nullable<NumericVector> parupper,
                   Nullable<NumericVector> parlower,
@@ -596,8 +596,8 @@ List trustL1_clip(Function objfun, NumericVector parinit,
     if (eval_ok && pred_pos > 0.0) rho = (f_used - ftry_used) / pred_pos;
     else                           rho = -kInf;
 
-    is_terminate = eval_ok && (std::fabs(ftry_used - f_used) < fterm ||
-                               std::fabs(m_value) < mterm);
+    is_terminate = eval_ok && (std::fabs(ftry_used - f_used) < ftol ||
+                               std::fabs(m_value) < mtol);
 
     if (!eval_ok) {
       n_fail++;

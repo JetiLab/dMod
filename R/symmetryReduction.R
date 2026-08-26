@@ -2304,57 +2304,10 @@
         if (any(vapply(cv, is.null, logical(1)))) NULL else
           list(vals = cv, subs = subsOf(cv))
       }))
-    # The roots of one equation in one unknown, taken from the FACTORS of its
-    # numerator: only factors of degree <= 2 are handed to solve(). A general cubic
-    # or quartic factor has no closed form this path can use -- its radicals fail
-    # the "yes" entry class below -- and asking solve() for one is exactly where
-    # sympy grinds, minutes on an irreducible cubic with symbolic coefficients.
-    rootsIn <- function(e, v) {
-      sv <- spy$Symbol(v)
-      num <- tryCatch(spy$fraction(spy$together(e))[[1]], error = function(err) NULL)
-      if (is.null(num)) return(list())
-      fl <- tryCatch(spy$factor_list(num, sv), error = function(err) NULL)
-      if (is.null(fl)) return(list())
-      out <- list()
-      for (fm in .symRedIter(fl[[2]], function(x) x)) {
-        f <- if (is.list(fm)) fm[[1]] else reticulate::py_get_item(fm, 0L)
-        dg <- tryCatch(as.integer(spy$Poly(f, sv)$degree()), error = function(err) NA_integer_)
-        if (is.na(dg) || dg < 1L || dg > 2L) next
-        rs <- tryCatch(spy$solve(f, sv), error = function(err) NULL)
-        if (!is.null(rs)) out <- c(out, rs)
-      }
-      out
-    }
-    # Solve the section for the gauge coordinates by TRIANGULAR elimination: take
-    # the roots of one equation in one unknown, substitute, recurse. sympy's
-    # multivariate solve() is what makes this search unaffordable -- on systems as
-    # small as two equations with symbolic coefficients it can grind for many
-    # minutes, where the same system solved one unknown at a time is immediate.
-    # An unknown that yields no usable root falls through to the next elimination
-    # order. Eliminating through a denominator can invent branches that only solve
-    # a numerator, so an accepted branch is substituted back into the original
-    # equations before it is emitted (`verified` below).
-    gaugeSolve <- function(sys, vars) {
-      if (!length(vars)) return(list(setNames(list(), character(0))))
-      for (i in seq_along(sys)) for (v in vars) {
-        if (!(v %in% .symRedFreeSyms(sys[[i]]))) next
-        roots <- rootsIn(sys[[i]], v)
-        if (!length(roots)) next
-        out <- list()
-        for (r in roots) {
-          rest <- tryCatch(lapply(sys[-i], function(e)
-            spy$together(e$subs(list(reticulate::tuple(spy$Symbol(v), r))))),
-            error = function(e) NULL)
-          if (is.null(rest)) next
-          for (s in gaugeSolve(rest, setdiff(vars, v))) {
-            s[[v]] <- if (length(s)) spy$cancel(r$subs(subsOf(s))) else r
-            out[[length(out) + 1L]] <- s
-          }
-        }
-        if (length(out)) return(out)
-      }
-      list()
-    }
+    # the gauge coordinates by triangular elimination -- shared with the zero-limit
+    # face solve, which sets up the same kind of system; see .symRedTriSolve for why
+    # sympy's multivariate solve() is not what runs here
+    gaugeSolve <- function(sys, vars) .symRedTriSolve(sys, vars, spy)
     # One candidate's solution branches, as named lists over allUnk, from two
     # elimination orders. Carriers first (the hoisted solCarr) is the cheap one and
     # the one that pays off when several sections are tried against the same
@@ -2603,6 +2556,338 @@
 }
 
 
+# ---- zero compatibility: which coordinate the orbit can drive to 0 ----------------
+
+# Roots of one equation in one unknown, from the FACTORS of its numerator: only
+# degree <= 2 is handed to solve(). A cubic or quartic factor has no closed form the
+# callers can use -- its radicals fail the trafo language's entry class -- and asking
+# solve() for one is where sympy grinds, minutes on an irreducible symbolic cubic.
+.symRedRootsIn <- function(e, v, spy) {
+  sv <- spy$Symbol(v)
+  num <- tryCatch(spy$fraction(spy$together(e))[[1]], error = function(err) NULL)
+  if (is.null(num)) return(list())
+  fl <- tryCatch(spy$factor_list(num, sv), error = function(err) NULL)
+  if (is.null(fl)) return(list())
+  out <- list()
+  for (fm in .symRedIter(fl[[2]], function(x) x)) {
+    f <- if (is.list(fm)) fm[[1]] else reticulate::py_get_item(fm, 0L)
+    dg <- tryCatch(as.integer(spy$Poly(f, sv)$degree()),
+                   error = function(err) NA_integer_)
+    if (is.na(dg) || dg < 1L || dg > 2L) next
+    rs <- tryCatch(spy$solve(f, sv), error = function(err) NULL)
+    if (!is.null(rs)) out <- c(out, rs)
+  }
+  out
+}
+
+# The first `m` k-subsets of 1:n, lexicographic. combn() materialises all C(n, k) of
+# them -- 9 GiB for 15 of 30 -- where only the first few are ever tried.
+.symRedFirstSubsets <- function(n, k, m) {
+  if (k > n || k < 0L) return(list())
+  if (k == 0L) return(list(integer(0)))
+  idx <- seq_len(k); out <- list()
+  repeat {
+    out[[length(out) + 1L]] <- idx
+    if (length(out) >= m) break
+    i <- k
+    while (i >= 1L && idx[i] == n - k + i) i <- i - 1L
+    if (i < 1L) break
+    idx[i] <- idx[i] + 1L
+    if (i < k) idx[(i + 1L):k] <- idx[i] + seq_len(k - i)
+  }
+  out
+}
+
+# Solve `sys` for `vars` by TRIANGULAR elimination: roots of one equation in one
+# unknown, substitute, recurse. sympy's multivariate solve() is what makes the
+# searches built on this unaffordable -- two equations with symbolic coefficients can
+# grind for many minutes there, and are immediate one unknown at a time. An unknown
+# with no usable root falls through to the next elimination order; a branch is
+# returned only when every unknown was eliminated. Eliminating through a denominator
+# can invent branches that solve a numerator only, so callers substitute an accepted
+# branch back into the original equations.
+.symRedTriSolve <- function(sys, vars, spy) {
+  if (!length(vars)) return(list(setNames(list(), character(0))))
+  subsOf <- function(vals) lapply(names(vals), function(v)
+    reticulate::tuple(spy$Symbol(v), vals[[v]]))
+  for (i in seq_along(sys)) for (v in vars) {
+    if (!(v %in% .symRedFreeSyms(sys[[i]]))) next
+    roots <- .symRedRootsIn(sys[[i]], v, spy)
+    if (!length(roots)) next
+    out <- list()
+    for (r in roots) {
+      rest <- tryCatch(lapply(sys[-i], function(e)
+        spy$together(e$subs(list(reticulate::tuple(spy$Symbol(v), r))))),
+        error = function(e) NULL)
+      if (is.null(rest)) next
+      for (s in .symRedTriSolve(rest, setdiff(vars, v), spy)) {
+        s[[v]] <- if (length(s)) spy$cancel(r$subs(subsOf(s))) else r
+        out[[length(out) + 1L]] <- s
+      }
+    }
+    if (length(out)) return(out)
+  }
+  list()
+}
+
+# "e > 0" as the comparison it is, positive terms left, negated ones right. Valid R
+# over the model's own names, so the reader decides it with one eval(). NULL when
+# every term shares a sign -- the caller then has the verdict, not a condition.
+.symRedIneqStr <- function(e, spy) {
+  ex <- tryCatch(spy$expand(e), error = function(err) NULL)
+  if (is.null(ex)) return(NULL)
+  tm <- tryCatch(unlist(.symRedIter(spy$Add$make_args(ex),
+                                    function(x) as.character(x))),
+                 error = function(err) NULL)
+  if (!length(tm)) return(NULL)
+  tm <- gsub("\\*\\*", "^", tm)
+  neg <- grepl("^-", tm)
+  if (all(neg) || !any(neg)) return(NULL)
+  paste(paste(tm[!neg], collapse = " + "), ">",
+        paste(sub("^-", "", tm[neg]), collapse = " + "))
+}
+
+# What "e > 0" reduces to on the positive orthant. sign(num/den) = sign(num*den), so
+# one polynomial decides; its sign-definite factors drop out (a positive one changes
+# nothing, a negative one flips the comparison). Returns sign 1/-1 when certified
+# either way, 0 when identically zero, NA with `cond` the surviving inequality.
+.symRedCondition <- function(e, spy) {
+  na <- list(sign = NA_integer_, cond = NULL)
+  fr <- tryCatch(spy$fraction(spy$cancel(spy$together(e))),
+                 error = function(err) NULL)
+  if (is.null(fr)) return(na)
+  if (isTRUE(tryCatch(spy$expand(fr[[1]])$is_zero, error = function(err) FALSE)))
+    return(list(sign = 0L, cond = NULL))
+  p <- tryCatch(spy$expand(fr[[1]] * fr[[2]]), error = function(err) NULL)
+  if (is.null(p)) return(na)
+  fl <- tryCatch(spy$factor_list(p), error = function(err) NULL)
+  if (is.null(fl)) return(na)
+  s <- .symRedSgnPoly(fl[[1]], spy)
+  if (s == 0L) return(na)
+  keep <- list()
+  for (fm in .symRedIter(fl[[2]], function(x) x)) {
+    f <- if (is.list(fm)) fm[[1]] else reticulate::py_get_item(fm, 0L)
+    k <- if (is.list(fm)) fm[[2]] else reticulate::py_get_item(fm, 1L)
+    k <- suppressWarnings(as.integer(as.character(k)))
+    if (is.na(k)) return(na)
+    if (k %% 2L == 0L) next                   # an even power carries no sign
+    sf <- .symRedSgn(f, spy)
+    if (sf == 1L) next
+    if (sf == -1L) { s <- -s; next }
+    keep[[length(keep) + 1L]] <- f
+  }
+  if (!length(keep)) return(list(sign = as.integer(s), cond = NULL))
+  q <- Reduce(function(a, bb) a * bb, keep)
+  if (s < 0L) q <- q * spy$Integer(-1L)
+  sq <- .symRedSgnPoly(q, spy)
+  if (sq != 0L) return(list(sign = sq, cond = NULL))
+  list(sign = NA_integer_, cond = .symRedIneqStr(q, spy))
+}
+
+# Which coordinates can the orbit drive to 0 with NOTHING running off to infinity?
+# Several at once is fine -- a set of rates switched off is still a model, and the
+# flat direction ending there means it fits exactly as well. Only divergence
+# disqualifies: a zero bought by sending another coordinate to infinity is no zero of
+# the model.
+#
+# The orbit lies in the level set of the invariants, so the face {z_Z = 0} is asked
+# for the point's invariant values: with the face coordinates primed and z_Z' = 0,
+# I_l(z') = I_l(z) clears to num'(z')*den(z) - num(z)*den'(z') = 0, triangular-solved
+# for the rest. A solved entry certified positive is silent, an undecided one IS the
+# condition, and one that cannot be positive names a coordinate that has to vanish
+# along -- which grows Z and asks again, so the sets come out of the solve rather
+# than from enumerating subsets. An equation that survives with no unknown left pins
+# an invariant at a value no face point carries: that is divergence, and it stays
+# blocked however Z grows, since the equation no longer depends on Z. An equation
+# that cancels identically is the 0/0 of a rational invariant on the joint face --
+# vacuous, and dropped.
+#
+# Two gaps, both reported rather than hidden: the level set may have components
+# beyond the orbit, so a positive verdict exhibits the invariant values and not a
+# path to them; and an incomplete invariant set widens it further, which leaves only
+# "never" exact (column `certain`).
+.symRedZeroCompat <- function(b, spy, fixed = character(0), verbose = FALSE) {
+  supp <- setdiff(b$support, fixed)
+  invs <- b$invariants
+  if (identical(b$status, "fixed") || !length(supp) || !length(invs)) return(NULL)
+  locals <- .symRedLocals(c(invs, supp), spy)
+  Ies <- lapply(invs, function(iv)
+    tryCatch(.symRedSympify(gsub("\\^", "**", iv), spy, locals),
+             error = function(e) NULL))
+  if (any(vapply(Ies, is.null, logical(1)))) return(NULL)
+  fr <- lapply(Ies, function(e)
+    tryCatch(spy$fraction(spy$cancel(spy$together(e))), error = function(err) NULL))
+  if (any(vapply(fr, is.null, logical(1)))) return(NULL)
+
+  sym <- function(v) spy$Symbol(v)
+  zero <- spy$Integer(0L)
+  pv <- setNames(paste0("dModZero", seq_along(supp)), supp)
+  certain <- is.null(b$target) || length(invs) >= b$target
+  compLoc <- if (!is.null(b$preps))
+    .symRedLocals(unlist(lapply(b$preps, `[[`, "comps")), spy)
+
+  # v | xi_v for every generator: {v = 0} is invariant, so the orbit only approaches
+  # it, as eps -> +-Inf. A scaling has xi_v = w_v*v and is always of that kind.
+  darboux <- function(v) {
+    if (is.null(b$preps)) return(TRUE)
+    all(vapply(b$preps, function(pr) {
+      if (!(v %in% names(pr$comps))) return(TRUE)
+      e <- tryCatch(.symRedSympify(pr$comps[[v]], spy, compLoc),
+                    error = function(err) NULL)
+      !is.null(e) &&
+        isTRUE(spy$expand(e$subs(list(reticulate::tuple(sym(v), zero))))$is_zero)
+    }, logical(1)))
+  }
+  # several directions leave more face coordinates than equations: the extra ones
+  # stay free and positive, and each choice of which to solve for is tried
+  faceSolve <- function(eqs, unk) {
+    if (!length(unk)) return(list(setNames(list(), character(0))))
+    if (length(eqs) >= length(unk)) return(.symRedTriSolve(eqs, unk, spy))
+    out <- list()
+    for (cols in .symRedFirstSubsets(length(unk), length(eqs), 12L))
+      out <- c(out, .symRedTriSolve(eqs, unk[cols], spy))
+    out
+  }
+
+  # the face system for one zero set: "blocked" (divergence), NULL (not parseable),
+  # or the equations with the coordinates still free
+  faceEqs <- function(Z) {
+    other <- setdiff(supp, Z)
+    subsV <- c(lapply(other, function(u) reticulate::tuple(sym(u), sym(pv[[u]]))),
+               lapply(Z, function(u) reticulate::tuple(sym(u), zero)))
+    unk <- unname(pv[other])
+    eqs <- list(); dens <- list()
+    for (l in seq_along(fr)) {
+      E <- tryCatch(spy$expand(fr[[l]][[1]]$subs(subsV) * fr[[l]][[2]] -
+                               fr[[l]][[1]] * fr[[l]][[2]]$subs(subsV)),
+                    error = function(err) NULL)
+      if (is.null(E)) return(NULL)
+      if (isTRUE(E$is_zero)) next
+      if (!any(unk %in% .symRedFreeSyms(E))) return("blocked")
+      eqs[[length(eqs) + 1L]] <- E
+      dens[[length(dens) + 1L]] <- fr[[l]][[2]]$subs(subsV)
+    }
+    list(eqs = eqs, dens = dens, unk = unk, other = other)
+  }
+
+  # one zero set, answered: "yes"/"if" with the conditions and the point it lands on,
+  # "grow" with the coordinates that have to vanish along, "no", or "unknown"
+  analyse <- function(Z) {
+    f <- faceEqs(Z)
+    if (is.null(f)) return(list(verdict = "unknown"))
+    if (identical(f, "blocked")) return(list(verdict = "no"))
+    sols <- tryCatch(faceSolve(f$eqs, f$unk), error = function(e) list())
+    grow <- character(0); unclear <- FALSE
+    for (br in sols) {
+      free <- vapply(f$unk, function(u) is.null(br[[u]]), logical(1))
+      vals <- setNames(lapply(f$unk, function(u)
+        if (is.null(br[[u]])) sym(u) else br[[u]]), f$unk)
+      pairs <- lapply(f$unk, function(u) reticulate::tuple(sym(u), vals[[u]]))
+      isZero <- function(e) {
+        z <- tryCatch(spy$simplify(e$subs(pairs)), error = function(err) NULL)
+        !is.null(z) && isTRUE(z$is_zero)
+      }
+      # the equations it was not eliminated from
+      if (!all(vapply(f$eqs, isZero, logical(1)))) next
+      cnd <- character(0); dead <- character(0); open <- FALSE
+      for (i in seq_along(f$unk)) {
+        s <- .symRedCondition(vals[[f$unk[i]]], spy)
+        if (identical(s$sign, 1L)) next
+        # cannot be positive here: it is 0 on this face, or it would have to be
+        # negative -- either way its own zero belongs in the set
+        if (!is.na(s$sign)) { dead <- c(dead, f$other[i]); next }
+        # a condition on a free coordinate constrains no parameter: it says the
+        # face is met for SOME positive value of it
+        if (is.null(s$cond) || any(vapply(f$unk[free], function(w)
+              grepl(paste0("\\b", w, "\\b"), s$cond), logical(1)))) {
+          open <- TRUE; next
+        }
+        cnd <- unique(c(cnd, s$cond))
+      }
+      # growth is read off the entries BEFORE the denominators are consulted: a
+      # rational invariant is routinely undefined on the face a coordinate vanishes
+      # on (b/a at a = 0), and that face is exactly the one to grow away from
+      if (length(dead)) { grow <- unique(c(grow, dead)); next }
+      if (any(vapply(f$dens, isZero, logical(1)))) next   # invariant undefined there
+      if (open) { unclear <- TRUE; next }
+      # a free coordinate enters the others by name: `s'` is the value the
+      # remaining freedom picks for s
+      at <- paste(paste0(c(Z, f$other), " = ",
+                         c(rep("0", length(Z)),
+                           ifelse(free, "(free)", vapply(vals[f$unk], function(e)
+                             gsub("\\*\\*", "^", as.character(e)), character(1))))),
+                  collapse = ", ")
+      for (u in names(pv))
+        at <- gsub(paste0("\\b", pv[[u]], "\\b"), paste0(u, "'"), at)
+      return(list(verdict = if (length(cnd)) "if" else "yes",
+                  condition = paste(cnd, collapse = " & "), at = at))
+    }
+    if (length(grow)) return(list(verdict = "grow", grow = grow))
+    list(verdict = if (unclear || !length(sols)) "unknown" else "no")
+  }
+
+  rows <- NULL; seen <- character(0)
+  for (v0 in supp) {
+    if (isTRUE(verbose))
+      message("zero compatibility {", paste(b$labels, collapse = ", "), "}: ", v0)
+    Z <- v0
+    repeat {
+      a <- analyse(Z)
+      if (!identical(a$verdict, "grow")) break
+      Z2 <- .symSort(unique(c(Z, a$grow)))
+      if (length(Z2) == length(Z)) { a$verdict <- "no"; break }
+      Z <- Z2
+    }
+    key <- paste(Z, collapse = ", ")
+    if (key %in% seen) next
+    seen <- c(seen, key)
+    rows <- rbind(rows, data.frame(
+      coordinates = key, verdict = a$verdict,
+      # the joint face is met at finite eps only if none of its coordinates is a
+      # Darboux one, which no orbit crosses
+      limit = if (a$verdict %in% c("yes", "if")) any(vapply(Z, darboux, logical(1)))
+              else NA,
+      certain = certain || identical(a$verdict, "no"),
+      condition = if (is.null(a$condition)) "" else a$condition,
+      at = if (is.null(a$at)) "" else a$at, stringsAsFactors = FALSE))
+  }
+  rows
+}
+
+# One line per zero set the orbit reaches, and under which condition. A conditional
+# zero is never announced as reachable: P/pP reaches {k_d = 0} from one side of its
+# steady state and {P = 0} from the other, so neither is a property of the model and
+# the condition is all there is to report. Coordinates no set reaches are not
+# reported at all -- a zero that cannot happen is not news, and a model of thirty
+# parameters would drown the two that can in the twenty-eight that cannot. They stay
+# on `$zeroCompatibility` with verdict "no", as does the point each set lands on
+# (`at`), data to build a reduced model from rather than a line to read past.
+.symRedCatZeroCompat <- function(x, width) {
+  v <- x$zeroCompatibility
+  if (is.null(v) || !nrow(v)) return(invisible(NULL))
+  # an incomplete invariant set widens the level set: "never" survives that,
+  # anything else is an upper bound and is not stated as more
+  open <- !v$certain & v$verdict != "no"
+  hit <- which(!open & v$verdict %in% c("yes", "if"))
+  parts <- function(i) unique(unlist(strsplit(v$coordinates[i], ", ", fixed = TRUE)))
+  undecided <- setdiff(parts(which(open | v$verdict == "unknown")), parts(hit))
+  if (!length(hit) && !length(undecided)) return(invisible(NULL))
+  cat("\nZero limits\n")
+  w <- max(nchar(v$coordinates[hit], type = "width"), 0L)
+  for (i in hit) {
+    txt <- paste0(if (v$verdict[i] == "yes") "everywhere"
+                  else paste0("where  ", v$condition[i]),
+                  if (isTRUE(v$limit[i])) ", in the limit" else "")
+    lead <- paste0("  ", formatC(v$coordinates[i], width = -w), " = 0   ")
+    cat(lead, .symRedWrap(txt, strrep(" ", nchar(lead, type = "width")), width),
+        "\n", sep = "")
+  }
+  if (length(undecided))
+    cat("  undecided: ", .symRedWrap(.symSort(undecided), "    ", width), "\n",
+        sep = "")
+  invisible(NULL)
+}
+
 # The complete P()-ready trafo: identity over every coordinate, the scaling pins,
 # and the solved curved entries. Scaling pins are constants and curved entries come
 # from a joint solve referencing only outer parameters, so no resolveRecurrence
@@ -2622,6 +2907,10 @@
 .symRedResult <- function(object, blocks, trafo, coords, fixed, settings, call) {
   status <- vapply(blocks, `[[`, character(1), "status")
   labs <- lapply(blocks, `[[`, "labels")
+  van <- do.call(rbind, lapply(blocks, function(b)
+    if (is.null(b$zeroCompatibility)) NULL else
+      cbind(block = paste(b$labels, collapse = ", "), b$zeroCompatibility,
+            stringsAsFactors = FALSE)))
   structure(list(
     method      = object$method,
     coordinates = coords,
@@ -2636,6 +2925,7 @@
              gaugeNote = b$gaugeNote))),
     removed     = unlist(labs[status %in% c("fixed", "reduced")]),
     remaining   = unlist(labs[!status %in% c("fixed", "reduced")]),
+    zeroCompatibility = van,
     settings    = settings,
     call        = call), class = "symmetryreduction")
 }
@@ -2667,6 +2957,7 @@ print.symmetryreduction <- function(x, width = getOption("width"), ...) {
   }
   cat(.symRedVerdict(x), "\n", sep = "")
   .symRedCatChart(x, width)
+  .symRedCatZeroCompat(x, width)
   for (b in x$blocks) if (!b$status %in% c("reduced", "fixed"))
     cat("\nNot reduced: ", paste(b$labels, collapse = ", "),
         if (length(b$invariants))
@@ -2800,6 +3091,7 @@ summary.symmetryreduction <- function(object, verbose = FALSE,
                         collapse = ", "), "\n", sep = "")
   cat(.symRedVerdict(x), "\n", sep = "")
   .symRedCatChart(x, width)
+  .symRedCatZeroCompat(x, width)
   cat("\nBlocks\n")
   famOf <- function(b) {
     hit <- Filter(function(f) identical(f$labels, b$labels), x$family)
@@ -2853,11 +3145,39 @@ summary.symmetryreduction <- function(object, verbose = FALSE,
 #' the positive orthant (`coverage = "total"`). A block where no such gauge certified
 #' keeps the positive-domain chart and is reported as `coverage = "partial"`.
 #'
+#' With `reportZeroCompatibility = TRUE` every block also reports its ZERO LIMITS:
+#' which coordinates the orbit can drive to 0 with nothing running off to infinity.
+#' That is the difference between a flat direction that runs forever and one that
+#' ends in a degenerate model -- a rate switched off, its whole reaction gone --
+#' which fits the data exactly as well and is rarely what a symmetry is wanted for.
+#' Several coordinates may vanish together (a set of rates switched off is still a
+#' model); only divergence disqualifies, a zero bought by sending another coordinate
+#' to infinity being no zero of the model. The orbit lies inside the level set of the
+#' block's invariants, so the face `{z_Z = 0}` is asked for the invariant values a
+#' point carries: the face system is solved exactly, a solved coordinate that cannot
+#' be positive there is added to `Z` and the face asked again -- so the sets come out
+#' of the solve, not from enumerating subsets -- and an equation left with no unknown
+#' is the divergence. Whether the face is reached at finite `eps` or only approached
+#' as `eps -> +-Inf` follows from `v | xi_v` (`limit`).
+#'
+#' A zero is never ANNOUNCED as reachable unless it is reachable from every positive
+#' point; where it is not, the report states the inequality under which it is, and
+#' leaves the call to the reader. Whether `k_d` can be removed from `P <-> pP`
+#' depends on which side of its steady state the parameters sit (`P*k_p > k_d*pP`),
+#' and on the other side `P = 0` is the reachable one instead: that is a statement
+#' about the parameters, not about the model. The condition is an R expression over
+#' the model's own coordinate names, so one `eval()` settles it at whatever point
+#' matters -- the reduction itself stays symbolic and takes no parameter values.
+#'
 #' @param object A `symmetrydetection` result, from [symmetryDetection()].
 #' @param fixed Character vector of coordinates the user pins at known values
 #'   beforehand (same semantics as `summary(object, fixed = )`): scaling directions
 #'   removed by the fixing drop out of the reparametrisation, and the fixed
 #'   coordinates never enter a transversal. Unknown names warn and are ignored.
+#' @param reportZeroCompatibility Logical, off by default: work out which zeros the
+#'   symmetry is compatible with (see below), one exact face solve per coordinate of
+#'   each block. It costs a quarter of the reduction on a six-reaction cascade and is
+#'   asked for, not paid for by everyone.
 #' @param dPoly Total-degree cap of the polynomial invariant search (stage 2),
 #'   and the numerator-degree cap of the rational stage that follows it (a
 #'   Laurent ansatz allowing one moved coordinate at exponent -1 -- the cheap
@@ -2892,7 +3212,20 @@ summary.symmetryreduction <- function(object, verbose = FALSE,
 #'       (`"positive"` or `"real"` per carrier) and `coverage` (`"total"` when the
 #'       chart reaches every orbit that meets the positive orthant, `"partial"`
 #'       otherwise), `moduleCombos`, `status`
-#'       (`"fixed"`, `"reduced"`, `"invariantOnly"` or `"unresolved"`), `reason`.}
+#'       (`"fixed"`, `"reduced"`, `"invariantOnly"` or `"unresolved"`), `reason`,
+#'       `zeroCompatibility`.}
+#'     \item{`zeroCompatibility`}{the zero limits of every block, one row per set of
+#'       coordinates that vanish together (`coordinates`, comma-separated):
+#'       `verdict` (`"yes"` reached from every positive point, `"if"` reached exactly
+#'       where `condition` holds, `"no"` not reached, `"unknown"` not decided),
+#'       `limit` (`TRUE` when the face is invariant, so the
+#'       zero is only approached as `eps -> +-Inf`), `certain` (`FALSE` when the
+#'       block's invariant set is incomplete, which leaves anything but `"no"` an
+#'       upper bound), `condition` (an R expression over the model's own coordinate
+#'       names -- `eval(parse(text = condition), as.list(pars))` decides it at a
+#'       point) and `at` (the degenerate point the
+#'       orbit lands on; a primed name is a coordinate the remaining freedom leaves
+#'       open). `NULL` unless `reportZeroCompatibility = TRUE`.}
 #'     \item{`trafo`}{a complete [eqnvec] over all coordinates (identity plus the
 #'       transversal pins and solved entries), ready for [P()] or
 #'       `symmetryDetection(trafo = )`; `NULL` when nothing was reducible.}
@@ -2902,8 +3235,9 @@ summary.symmetryreduction <- function(object, verbose = FALSE,
 #'     \item{`removed`, `remaining`}{direction labels by outcome.}
 #'     \item{`coordinates`, `fixed`, `settings`, `call`}{provenance.}
 #'   }
-#'   `print()` is terse: the verdict, the non-identity trafo entries and the
-#'   invariant each outer parameter carries. `summary()` adds one line per block --
+#'   `print()` is terse: the verdict, the non-identity trafo entries, the invariant
+#'   each outer parameter carries and where each zero limit is reached. `summary()`
+#'   adds one line per block --
 #'   kind, status, stage, how it was gauged -- plus, for a block that did not
 #'   reduce, its invariants and the reason (how many invariants were found under
 #'   which degree caps). `summary(verbose = TRUE)` adds the admissible gauges and
@@ -2914,7 +3248,8 @@ summary.symmetryreduction <- function(object, verbose = FALSE,
 #' @example inst/examples/symmetryReduction.R
 #' @export
 symmetryReduction <- function(object, fixed = NULL, dPoly = 3L, dDarboux = 2L,
-                           dExp = 2L, separable = TRUE, verbose = FALSE, ...) {
+                           dExp = 2L, separable = TRUE,
+                           reportZeroCompatibility = FALSE, verbose = FALSE, ...) {
   if (!inherits(object, "symmetrydetection"))
     stop("symmetryReduction(): `object` must be a symmetrydetection result.",
          call. = FALSE)
@@ -3043,6 +3378,13 @@ symmetryReduction <- function(object, fixed = NULL, dPoly = 3L, dDarboux = 2L,
                 blocks[[bi]]$reason, " -- reported as invariantOnly")
     }
   }
+
+  # which coordinate the orbit can drive to zero -- read off the invariants, so it
+  # runs after the solve and before the working fields are dropped
+  if (isTRUE(reportZeroCompatibility)) for (bi in seq_along(blocks))
+    blocks[[bi]]$zeroCompatibility <- tryCatch(
+      .symRedZeroCompat(blocks[[bi]], spy, fixed, verbose),
+      error = function(e) NULL)
 
   trafo <- .symRedAssembleTrafo(blocks, coords)
   blocks <- lapply(blocks, function(b) { b$preps <- NULL; b$Wres <- NULL

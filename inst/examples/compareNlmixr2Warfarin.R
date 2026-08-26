@@ -155,7 +155,7 @@ init <- emInit(c(tka = 0.0, tv = 2.0, tcl = -2.0, tpca0 = 4.6,
                  om, sd = 0.3)
 
 focei_ctrl <- list(focei = list(
-  innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
+  innerControl = list(iterlim = 50, ftol = 1e-7, mtol = 1e-7),
   trustControl = list(iterlim = 200)))
 
 ## ============================================================================

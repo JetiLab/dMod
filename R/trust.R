@@ -237,3 +237,21 @@ trustL1 <- function(objfun, parinit, mu = 0 * parinit, one.sided = FALSE, lambda
                boundary, minimize, blather,
                parupper, parlower, printIter, traceFile)
 }
+
+
+# Merge a user control list into `defaults` for a trust()/trustL1() call. Names
+# are checked against the optimiser's formals, so every optimiser argument is
+# settable and a typo errors here instead of silently reaching objfun via `...`.
+.trustControl <- function(defaults, control = NULL, optimizer = trust,
+                          label = "control") {
+  if (length(control) == 0L) return(defaults)
+  nms <- names(control)
+  if (is.null(nms) || !all(nzchar(nms)))
+    stop(label, ": all entries must be named.", call. = FALSE)
+  settable <- setdiff(names(formals(optimizer)), c("objfun", "parinit", "..."))
+  unknown <- setdiff(nms, settable)
+  if (length(unknown))
+    stop(label, ": unknown entries ", paste(unknown, collapse = ", "),
+         ". Settable are ", paste(settable, collapse = ", "), ".", call. = FALSE)
+  modifyList(defaults, as.list(control))
+}

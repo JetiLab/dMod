@@ -708,11 +708,11 @@ emObjfn <- function(obj, control = list()) {
     pars_full_names   = pars_full_names
   )
   ic <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30,
-                        fterm = 1e-7, mterm = 1e-7,
+                        ftol = 1e-7, mtol = 1e-7,
                         eigen_floor_relative = 1e-10),
                    innerControl)
   oc <- modifyList(list(rinit = 1, rmax = 10, iterlim = 200,
-                        fterm = 1e-7, mterm = 1e-7),
+                        ftol = 1e-7, mtol = 1e-7),
                    trustControl)
   control_cpp <- list(inner = ic, outer = oc)
 
@@ -779,8 +779,8 @@ emObjfn <- function(obj, control = list()) {
   K  <- om$K
   chol_pars <- om$cholPars
   if (is.null(epsQuadLevels)) epsQuadLevels <- K + 1:3
-  cm1 <- modifyList(list(rinit = 1, rmax = 10,
-                         fterm = 1e-6, mterm = 1e-6), cm1Control)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, ftol = 1e-6, mtol = 1e-6),
+                       cm1Control, label = "cm1Control")
   psi <- init
   if (!all(chol_pars %in% names(psi)))
     stop(".fitNormal: `init` is missing omega$cholPars (",
@@ -801,11 +801,9 @@ emObjfn <- function(obj, control = list()) {
       if (ecmIter > 1L)
         e_info <- rebuild(psi, level_new = level, fixed = fixed,
                           eta_init = e_info$etaModes)
-      cm1_fit <- suppressMessages(trust(
-        em, parinit = psi[structural_names], fixed = fixed,
-        rinit = cm1$rinit, rmax = cm1$rmax,
-        iterlim = maxCm1Iter,
-        fterm = cm1$fterm, mterm = cm1$mterm))
+      cm1_fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+        objfun = em, parinit = psi[structural_names], fixed = fixed,
+        iterlim = maxCm1Iter))))
       psi[structural_names] <- cm1_fit$argument
       out_after_cm1 <- em(psi[structural_names], fixed = fixed, deriv = FALSE)
       diag_after    <- attr(out_after_cm1, "emDiag")
@@ -881,8 +879,8 @@ emObjfn <- function(obj, control = list()) {
   N  <- nrow(om$subjectEtas)
   chol_pars <- om$cholPars
   level <- K                       # single-node Smolyak == Laplace
-  cm1 <- modifyList(list(rinit = 1, rmax = 10, fterm = 1e-6, mterm = 1e-6),
-                    cm1Control)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, ftol = 1e-6, mtol = 1e-6),
+                       cm1Control, label = "cm1Control")
   psi <- init
   if (!all(chol_pars %in% names(psi)))
     stop(".fitNormal: `init` is missing omega$cholPars (",
@@ -898,10 +896,9 @@ emObjfn <- function(obj, control = list()) {
                         eta_init = e_info$etaModes)
 
     # CM-1: structural pars via the Laplace marginal, Omega frozen.
-    cm1_fit <- suppressMessages(trust(
-      em, parinit = psi[structural_names], fixed = fixed,
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = maxCm1Iter,
-      fterm = cm1$fterm, mterm = cm1$mterm))
+    cm1_fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = em, parinit = psi[structural_names], fixed = fixed,
+      iterlim = maxCm1Iter))))
     psi[structural_names] <- cm1_fit$argument
 
     # CM-2: closed-form Omega from covariance-corrected posterior moments.
@@ -979,8 +976,9 @@ emObjfn <- function(obj, control = list()) {
   N <- meta_pkg$N; K <- meta_pkg$K
   chol_pars <- omega$cholPars
   structural_names <- setdiff(names(init), chol_pars)
-  cm1 <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30,
-                         fterm = 1e-6, mterm = 1e-6), cm1Control)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, iterlim = 30,
+                            ftol = 1e-6, mtol = 1e-6),
+                       cm1Control, label = "cm1Control")
 
   parsFull <- setNames(numeric(length(meta$pars_full_names)),
                        meta$pars_full_names)
@@ -1050,10 +1048,8 @@ emObjfn <- function(obj, control = list()) {
     parsFull[chol_pars] <- updateOmegaChol(list(S_omega), omega)
 
     # CM-1: structural M-step at the drawn etas, RM-damped in convergence phase.
-    cm1_fit <- suppressMessages(trust(
-      cm1_obj, parinit = parsFull[structural_names],
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = cm1$iterlim,
-      fterm = cm1$fterm, mterm = cm1$mterm))
+    cm1_fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = cm1_obj, parinit = parsFull[structural_names]))))
     theta_hat <- cm1_fit$argument
     parsFull[structural_names] <-
       if (k <= nBurnin) theta_hat
@@ -1146,10 +1142,12 @@ emObjfn <- function(obj, control = list()) {
   fc <- control$focei %||% list()
   .normalCheckControlKeys(fc, c("innerControl", "trustControl", "cores"), "focei")
   .normalCheckControlKeys(fc$innerControl %||% list(),
-                    c("rinit", "rmax", "iterlim", "fterm", "mterm",
-                      "eigen_floor_relative"), "focei$innerControl")
+                    c("rinit", "rmax", "iterlim", "ftol", "mtol",
+                      "fterm", "mterm", "eigen_floor_relative"),
+                    "focei$innerControl")
   .normalCheckControlKeys(fc$trustControl %||% list(),
-                    c("rinit", "rmax", "iterlim", "fterm", "mterm"),
+                    c("rinit", "rmax", "iterlim", "ftol", "mtol",
+                      "fterm", "mterm"),
                     "focei$trustControl")
   .normalCheckControlKeys(control$quadrature %||% list(),
                     c("level", "cores", "epsQuadLevels", "epsEcm", "epsOfvRel",
@@ -1246,7 +1244,10 @@ emObjfn <- function(obj, control = list()) {
 #'     \item{`$saem`}{Recognised keys: `nBurnin`, `nEM`, `nMcmc`, `cm1Control`,
 #'       `cores`.}
 #'   }
-#'   Unrecognised keys raise a warning.
+#'   Unrecognised keys raise a warning. `cm1Control` accepts any [trust]
+#'   argument; `innerControl`/`trustControl` steer the C++ FOCEI loops and take
+#'   `rinit`, `rmax`, `iterlim`, `ftol`, `mtol` (plus `eigen_floor_relative`
+#'   for the inner one).
 #' @param verbose Logical. If TRUE prints solver progress.
 #'
 #' @return An `EM` S3 list with fields `argument`, `value` (plain-ML

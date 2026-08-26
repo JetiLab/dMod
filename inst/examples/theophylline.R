@@ -153,7 +153,7 @@ cat("\n== EM(method = 'focei') ==\n")
 fit_focei <- EM(obj, init,
                      method   = "focei",
                      control  = list(focei = list(
-                       innerControl = list(iterlim = 30, fterm = 1e-7, mterm = 1e-7),
+                       innerControl = list(iterlim = 30, ftol = 1e-7, mtol = 1e-7),
                        trustControl = list(iterlim = 100))))
 print(fit_focei)
 

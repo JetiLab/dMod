@@ -71,11 +71,11 @@ flatTarget <- function(likObj, priorObj = NULL, priorSample = NULL) {
     pars_full_names   = pars_full_names)
 
   ic <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30,
-                        fterm = 1e-7, mterm = 1e-7,
+                        ftol = 1e-7, mtol = 1e-7,
                         eigen_floor_relative = 1e-10),
                    innerControl)
   oc <- modifyList(list(rinit = 1, rmax = 10, iterlim = 200,
-                        fterm = 1e-7, mterm = 1e-7),
+                        ftol = 1e-7, mtol = 1e-7),
                    trustControl)
 
   pars_probe <- setNames(numeric(length(pars_full_names)), pars_full_names)

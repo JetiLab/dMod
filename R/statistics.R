@@ -14,8 +14,8 @@
 #' @param algoControl List of arguments controlling the fast PL algorithm. defaults to
 #' \code{list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)}
 #' @param optControl List of arguments controlling the \code{trust()} optimizer. Defaults to
-#' \code{list(rinit = .1, rmax = 10, iterlim = 10, fterm = 1e-6, mterm = 1e-6)}.
-#' See \link{trust} for more details.
+#' \code{list(rinit = .1, rmax = 10, iterlim = 10)}; any other argument of \link{trust},
+#' e.g. \code{ftol} or \code{parupper}, can be added. See \link{trust} for more details.
 #' @param verbose Logical, print verbose messages.
 #' @param cores number of cores used when computing profiles for several
 #' parameters. Multiplies with the OpenMP threads each objective function uses
@@ -80,12 +80,12 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
   if (method == "integrate") {
     sControl <- list(stepsize = 1e-4, min = 1e-4, max = Inf, atol = 1e-2, rtol = 1e-2, limit = 500, stop = "value")
     aControl <- list(gamma = 1, W = "hessian", reoptimize = FALSE, correction = 1, reg = .Machine$double.eps)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 10, fterm = 1e-6, mterm = 1e-6)
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 10)
   }
   if (method == "optimize") {
     sControl <- list(stepsize = 1e-2, min = 1e-4, max = Inf, atol = 1e-1, rtol = 1e-1, limit = 100, stop = "value")
     aControl <- list(gamma = 0, W = "identity", reoptimize = TRUE, correction = 1, reg = 0)
-    oControl <- list(rinit = .1, rmax = 10, iterlim = 100, fterm = 1e-6, mterm = 1e-6)
+    oControl <- list(rinit = .1, rmax = 10, iterlim = 100)
   }
   
   # Check if on Windows
@@ -95,9 +95,7 @@ profile <- function(objfun, pars, whichPar, alpha = 0.05,
   # Substitute user-set control parameters
   if (!is.null(stepControl)) sControl[match(names(stepControl), names(sControl))] <- stepControl
   if (!is.null(algoControl)) aControl[match(names(algoControl), names(aControl))] <- algoControl
-  # Assign by name rather than by match(): any trust() argument is passable,
-  # not just the ones already carried in oControl.
-  if (!is.null(optControl )) oControl[names(optControl)] <- optControl
+  oControl <- .trustControl(oControl, optControl, label = "optControl")
   
   
   # Create interRes folder for cautiousMode

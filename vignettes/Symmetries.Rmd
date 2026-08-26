@@ -1425,6 +1425,34 @@ $\{k_d = 0\}$ is not invariant, since $X_2(k_d) = k_p \neq 0$ there; the orbit
 crosses at finite $\varepsilon$ into $k_d < 0$, outside the model's domain. That
 crossing, not the symmetry, is the wall: the flatness ends where the model does.
 
+`symmetryReduction()` carries both walls, on request: `reportZeroCompatibility`
+asks which coordinates the orbit can drive to $0$ with nothing running off to
+infinity -- several at once allowed, since a set of rates switched off is still a
+model. It is off by default: it costs one exact face solve per coordinate of each
+block.
+
+```{r cycle-zero, eval = haveSympy}
+red <- symmetryReduction(res, fixed = "s", reportZeroCompatibility = TRUE)
+red$zeroCompatibility[, c("coordinates", "verdict", "limit", "condition")]
+```
+
+`k_p` is excluded outright -- $C = k_p(P_0 + pP_0)$ is invariant and strictly
+positive, so no orbit carries $k_p$ to zero at finite amounts, which is the
+Darboux statement again. The other two are the two walls of
+\eqref{eq:cycle-reach}, and `limit = FALSE` says both are met at finite
+$\varepsilon$. Neither holds everywhere: `condition` is the comparison
+\eqref{eq:cycle-reach} decides, $P_0 k_p > k_d\,pP_0$ for the rate wall and its
+reverse for the amount wall -- a rising readout switches the dephosphorylation
+off, a falling one empties the unphosphorylated pool. That is a property of the
+point, not of the model, so it is stated as a condition and never as a verdict.
+The reduction itself takes no parameter values; the condition is an R expression
+over the model's own names, and one `eval()` settles it wherever it matters:
+
+```{r cycle-zero-point, eval = haveSympy}
+cond <- setNames(red$zeroCompatibility$condition, red$zeroCompatibility$coordinates)
+sapply(cond[c("P", "k_d")], function(cc) eval(parse(text = cc), as.list(z)))
+```
+
 ### The gauge section
 
 The `Family` block closes the report with the gauge section `k_d*P = k_p*pP`. The

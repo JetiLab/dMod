@@ -280,9 +280,9 @@ solveFusedComplete <- function(m, w, lambda) {
   rho    <- K * (n - 1L)
   mu_of  <- stats::setNames(paste0("log_", params), eta_cols)   # eta_<par> -> log_<par>
 
-  cm1 <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30L,
-                         fterm = 1e-6, mterm = 1e-6),
-                    if (is.null(control$cm1)) list() else control$cm1)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, iterlim = 30L,
+                            ftol = 1e-6, mtol = 1e-6),
+                       control$cm1, label = "control$cm1")
   clc <- modifyList(list(maxit = 60L, tol = 1e-9),
                     if (is.null(control$cluster)) list() else control$cluster)
   ## lambda is HELD FIXED by default. The closed-form MAP M-step
@@ -346,10 +346,8 @@ solveFusedComplete <- function(m, w, lambda) {
     fusion <- sum(vapply(seq_len(K), function(kk) sum(stats::dist(Eta[, kk])), 0.0))
     if (estimateLambda && fusion > 0) lambda_cur <- rho / fusion
     ## CM-1: structural M-step at the frozen anchored etas
-    cm1_fit <- suppressMessages(trust(
-      function(th, ...) cm1_obj(th, Eta), parinit = struct_cur,
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = cm1$iterlim,
-      fterm = cm1$fterm, mterm = cm1$mterm))
+    cm1_fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = function(th, ...) cm1_obj(th, Eta), parinit = struct_cur))))
     struct_cur <- cm1_fit$argument
     ofv <- cm1_fit$value + lambda_cur * fusion         # MAP penalised objective
 
@@ -1024,11 +1022,11 @@ plot.sparsify <- function(x, type = c("grouping", "chain"), ...) {
   mu_of  <- stats::setNames(paste0("log_", params), eta_cols)
 
   sc <- modifyList(list(nBurnin = 150L, nEM = 150L, nMcmc = 8L, stepsize = 0.15,
-                        cm1 = list(rinit = 1, rmax = 10, iterlim = 30L,
-                                   fterm = 1e-6, mterm = 1e-6)),
+                        cm1 = list()),
                    if (is.null(control$saem)) list() else control$saem)
-  cm1 <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30L,
-                         fterm = 1e-6, mterm = 1e-6), sc$cm1)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, iterlim = 30L,
+                            ftol = 1e-6, mtol = 1e-6),
+                       sc$cm1, label = "control$saem$cm1")
   nBurnin <- as.integer(sc$nBurnin); nEM <- as.integer(sc$nEM); nMcmc <- as.integer(sc$nMcmc)
 
   struct_cur <- free[struct_names]; lambda_cur <- as.numeric(free[[lam_name]])
@@ -1078,8 +1076,8 @@ plot.sparsify <- function(x, type = c("grouping", "chain"), ...) {
     fc <- fus_of(Eta); S_fus <- if (is.null(S_fus)) fc else S_fus + gamma * (fc - S_fus)
     lambda_cur <- if (S_fus > 0) 2 * rho / S_fus else lambda_cur
     ## CM-1: structural M-step at the drawn etas, RM-damped in convergence
-    cf <- suppressMessages(trust(function(th, ...) cm1_obj(th, Eta), parinit = struct_cur,
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = cm1$iterlim, fterm = cm1$fterm, mterm = cm1$mterm))
+    cf <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = function(th, ...) cm1_obj(th, Eta), parinit = struct_cur))))
     struct_cur <- if (it <= nBurnin) cf$argument else struct_cur + gamma * (cf$argument - struct_cur)
     if (it > nBurnin) { EtaMean <- EtaMean + Eta; nAcc <- nAcc + 1L }
     cur_par <- c(struct_cur, stats::setNames(lambda_cur, lam_name))

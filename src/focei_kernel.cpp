@@ -33,6 +33,14 @@ using namespace Rcpp;
 #define FCONE
 #endif
 
+// Tolerance from a control list, accepting the legacy trust() spelling.
+static double ctrl_tol(const List& ctrl, const char* key, const char* legacy,
+                       double dflt) {
+  if (ctrl.containsElementNamed(key))    return as<double>(ctrl[key]);
+  if (ctrl.containsElementNamed(legacy)) return as<double>(ctrl[legacy]);
+  return dflt;
+}
+
 
 // Smoke-test entry: one joint() call, returns OFV + ncalls for boundary
 // validation.
@@ -377,7 +385,7 @@ static InnerResult inner_trust_one_subject(
     double Omega_log_det,
     double rinit, double rmax,
     int    iterlim,
-    double fterm, double mterm,
+    double ftol, double mtol,
     double eigen_floor_relative) {
   const int K = eta_init.size();
 
@@ -418,8 +426,8 @@ static InnerResult inner_trust_one_subject(
                    : -std::numeric_limits<double>::infinity();
 
     bool is_terminate = std::isfinite(val_try) &&
-                        (std::fabs(actual_red)   < fterm ||
-                         std::fabs(predicted_red) < mterm);
+                        (std::fabs(actual_red)   < ftol ||
+                         std::fabs(predicted_red) < mtol);
     bool accept;
     if (is_terminate) {
       accept = (val_try < val_curr);
@@ -513,10 +521,8 @@ List focei_inner_trust(Function model_cb,
                      as<double>(control["rmax"]) : 10.0;
   int    iterlim = control.containsElementNamed("iterlim") ?
                      as<int>(control["iterlim"]) : 30;
-  double fterm   = control.containsElementNamed("fterm") ?
-                     as<double>(control["fterm"]) : 1e-7;
-  double mterm   = control.containsElementNamed("mterm") ?
-                     as<double>(control["mterm"]) : 1e-7;
+  double ftol    = ctrl_tol(control, "ftol", "fterm", 1e-7);
+  double mtol    = ctrl_tol(control, "mtol", "mterm", 1e-7);
   double eflr    = control.containsElementNamed("eigen_floor_relative") ?
                      as<double>(control["eigen_floor_relative"]) : 1e-10;
 
@@ -546,7 +552,7 @@ List focei_inner_trust(Function model_cb,
     InnerResult r = inner_trust_one_subject(
         model_cb, err_cb, working_pars, fixed, meta_i, eta_init,
         Omega_inv.data(), Omega_log_det,
-        rinit, rmax, iterlim, fterm, mterm, eflr);
+        rinit, rmax, iterlim, ftol, mtol, eflr);
 
     for (int k = 0; k < K; ++k) {
       eta_modes  (i, k) = r.eta[k];
@@ -850,10 +856,8 @@ List focei_run(Function model_cb,
                      as<double>(outer_ctrl["rmax"]) : 10.0;
   int    iterlim = outer_ctrl.containsElementNamed("iterlim") ?
                      as<int>(outer_ctrl["iterlim"]) : 100;
-  double fterm   = outer_ctrl.containsElementNamed("fterm") ?
-                     as<double>(outer_ctrl["fterm"]) : 1e-6;
-  double mterm   = outer_ctrl.containsElementNamed("mterm") ?
-                     as<double>(outer_ctrl["mterm"]) : 1e-6;
+  double ftol    = ctrl_tol(outer_ctrl, "ftol", "fterm", 1e-6);
+  double mtol    = ctrl_tol(outer_ctrl, "mtol", "mterm", 1e-6);
 
   NumericVector theta(clone(init));
   theta.attr("names") = outer_names;
@@ -917,8 +921,8 @@ List focei_run(Function model_cb,
                    : -std::numeric_limits<double>::infinity();
 
     bool is_terminate = std::isfinite(f_try) &&
-                        (std::fabs(actual_red) < fterm ||
-                         std::fabs(predicted_red) < mterm);
+                        (std::fabs(actual_red) < ftol ||
+                         std::fabs(predicted_red) < mtol);
     bool accept;
     if (is_terminate) {
       accept = (f_try < f_curr);

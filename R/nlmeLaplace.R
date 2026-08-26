@@ -164,9 +164,10 @@
   ## strength name for each candidate coordinate, in the eta-column (= short) order
   lamByCoord <- unname(penalty$lambdaByParam[penalty$short])
 
-  rinit   <- if (is.null(control$rinit))   1   else control$rinit
-  rmax    <- if (is.null(control$rmax))    10  else control$rmax
-  iterlim <- if (is.null(control$iterlim)) 50L else control$iterlim
+  inner <- .trustControl(
+    list(rinit = control$rinit %||% 1, rmax = control$rmax %||% 10,
+         iterlim = control$iterlim %||% 50L, ftol = 1e-8, mtol = 1e-8),
+    control$inner, optimizer = trustL1, label = "control$inner")
 
   total   <- 0
   gStruct <- setNames(numeric(length(struct_names)), struct_names)
@@ -191,8 +192,7 @@
     ## compat), else a per-coordinate named vector for trustL1 / normalLaplace.
     lambda_k <- if (length(lam_name) == 1L) lambda_vec[[1L]]
                 else setNames(unname(lambda_vec[lamByCoord]), eta_names_i)
-    sm <- .laplaceSubjectMarginal(objfun_i, eta0, tg, lambda_k,
-                              rinit = rinit, rmax = rmax, iterlim = iterlim)
+    sm <- .laplaceSubjectMarginal(objfun_i, eta0, tg, lambda_k, inner)
     if (!is.null(warm)) warm[[s]] <- sm$etahat
     total <- total + sm$value
 
@@ -383,11 +383,11 @@
     targets_by_subject[[s]][eta_names_by[[s]]]), subjects)
 
   sc <- modifyList(list(nBurnin = 150L, nEM = 150L, nMcmc = 10L, stepsize = 0.4,
-                        cm1 = list(rinit = 1, rmax = 10, iterlim = 30L,
-                                   fterm = 1e-6, mterm = 1e-6)),
+                        cm1 = list()),
                    if (is.null(control$saem)) list() else control$saem)
-  cm1     <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30L,
-                             fterm = 1e-6, mterm = 1e-6), sc$cm1)
+  cm1     <- .trustControl(list(rinit = 1, rmax = 10, iterlim = 30L,
+                                ftol = 1e-6, mtol = 1e-6),
+                           sc$cm1, label = "control$saem$cm1")
   nBurnin <- as.integer(sc$nBurnin); nEM <- as.integer(sc$nEM)
   nMcmc   <- as.integer(sc$nMcmc)
 
@@ -468,10 +468,8 @@
         pmin(countByLam / S_abs, lambdaMax)[lam_free_names]
 
     ## CM-1: structural M-step at the drawn etas, RM-damped in convergence.
-    fit <- suppressMessages(trust(
-      function(th, ...) cm1_obj(th), parinit = struct_cur,
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = cm1$iterlim,
-      fterm = cm1$fterm, mterm = cm1$mterm))
+    fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = function(th, ...) cm1_obj(th), parinit = struct_cur))))
     struct_new <- fit$argument
     struct_cur <- if (k <= nBurnin) struct_new
                   else struct_cur + gamma * (struct_new - struct_cur)
@@ -548,8 +546,8 @@
 #'   a per-subject random-walk Metropolis E-step, provided as an independent
 #'   cross-check.
 #' @param control List of tuning options: inner per-subject trust-region
-#'   (`rinit`, `rmax`, `iterlim`); outer CM-1 trust-region (`cm1` = a list of
-#'   `rinit`, `rmax`, `iterlim`, `fterm`, `mterm`); ECM controls (`maxOuter`,
+#'   (`rinit`, `rmax`, `iterlim`, or `inner` = a list of any [trustL1] argument);
+#'   outer CM-1 trust-region (`cm1` = a list of any [trust] argument); ECM controls (`maxOuter`,
 #'   `epsPar`, `epsOfvRel`); `warm` (opt-in inner-mode warm-starting); `correction`
 #'   (logical, default `TRUE`: the normal-Laplace FOCEI volume term in the CM-1
 #'   gradient, exact for the error-model parameters, at the cost of a frozen-mode
@@ -634,9 +632,9 @@
   ## shared E-step. NB the outer trust() here is a *different* trust-region from
   ## the one inside trustL1: this one works on the smooth marginal over (mu, sigma)
   ## with no L1 kink, trustL1's works on the per-subject L1-penalised mode.
-  cm1 <- modifyList(list(rinit = 1, rmax = 10, iterlim = 30L,
-                         fterm = 1e-6, mterm = 1e-6),
-                    if (is.null(control$cm1)) list() else control$cm1)
+  cm1 <- .trustControl(list(rinit = 1, rmax = 10, iterlim = 30L,
+                            ftol = 1e-6, mtol = 1e-6),
+                       control$cm1, label = "control$cm1")
   maxOuter  <- if (is.null(control$maxOuter))  50L  else as.integer(control$maxOuter)
   epsPar    <- if (is.null(control$epsPar))    1e-4 else control$epsPar
   epsOfvRel <- if (is.null(control$epsOfvRel)) 1e-5 else control$epsOfvRel
@@ -685,10 +683,8 @@
   for (it in seq_len(maxOuter)) {
     nOuter <- it
     ## CM-1: structural block via the outer trust(), lambda held.
-    cm1_fit <- suppressMessages(trust(
-      emReg, parinit = psi_struct,
-      rinit = cm1$rinit, rmax = cm1$rmax, iterlim = cm1$iterlim,
-      fterm = cm1$fterm, mterm = cm1$mterm))
+    cm1_fit <- suppressMessages(do.call(trust, modifyList(cm1, list(
+      objfun = emReg, parinit = psi_struct))))
     psi_struct <- cm1_fit$argument
 
     ## moments at the new structural point (lambda still frozen): drive CM-2 + OFV.
@@ -1003,7 +999,7 @@
           p0 <- p0 + do.call("rnorm", list(n = length(p0), sd = sd))
         f <- try(suppressWarnings(trust(
           obj_data, parinit = p0, fixed = fixed0, rinit = 1, rmax = 10,
-          iterlim = 200L, fterm = 1e-8, mterm = 1e-8)), silent = TRUE)
+          iterlim = 200L, ftol = 1e-8, mtol = 1e-8)), silent = TRUE)
         if (!inherits(f, "try-error") && isTRUE(f$converged) &&
             (is.null(best) || f$value < best$value)) best <- f
       }
@@ -1202,12 +1198,12 @@ normalLaplace <- function(a, m, lambda) {
 ##   -2 log L_i = value(etahat) - (1/2) sum grad_k^2 / Hd_k - 2 sum log I_k,
 ##   with I_k = normalLaplace(a_k, m_k - target_k, lambda).
 .laplaceSubjectMarginal <- function(objfun, eta0, targets, lambda,
-                                rinit = 1, rmax = 10, iterlim = 100L,
-                                fterm = 1e-8, mterm = 1e-8) {
+                                control = list(rinit = 1, rmax = 10,
+                                               iterlim = 100L,
+                                               ftol = 1e-8, mtol = 1e-8)) {
   nm <- names(eta0)
-  fit <- trustL1(objfun, parinit = eta0, mu = targets, lambda = lambda,
-                 rinit = rinit, rmax = rmax, iterlim = iterlim,
-                 fterm = fterm, mterm = mterm)
+  fit <- do.call(trustL1, modifyList(control, list(
+    objfun = objfun, parinit = eta0, mu = targets, lambda = lambda)))
   etahat <- fit$argument[nm]
 
   di <- objfun(etahat)

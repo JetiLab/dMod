@@ -218,7 +218,7 @@ cat("\n== EM(method = 'focei') ==\n")
 fit_focei <- EM(obj, init,
                      method  = "focei",
                      control = list(focei = list(
-                       innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
+                       innerControl = list(iterlim = 50, ftol = 1e-7, mtol = 1e-7),
                        trustControl = list(iterlim = 200))))
 print(fit_focei)
 
@@ -236,7 +236,7 @@ cat("\n== msEM (20 starts, perturbed around init) ==\n")
 ms_fits <- msEM(obj, init,
                      method = "focei",
                      control = list(focei = list(
-                       innerControl = list(iterlim = 50, fterm = 1e-7, mterm = 1e-7),
+                       innerControl = list(iterlim = 50, ftol = 1e-7, mtol = 1e-7),
                        trustControl = list(iterlim = 200))),
                      fits  = 50L,
                      cores = 10L,
